@@ -1,0 +1,51 @@
+az vm list-skus --location westus --size Standard_D --all --output table
+....
+Standard_D1                      NotAvailableForSubscription
+...
+{"error":{"code":"InvalidTemplateDeployment","message":"The template deployment 'vm_deploy_17LAKV8P1NFHZVGIgtcWYOKUkac5Xqa1' is not valid according to the validation procedure. The tracking id is '5a51ee7e-f6c4-4c65-8b1f-48f7f6c97e95'. See inner errors for details.","details":[{"code":"SkuNotAvailable","message":"The requested VM size for resource 'Following SKUs have failed for Capacity Restrictions: Standard_B1s' is currently not available in location 'westus'. Please try another size or deploy to a different location or different zone. See https://aka.ms/azureskunotavailable for details."}]}}
+(Need to restart browser and/or maybe wait 5 min after upgrading account).
+
+
+SSH credentials:
+"ssh ubuntu@20.66.15.44"
+20.66.15.44 (az network public-ip list -g Exercise0 -o table)
+ubuntu Test137!Azure
+
+Error: That code didn't work. Check the code and try again. Oops it's a one time code.
+
+# Group list:
+[
+  {
+    "id": "/subscriptions/4e494799-323f-48fb-8868-ef7e06217146/resourceGroups/cloud-shell-storage-westus",
+    "location": "westus",
+    "managedBy": null,
+    "name": "cloud-shell-storage-westus",
+    "properties": {
+      "provisioningState": "Succeeded"
+    },
+    "tags": null,
+    "type": "Microsoft.Resources/resourceGroups"
+  },
+  {
+    "id": "/subscriptions/4e494799-323f-48fb-8868-ef7e06217146/resourceGroups/Exercise0",
+    "location": "westus",
+    "managedBy": null,
+    "name": "Exercise0",
+    "properties": {
+      "provisioningState": "Succeeded"
+    },
+    "tags": null,
+    "type": "Microsoft.Resources/resourceGroups"
+  },
+  {
+    "id": "/subscriptions/4e494799-323f-48fb-8868-ef7e06217146/resourceGroups/NetworkWatcherRG",
+    "location": "westus",
+    "managedBy": null,
+    "name": "NetworkWatcherRG",
+    "properties": {
+      "provisioningState": "Succeeded"
+    },
+    "tags": null,
+    "type": "Microsoft.Resources/resourceGroups"
+  }
+]

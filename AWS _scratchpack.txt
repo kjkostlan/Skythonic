@@ -1,0 +1,8 @@
+ec2c = boto3.client('ec2')
+ec2c.describe_vpcs()
+
+main_rtable = list(filter(lambda rtable: rtable['Associations'][0]['Main'], ec2c.describe_route_tables()['RouteTables']))[0]
+main_rtable['VpcId']
+
+igateid = internetgateway.internet_gateway_id
+ec2c.create_route(RouteTableId=main_rtable['RouteTableId'], DestinationCidrBlock='10.100.0.0/16',GatewayId=internetgateway.id)
