@@ -3,7 +3,7 @@ import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 
-def assign_name(x):
+def assign_name(x, name):
     x.create_tags(Tags=[{'Key': 'Name', 'Value': name}])
 
 def create(type, name, **kwargs):
@@ -27,7 +27,7 @@ def create(type, name, **kwargs):
         x = ec2r.create_instances(**kwargs)
     else:
         raise Exception('Create ob type unrecognized:'+str(type))
-    assign_name(x)
+    assign_name(x, name)
     return x
 
 def delete(obj_or_id):
