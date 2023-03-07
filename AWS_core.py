@@ -24,7 +24,7 @@ def create(type, name, **kwargs):
     elif type in {'keypair'}:
         x = ec2r.create_key_pair(**kwargs)
     elif type in {'instance', 'instances', 'machine', 'machines'}:
-        x = ec2r.create_instances(**kwargs)
+        x = ec2r.create_instances(**kwargs)[0]
     else:
         raise Exception('Create ob type unrecognized:'+str(type))
     assign_name(x, name)
