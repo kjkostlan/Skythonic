@@ -27,7 +27,9 @@ def push_if_change():
         out, err = call_proc(["git", "--no-pager", "diff"])
         print('Diffs are:', out)
 
-        x = input('Commits needed, input message: ')
+        x = input('Commits needed, input message or leave blank to refresh: ').strip()
+        if len(x)==0:
+            return None
         outa, erra = call_proc(["git", "add", "*"])
         outc, errc = call_proc(["git", "commit", "-m", x])
         print("Commit:", outc, errc)
@@ -37,3 +39,4 @@ def push_if_change():
 while True:
     push_if_change()
     time.sleep(1)
+    [print(' ') for _ in range(6)]
