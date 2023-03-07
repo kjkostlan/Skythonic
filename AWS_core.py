@@ -56,6 +56,8 @@ def delete(obj_or_id):
         ec2c.delete_key_pair(KeyPairId=id)
     elif id.startswith('sg-'):
         ec2c.delete_security_group(GroupId=id)
+    elif id.startswith('rtb-'):
+        ec2c.delete_route_table(RouteTableId=id)
     else:
         raise Exception('TODO: handle this case:', id)
 
