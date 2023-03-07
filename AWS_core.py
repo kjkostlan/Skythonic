@@ -31,7 +31,7 @@ def create(type, name, **kwargs):
     return x
 
 def delete(obj_or_id):
-    # Delete an object given an id.
+    # Delete an object given an id OR a description dict.
     if type(obj_or_id) is dict:
         avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId'} # TODO: more will be needed.
         kys = obj_or_id.keys()
@@ -56,6 +56,8 @@ def delete(obj_or_id):
         ec2c.delete_key_pair(KeyId=id)
         #ky_nm = ec2c.describe_internet_gateways(KeyId=[id])['KeyPairs'][0]['key_name']
         #ec2c.delete_key_pair(KeyName=ky_nm)
+    elif id.startswith('sg-'):
+        ec2c.delete_securit_group(GroupId=id)
     else:
         raise Exception('TODO: handle this case:', id)
 

@@ -9,11 +9,14 @@ def nuclear_clean():
         return None
     resc = AWS_query.get_resources()
     n_delete=0
-    for k in ['rtables','subnets','kpairs', 'machines','webgates','vpcs']: # order matters here.
+    for k in ['rtables','sgroups','subnets','kpairs', 'machines','webgates','vpcs']: # order matters here.
         if k not in resc:
             continue
         for x in resc[k]:
-            if k != 'vpcs' or not x['IsDefault']: # Don't delete the default VPC since it comes with a fresh account.
-                AWS_core.delete(x)
-                n_delete = n_delete+1
+            if k == 'vpcs' and x['IsDefault']: # Don't delete the default VPC since it comes with a fresh account.
+                continue
+            if k == 'sgroups' and x['Description']=='default VPC security group': # Another default we start with.
+                continue
+            AWS_core.delete(x)
+            n_delete = n_delete+1
     print('Deleted:', n_delete, 'resources.')
