@@ -7,7 +7,7 @@ def assign_name(x):
     x.create_tags(Tags=[{'Key': 'Name', 'Value': name}])
 
 def create(type, name, **kwargs):
-    type = type.lower9()
+    type = type.lower()
     if type in {'vpc'}: # Python only intruduced the switch statement in 3.10
         x = ec2r.create_vpc(**kwargs)
         x.wait_until_available()
