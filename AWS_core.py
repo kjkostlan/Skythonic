@@ -14,7 +14,7 @@ def create(type, name, **kwargs):
     elif type in {'webgate','internetgateway'}:
         x = ec2r.create_internet_gateway(**kwargs)
     elif type in {'rtable','routetable'}:
-        x = ec2r.create_route_table()
+        x = ec2r.create_route_table(**kwargs)
     elif type in {'subnet'}:
         x = ec2r.create_subnet(**kwargs)
     elif type in {'route'}:
