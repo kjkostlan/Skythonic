@@ -5,5 +5,6 @@ import os
 branch="dev"
 root = 'https://raw.githubusercontent.com/kjkostlan/Skythonic/' + branch + '/'
 files = ['AWS_core.py','AWS_clean.py','AWS_install.py','AWS_setup.py','AWS_query.py']
-[os.system(' '.join(['curl','-o',f,root+f])) for f in files]
-ls = lambda : os.system('ls')
+skythonic = lambda: [os.system(' '.join(['curl','-o',f,root+f])) for f in files]
+skythonic()
+ls = lambda: os.system('ls')
