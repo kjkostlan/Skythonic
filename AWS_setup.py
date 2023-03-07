@@ -16,15 +16,17 @@ def setup_jumpbox(): # The jumpbox is much more configurable than the cloud shel
     routetable.associate_with_subnet(SubnetId=subnet.id)
     securitygroup = AWS_core.create('securitygroup', 'jumpbox_sGroup', GroupName='SSH-ONLY', Description='only allow SSH traffic', VpcId=vpc.id)#ec2.create_security_group(GroupName='SSH-ONLY', Description='only allow SSH traffic', VpcId=vpc.id)
     securitygroup.authorize_ingress(CidrIp='0.0.0.0/0', IpProtocol='tcp', FromPort=22, ToPort=22)
-    outfile = open('ec2-keypair.pem', 'w')
     key_pair = ec2c.create_key_pair(KeyName='jumpbox_keypair') #key_pair = AWS_core.create('keypair', 'Private Public', KeyName='ec2-keypair')#ec2.create_key_pair(KeyName='ec2-keypair')
     KeyPairOut = str(key_pair['KeyMaterial'])
+    outfile = open('jumpbox_privatekey.pem', 'w')
     outfile.write(KeyPairOut)
+    outfile.close()
 
     inst_networkinter = [{'SubnetId': subnet.id, 'DeviceIndex': 0, 'PrivateIpAddress': '10.100.250.100',
                           'AssociatePublicIpAddress': False, 'Groups': [securitygroup.group_id]}]
 
     vm_params = {'ImageId':'ami-0735c191cf914754d', 'InstanceType':'t2.micro',
-                 'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter, 'KeyName':'ec2-keypair'}
+                 'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter, 'KeyName':'jumpbox_keypair'}
     x = AWS_core.create('machines', 'jumpbox_VM',**vm_params)
+    # TODO: chmod 600 jump*
     return x
