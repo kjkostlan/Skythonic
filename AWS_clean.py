@@ -15,7 +15,7 @@ def nuclear_clean():
         for x in resc[k]:
             if k == 'vpcs' and x['IsDefault']: # Don't delete the default VPC since it comes with a fresh account.
                 continue
-            if k == 'sgroups' and x['Description']=='default VPC security group': # Another default we start with.
+            if k == 'sgroups' and x['GroupName']=='default'#x['Description']=='default VPC security group': # Another default we start with.
                 continue
             AWS_core.delete(x)
             n_delete = n_delete+1
