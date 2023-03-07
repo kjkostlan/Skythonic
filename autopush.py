@@ -21,11 +21,17 @@ def push_if_change():
     elif 'On branch dev' not in out:
         print('Not on branch dev, this script can only work if on branch dev.')
     else:
+        out, err = call_proc(["git", "status"])
+        print('Status is:', out)
+
+        out, err = call_proc(["git", "--no-pager", "diff"])
+        print('Diffs are:', out)
+
         x = input('Commits needed, input message: ')
         outa, erra = call_proc(["git", "add", "*"])
         outc, errc = call_proc(["git", "commit", "-m", x])
         print("Commit:", outc, errc)
-        outp, errp = call_proc(["git", "push", '"https://github.com/kjkostlan/Skythonic"'])
+        outp, errp = call_proc(["git", "push", "https://github.com/kjkostlan/Skythonic"])
         print("Commit:", outp, errp)
 
 while True:
