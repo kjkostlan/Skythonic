@@ -44,6 +44,9 @@ def delete(obj_or_id):
     else:
         id = obj_or_id
     if id.startswith('igw-'):
+        attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[id])['InternetGateways'][0]['Attachments']
+        for attch in attchs: # Must detach before deletion.
+            ec2c.detach_internet_gateway(InternetGatewayId=id, VpcId=attch['VpcId'])
         ec2c.delete_internet_gateway(InternetGatewayId=id)
     else:
         raise Exception('TODO: handle this case:', id)
