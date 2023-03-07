@@ -10,7 +10,8 @@ files = ['AWS_core.py','AWS_clean.py','AWS_setup.py','AWS_query.py']
 module_strs = [file.replace('.py','').replace('/','.') for file in files]
 f0 = lambda: [os.remove(file) for file in files] # Curl doesn't overwrite (I think).
 f1 = lambda: [os.system(' '.join(['curl','-o',f,root+f])) for f in files]
-f2 = lambda: [__import__(mdname) for mdname in module_strs] #https://stackoverflow.com/questions/301134/how-can-i-import-a-module-dynamically-given-its-name-as-string
+import1 = lambda mdname: setattr(sys.modules['__main__'], mdname, __import__(mdname))
+f2 = lambda: [import1(mdname) for mdname in module_strs] #https://stackoverflow.com/questions/301134/how-can-i-import-a-module-dynamically-given-its-name-as-string
 f3 = lambda: [importlib.reload(sys.modules[mdname]) for mdname in module_strs]
 skythonic = lambda:[f0(), f1(), f2(), f3()]
 skythonic()
