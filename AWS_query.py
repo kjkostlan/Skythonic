@@ -12,4 +12,5 @@ def get_resources():
     out['webgates'] = ec2c.describe_internet_gateways()['InternetGateways']
     out['kpairs'] = ec2c.describe_key_pairs()['KeyPairs']
     out['machines'] = ec2c.describe_instances()['Reservations']
+    out['rtables'] = ec2c.describe_route_tables()['RouteTables']
     return out
