@@ -30,6 +30,24 @@ def create(type, name, **kwargs):
     assign_name(x)
     return x
 
+def delete(obj_or_id):
+    # Delete an object given an id.
+    if type(obj_or_id) is dict:
+        avoid = {'DhcpOptionsId','OwnerId'} # TODO: more will be needed.
+        kys = obj_or_id.keys()
+        for ky in kys:
+            if ky not in avoid and ky.endswith('Id'):
+                id = obj_or_id[ky]
+                break
+        if type(id) is dict:
+            raise Exception('Cant extract the Id')
+    else:
+        id = obj_or_id
+    if id.startswith('igw-'):
+        ec2c.delete_internet_gateway(id)
+    else:
+        raise Exception('TODO: handle this case:', id)
+
 # TODO: have a generalize "assocate" function.
 def assoc_gateway(vpc, gate_id):
     vpc.attach_internet_gateway(InternetGatewayId=gate_id)

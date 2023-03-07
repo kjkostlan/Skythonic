@@ -1,5 +1,5 @@
 import boto3
-import AWS_query
+import AWS_query, AWS_core
 
 def nuclear_clean():
     # DELETE EVERYTHING DANGER!
@@ -8,6 +8,7 @@ def nuclear_clean():
         print("Aborted by user.")
         return None
     resc = AWS_query.get_resources()
-
-    TODO
-    # Don't delete default VPC since it comes with a fresh account.
+    for k in resc.keys():
+        for x in resc[k]:
+            if k != 'vpcs' or not x['IsDefault']: # Don't delete the default VPC since it comes with a fresh account.
+                AWS_core.delete(x)
