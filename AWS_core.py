@@ -33,7 +33,7 @@ def create(type, name, **kwargs):
 def delete(obj_or_id):
     # Delete an object given an id.
     if type(obj_or_id) is dict:
-        avoid = {'DhcpOptionsId','OwnerId'} # TODO: more will be needed.
+        avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId'} # TODO: more will be needed.
         kys = obj_or_id.keys()
         for ky in kys:
             if ky not in avoid and ky.endswith('Id'):
