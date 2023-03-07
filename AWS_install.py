@@ -3,6 +3,10 @@
 # Run the skythonic() function will automatically run everything.
 python3=1 # Bash/python polyglot fun (works whether you are Python or bash, and leaves the CLI in Python).
 python3
+download_py = True # False to not download (i.e. local changes).
+import boto3 # Conventions followed.
+ec2r = boto3.resource('ec2')
+ec2c = boto3.client('ec2')
 import os, sys, importlib, shutil, random, string
 branch="dev"
 root = 'https://raw.githubusercontent.com/kjkostlan/Skythonic/' + branch + '/'
@@ -16,7 +20,9 @@ f2 = lambda: [os.system(' '.join(['curl','-o',f,root+f+'?'+rand_txt])) for f in 
 f3 = lambda: [import1(mdname) for mdname in module_strs] #https://stackoverflow.com/questions/301134/how-can-i-import-a-module-dynamically-given-its-name-as-string
 f4 = lambda: [importlib.reload(sys.modules[mdname]) for mdname in module_strs]
 do = lambda f,g: g() if f() != '___' else None # do in order, which may be affecting the curl refreshing.
-skythonic = lambda: do(lambda: do(lambda: do(f0,f1), lambda: do(f2,f3)), f4)
+skythonicD = lambda: do(lambda: do(lambda: do(f0,f1), lambda: do(f2,f3)), f4)
+skythonicO = lambda: do(f3,f4)
+skythonic = skythonicD if download_py else skythonicO
 skythonic()
 ls = lambda: os.system('ls') # TODO: better check if it worked.
 print('Installation hopefully worked!')
