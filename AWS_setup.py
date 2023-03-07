@@ -23,7 +23,8 @@ def setup_jumpbox(): # The jumpbox is much more configurable than the cloud shel
 
     inst_networkinter = [{'SubnetId': subnet.id, 'DeviceIndex': 0, 'PrivateIpAddress': '10.100.250.100',
                           'AssociatePublicIpAddress': False, 'Groups': [securitygroup.group_id]}]
-
+    # 
     vm_params = {'ImageId':'ami-0735c191cf914754d', 'InstanceType':'t2.micro',
                  'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter, 'KeyName':'ec2-keypair'}
-    AWS_core.create('machines', 'The tenth-of-a-core machine',**vm_params)
+    x = AWS_core.create('machines', 'The tenth-of-a-core machine',**vm_params)
+    return x
