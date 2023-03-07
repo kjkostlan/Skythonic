@@ -9,7 +9,7 @@ def nuclear_clean():
         return None
     resc = AWS_query.get_resources()
     n_delete=0
-    for k in resc.keys():
+    for k in ['rtables','tags','kpairs', 'machines','webgates','vpcs']: # order matters here.
         for x in resc[k]:
             if k != 'vpcs' or not x['IsDefault']: # Don't delete the default VPC since it comes with a fresh account.
                 AWS_core.delete(x)

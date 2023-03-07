@@ -10,7 +10,7 @@ def setup_jumpbox():
 
     internetgateway = AWS_core.create('webgate', 'the gate') # AWS_core.create_internet_gateway()
     vpc.attach_internet_gateway(InternetGatewayId=internetgateway.id)
-    routetable = AWS_core.create('rtable', 'my one-entry table') #vpc.create_route_table() #
+    routetable = AWS_core.create('rtable', 'my one-entry table', VpcId=vpc.id)
     route = AWS_core.create('route', 'To the wild blue yonder', DestinationCidrBlock='0.0.0.0/0',GatewayId=internetgateway.id) #routetable.create_route(DestinationCidrBlock='0.0.0.0/0',GatewayId=internetgateway.id)
     subnet = AWS_core.create('subnet','This is a subnet',CidrBlock='172.16.1.0/24', VpcId=vpc.id) #ec2.create_subnet(CidrBlock='172.16.1.0/24', VpcId=vpc.id)
     routetable.associate_with_subnet(SubnetId=subnet.id)
