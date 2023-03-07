@@ -6,7 +6,7 @@ ec2c = boto3.client('ec2')
 def assign_name(x):
     x.create_tags(Tags=[{'Key': 'Name', 'Value': name}])
 
-def create_ob(type, name, **kwargs):
+def create(type, name, **kwargs):
     type = type.lower9()
     if type in {'vpc'}: # Python only intruduced the switch statement in 3.10
         x = ec2r.create_vpc(**kwargs)
@@ -30,7 +30,7 @@ def create_ob(type, name, **kwargs):
     assign_name(x)
     return x
 
-# TODO: have a generalize "assocate ob" function.
+# TODO: have a generalize "assocate" function.
 def assoc_gateway(vpc, gate_id):
     vpc.attach_internet_gateway(InternetGatewayId=gate_id)
 def assoc_subnet(vpc, subnet_id):
