@@ -50,6 +50,8 @@ def delete(obj_or_id):
         ec2c.delete_internet_gateway(InternetGatewayId=id)
     elif id.startswith('vpc-'):
         ec2c.delete_vpc(VpcId=id)
+    elif id.startswith('subnet-'):
+        ec2c.delete_subnet(SubnetId=id)
     else:
         raise Exception('TODO: handle this case:', id)
 
