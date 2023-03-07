@@ -32,14 +32,17 @@ def create(type, name, **kwargs):
 
 def delete(obj_or_id):
     # Delete an object given an id OR a description dict.
+    #print('On this object:', obj_or_id)
     if type(obj_or_id) is dict:
-        avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId'} # TODO: more will be needed.
+        avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId'} # TODO: more will be needed.
         kys = obj_or_id.keys()
         for ky in kys:
             if ky not in avoid and ky.endswith('Id'):
                 id = obj_or_id[ky]
                 break
-        if type(id) is dict:
+        try:
+            id
+        except:
             raise Exception('Cant extract the Id')
     else:
         id = obj_or_id
@@ -58,6 +61,8 @@ def delete(obj_or_id):
         ec2c.delete_security_group(GroupId=id)
     elif id.startswith('rtb-'):
         ec2c.delete_route_table(RouteTableId=id)
+    elif id.startswith('i-'):
+        ec2c.terminate_instances(InstanceIds=[id])
     else:
         raise Exception('TODO: handle this case:', id)
 

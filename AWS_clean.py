@@ -9,7 +9,7 @@ def nuclear_clean():
         return None
     resc = AWS_query.get_resources()
     n_delete=0
-    for k in ['subnets', 'rtables','webgates','sgroups','vpcs','kpairs','machines']: # order matters here.
+    for k in ['machines', 'subnets', 'rtables','webgates','sgroups','vpcs','kpairs']: # order matters.
         if k not in resc:
             continue
         for x in resc[k]:
