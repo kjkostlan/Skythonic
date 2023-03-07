@@ -52,6 +52,10 @@ def delete(obj_or_id):
         ec2c.delete_vpc(VpcId=id)
     elif id.startswith('subnet-'):
         ec2c.delete_subnet(SubnetId=id)
+    elif id.startswith('key-'): #Only needs the name.
+        ec2c.delete_key_pair(KeyId=id)
+        #ky_nm = ec2c.describe_internet_gateways(KeyId=[id])['KeyPairs'][0]['key_name']
+        #ec2c.delete_key_pair(KeyName=ky_nm)
     else:
         raise Exception('TODO: handle this case:', id)
 

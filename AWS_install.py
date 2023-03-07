@@ -16,6 +16,8 @@ module_strs = [file.replace('.py','').replace('/','.') for file in files]
 import1 = lambda mdname: setattr(sys.modules['__main__'], mdname, __import__(mdname))
 f0 = lambda: shutil.rmtree('./__pycache__') if os.path.exists('./__pycache__') else False
 f1 = lambda: [os.remove(file) if os.path.exists(file) else False for file in files] # Curl doesn't overwrite (I think).
+#https://reqbin.com/req/c-dyugjcgf/curl-no-cache-example
+#f2 = lambda: [os.system(' '.join(['curl','-o',f,root+f+'?'+rand_txt, '-H',"Cache-Control: no-cache, no-store, must-revalidate"])) for f in files]
 f2 = lambda: [os.system(' '.join(['curl','-o',f,root+f+'?'+rand_txt])) for f in files]
 f3 = lambda: [import1(mdname) for mdname in module_strs] #https://stackoverflow.com/questions/301134/how-can-i-import-a-module-dynamically-given-its-name-as-string
 f4 = lambda: [importlib.reload(sys.modules[mdname]) for mdname in module_strs]
