@@ -57,7 +57,7 @@ def delete(obj_or_id):
         #ky_nm = ec2c.describe_internet_gateways(KeyId=[id])['KeyPairs'][0]['key_name']
         #ec2c.delete_key_pair(KeyName=ky_nm)
     elif id.startswith('sg-'):
-        ec2c.delete_securit_group(GroupId=id)
+        ec2c.delete_security_group(GroupId=id)
     else:
         raise Exception('TODO: handle this case:', id)
 
