@@ -12,7 +12,7 @@ def create(type, name, **kwargs):
         x = ec2r.create_vpc(**kwargs)
         x.wait_until_available()
     elif type in {'webgate','internetgateway'}:
-        x = ec2r.create_internet_gateway(kwargs)
+        x = ec2r.create_internet_gateway(**kwargs)
     elif type in {'rtable','routetable'}:
         x = ec2r.create_route_table()
     elif type in {'subnet'}:
