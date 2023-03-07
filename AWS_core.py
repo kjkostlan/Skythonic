@@ -53,9 +53,7 @@ def delete(obj_or_id):
     elif id.startswith('subnet-'):
         ec2c.delete_subnet(SubnetId=id)
     elif id.startswith('key-'): #Only needs the name.
-        ec2c.delete_key_pair(KeyId=id)
-        #ky_nm = ec2c.describe_internet_gateways(KeyId=[id])['KeyPairs'][0]['key_name']
-        #ec2c.delete_key_pair(KeyName=ky_nm)
+        ec2c.delete_key_pair(KeyPairId=id)
     elif id.startswith('sg-'):
         ec2c.delete_security_group(GroupId=id)
     else:
