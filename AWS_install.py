@@ -3,7 +3,7 @@
 # Run the skythonic() function will automatically run everything.
 python3=1 # Bash/python polyglot fun (works whether you are Python or bash, and leaves the CLI in Python).
 python3
-download_py = False # False to not download (i.e. local changes).
+download_py = False # False to not download (i.e. local changes faster than GitHub cache).
 import boto3 # Conventions followed.
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')

@@ -9,12 +9,12 @@ def nuclear_clean():
         return None
     resc = AWS_query.get_resources()
     n_delete=0
-    for k in ['rtables','webgates','sgroups','vpcs','subnets','kpairs','machines']: # order matters here.
+    for k in ['rtables','webgates','sgroups','subnets','vpcs','kpairs','machines']: # order matters here.
         if k not in resc:
             continue
         for x in resc[k]:
             # Defaults that the account comes with (don't delete these):
-            if k == 'rtables' and x['Associations'][0]['Main']:
+            if k == 'rtables' and 'Associations' in x and len(x['Associations'])>0 and x['Associations'][0]['Main']:
                 continue
             if k == 'vpcs' and x['IsDefault']:
                 continue
