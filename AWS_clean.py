@@ -14,7 +14,7 @@ def nuclear_clean():
             continue
         for x in resc[k]:
             # Defaults that the account comes with (don't delete these):
-            if k == 'rtables' and x['Main']:
+            if k == 'rtables' and x['Associations'][0]['Main']:
                 continue
             if k == 'vpcs' and x['IsDefault']:
                 continue
