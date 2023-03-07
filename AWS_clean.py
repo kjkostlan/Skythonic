@@ -13,10 +13,13 @@ def nuclear_clean():
         if k not in resc:
             continue
         for x in resc[k]:
-            if k == 'vpcs' and x['IsDefault']: # Don't delete the default VPC since it comes with a fresh account.
+            # Defaults that the account comes with (don't delete these):
+            if k == 'rtables' and x['Main']:
                 continue
-            if k == 'sgroups' and x['GroupName']=='default': #x['Description']=='default VPC security group': # Another default we start with.
+            if k == 'vpcs' and x['IsDefault']:
                 continue
+            if k == 'sgroups' and x['GroupName']=='default':
+                continue # Every VPC makes a default security group.
             AWS_core.delete(x)
             n_delete = n_delete+1
     print('Deleted:', n_delete, 'resources.')
