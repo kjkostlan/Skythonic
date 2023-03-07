@@ -1,7 +1,7 @@
-# Setup aws test.
+# TOols to set up some common kinds of resources
 import boto3
 import AWS_core
-def setup_jumpbox():
+def setup_jumpbox(): # The jumpbox is much more configurable than the cloud shell.
     ec2r = boto3.resource('ec2')
     ec2c = boto3.client('ec2')
     vpc = AWS_core.create('VPC', 'VPC0', CidrBlock='172.16.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
@@ -18,12 +18,12 @@ def setup_jumpbox():
     securitygroup.authorize_ingress(CidrIp='0.0.0.0/0', IpProtocol='tcp', FromPort=22, ToPort=22)
     outfile = open('ec2-keypair.pem', 'w')
     key_pair = ec2c.create_key_pair(KeyName='ec2-keypair') #key_pair = AWS_core.create('keypair', 'Private Public', KeyName='ec2-keypair')#ec2.create_key_pair(KeyName='ec2-keypair')
-    KeyPairOut = str(key_pair.key_material)
+    KeyPairOut = str(key_pair['KeyMaterial'])
     outfile.write(KeyPairOut)
 
     inst_networkinter = [{'SubnetId': subnet.id, 'DeviceIndex': 0,
                           'AssociatePublicIpAddress': True, 'Groups': [securitygroup.group_id]}]
 
     vm_params = {'ImageId':'ami-0de53d8956e8dcf80', 'InstanceType':'t2.micro',
-                 'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter, KeyName:'ec2-keypair'}
-    AWS_core.create('machines', 'The tenth-of-a-core machine',vm_params)
+                 'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter, 'KeyName':'ec2-keypair'}
+    AWS_core.create('machines', 'The tenth-of-a-core machine',**vm_params)

@@ -3,7 +3,7 @@ import AWS_query, AWS_core
 
 def nuclear_clean():
     # DELETE EVERYTHING DANGER!
-    confirm = input('Warning: will delete EVERTYTHING in the WHOLE ACCOUNT (not just the lab) leaving just the default VPC; input y to proceed')
+    confirm = input('Warning: will delete EVERTYTHING in the WHOLE ACCOUNT (not just the lab) leaving just the default resources; input y to proceed')
     if confirm.strip().lower() !='y':
         print("Aborted by user.")
         return None
