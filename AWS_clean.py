@@ -8,7 +8,10 @@ def nuclear_clean():
         print("Aborted by user.")
         return None
     resc = AWS_query.get_resources()
+    n_delete=0
     for k in resc.keys():
         for x in resc[k]:
             if k != 'vpcs' or not x['IsDefault']: # Don't delete the default VPC since it comes with a fresh account.
                 AWS_core.delete(x)
+                n_delete = n_delete+1
+    print('Deleted:', n_delete, 'resources.')
