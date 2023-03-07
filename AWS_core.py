@@ -44,7 +44,7 @@ def delete(obj_or_id):
     else:
         id = obj_or_id
     if id.startswith('igw-'):
-        ec2c.delete_internet_gateway(id)
+        ec2c.delete_internet_gateway(InternetGatewayId=id)
     else:
         raise Exception('TODO: handle this case:', id)
 
