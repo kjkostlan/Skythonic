@@ -8,5 +8,6 @@ def nuclear_clean():
         print("Aborted by user.")
         return None
     resc = AWS_query.get_resources()
+
     TODO
     # Don't delete default VPC since it comes with a fresh account.
