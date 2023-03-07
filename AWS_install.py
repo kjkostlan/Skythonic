@@ -8,12 +8,12 @@ branch="dev"
 root = 'https://raw.githubusercontent.com/kjkostlan/Skythonic/' + branch + '/'
 files = ['AWS_core.py','AWS_clean.py','AWS_setup.py','AWS_query.py']
 module_strs = [file.replace('.py','').replace('/','.') for file in files]
-f0 = lambda: [os.remove(file) for file in files] # Curl doesn't overwrite (I think).
+f0 = lambda: [os.remove(file) if os.path.exists(file) else False for file in files] # Curl doesn't overwrite (I think).
 f1 = lambda: [os.system(' '.join(['curl','-o',f,root+f])) for f in files]
 import1 = lambda mdname: setattr(sys.modules['__main__'], mdname, __import__(mdname))
 f2 = lambda: [import1(mdname) for mdname in module_strs] #https://stackoverflow.com/questions/301134/how-can-i-import-a-module-dynamically-given-its-name-as-string
 f3 = lambda: [importlib.reload(sys.modules[mdname]) for mdname in module_strs]
-skythonic = lambda:[shutil.rmtree('./__pycache__'), f0(), f1(), f2(), f3()]
+skythonic = lambda:[shutil.rmtree('./__pycache__') if os.path.exists('./__pycache__') else False, f0(), f1(), f2(), f3()]
 skythonic()
 ls = lambda: os.system('ls') # TODO: better check if it worked.
 print('Installation hopefully worked!')
