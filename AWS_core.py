@@ -48,6 +48,8 @@ def delete(obj_or_id):
         for attch in attchs: # Must detach before deletion.
             ec2c.detach_internet_gateway(InternetGatewayId=id, VpcId=attch['VpcId'])
         ec2c.delete_internet_gateway(InternetGatewayId=id)
+    elif id.startswith('vpc-'):
+        ec2c.delete_vpc(VpcId=id)
     else:
         raise Exception('TODO: handle this case:', id)
 
