@@ -1,8 +1,12 @@
 import boto3
-ec2r = boto3.resource('ec2')
-ec2c = boto3.client('ec2')
-vpc_dict = ec2c.describe_vpcs()
-tag_dict = ec2c.describe_tags()
-gate_dict = ec2c.describe_internet_gateways()
+import AWS_query
 
-# Don't delete default VPC!
+def nuclear_clean():
+    # DELETE EVERYTHING DANGER!
+    confirm = input('Warning: will delete EVERTYTHING leaving just the default VPC; input y to proceed')
+    if confirm.strip().lower() !='y':
+        print("Aborted by user.")
+        return None
+    resc = AWS_query.get_resources()
+    TODO
+    # Don't delete default VPC since it comes with a fresh account.
