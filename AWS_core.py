@@ -19,7 +19,7 @@ def create(type, name, **kwargs):
         x = ec2r.create_subnet(**kwargs)
     elif type in {'route'}:
         x = ec2r.create_route(**kwargs)
-    elif type in {'securitygroup'}:
+    elif type in {'securitygroup', 'sgroup'}:
         x = ec2r.create_security_group(**kwargs)
     elif type in {'keypair'}:
         x = ec2r.create_key_pair(**kwargs)
