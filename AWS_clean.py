@@ -1,7 +1,7 @@
 import boto3, time
 import AWS_query, AWS_core
 
-def nuclear_clean(delete_machines=True):
+def nuclear_clean():
     # DELETE EVERYTHING DANGER!
     confirm = input('Warning: will delete EVERTYTHING in the WHOLE ACCOUNT (not just the lab) leaving just the default resources; input y to proceed')
     if confirm.strip().lower() !='y':
@@ -9,9 +9,7 @@ def nuclear_clean(delete_machines=True):
         return None
     resc = AWS_query.get_resources()
     n_delete=0
-    for k in ['machines', 'subnets', 'rtables','webgates','sgroups','vpcs','kpairs']: # order matters.
-        if k=='machines' and not delete_machines:
-            continue # Debug option for why is this error happening only there.
+    for k in ['addresses', 'machines', 'subnets', 'rtables','webgates','sgroups','vpcs','kpairs']: # order matters.
         if k not in resc:
             continue
         for x in resc[k]:

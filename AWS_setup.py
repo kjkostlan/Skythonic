@@ -28,5 +28,11 @@ def setup_jumpbox(): # The jumpbox is much more configurable than the cloud shel
     vm_params = {'ImageId':'ami-0735c191cf914754d', 'InstanceType':'t2.micro',
                  'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter, 'KeyName':'jumpbox_keypair'}
     x = AWS_core.create('machines', 'jumpbox_VM',**vm_params)
+    addr = AWS_core.create('address', 'jumpbox_address', Domain=='vpc')
+    ec2.associate_address(AllocationId=addr['AllocationId'],InstanceId=x.id)
+
+    cmd = 'ssh -i jumpbox_privatekey.pem ubuntu@'+str(addr['PublicIp'])
+    print('Use this:',cmd)
     # TODO: chmod 600 jump*
-    return x
+    return x, cmd
+#ssh -i jumpbox_privatekey.pem ubuntu@<ip>

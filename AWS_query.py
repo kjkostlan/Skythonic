@@ -13,6 +13,7 @@ def get_resources():
     out['kpairs'] = ec2c.describe_key_pairs()['KeyPairs']
     out['machines'] = ec2c.describe_instances()['Reservations']
     out['rtables'] = ec2c.describe_route_tables()['RouteTables']
+    out['addresses'] = ec2c.describe_addresses()['Addresses']
     machines = []
     for pack in ec2c.describe_instances()['Reservations']:
         machines = machines+pack['Instances']

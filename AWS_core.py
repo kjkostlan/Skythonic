@@ -25,6 +25,8 @@ def create(type, name, **kwargs):
         x = ec2r.create_key_pair(**kwargs)
     elif type in {'instance', 'instances', 'machine', 'machines'}:
         x = ec2r.create_instances(**kwargs)[0]
+    elif type in {'address'}:
+        x = ec2r.allocate_address(**kwargs)
     else:
         raise Exception('Create ob type unrecognized:'+str(type))
     assign_name(x, name)
@@ -63,6 +65,9 @@ def delete(obj_or_id):
         ec2c.delete_route_table(RouteTableId=id)
     elif id.startswith('i-'):
         ec2c.terminate_instances(InstanceIds=[id])
+    elif id.startswith('addr-'):
+        ec2c.disassociate_address(id) # TODO: fix.
+        ec2c.release_address(id)
     else:
         raise Exception('TODO: handle this case:', id)
 
