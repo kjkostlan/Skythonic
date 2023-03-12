@@ -17,7 +17,7 @@ def _joinlines(lines, windows=False):
         out = '\n'+'\n'.join(lines)+'\n'
     return out
 
-def install(windows=False): # Install in linux.
+def install(windows=False):
     lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
 
     boot_txt = install_core.fload('install_core.py')
@@ -33,6 +33,7 @@ def install(windows=False): # Install in linux.
     lines.append('from pastein import *')
 
     clipboard.copy(_joinlines(lines, windows))
+    print("Copied installation to clipboard!")
 
 def awsP(windows=False):
     imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean','AWS.AWS_setup as AWS_setup','AWS.AWS_query as AWS_query', 'boto3']
@@ -69,3 +70,6 @@ def tencentP(windows=False):
 def oracleP(windows=False):
     lines = [] # TODO
     clipboard.copy(_joinlines(lines, windows))
+
+if __name__ == '__main__':
+    install()
