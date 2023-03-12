@@ -1,10 +1,9 @@
-# Install these python tools with a singl Ctrl+V:
-#    import pastein; pastein.install()
+# Install these python tools with a single Ctrl+V:
+#    python; import pastein; pastein.install(windows=False, diff=False/True)
 # Then just paste these into your python-capable cloud shell (or Jumpbox shell, etc).
 # (Python must be version 3)
-# Once you have it installed? Call aws(), then Ctrl+v to get useful commands!
-
-import clipboard #pip install clipboard
+# Once you have it installed? Call awsP(), etc to add useful fns to your Python shell.
+import sys
 import install_core
 
 def _importcode(mnames):
@@ -17,16 +16,20 @@ def _joinlines(lines, windows=False):
         out = '\n'+'\n'.join(lines)+'\n'
     return out
 
-def install(windows=False):
+def install(windows=False, diff=False):
+    import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
+
     lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
 
-    boot_txt = install_core.fload('install_core.py')
-    lines.append('pyboot_txt=r"""'+boot_txt+'"""') # works because no triple """ in boot_txt.
-    lines.append('pyboot_f_obj = open("install_core.py","w")')
-    lines.append('pyboot_f_obj.write(boot_txt)')
-    lines.append('pyboot_f_obj.close()')
+    if not diff: # Diff will only change the differences.
+        lines.append('import sys, os, time, subprocess')
+        boot_txt = install_core.fload('install_core.py')
+        lines.append('pyboot_txt=r"""'+boot_txt+'"""') # works because no triple """ in boot_txt.
+        lines.append('pyboot_f_obj = open("install_core.py","w")')
+        lines.append('pyboot_f_obj.write(pyboot_txt)')
+        lines.append('pyboot_f_obj.close()')
 
-    big_txt = install_core.disk_pickle()
+    big_txt = install_core.disk_pickle(diff)
     lines.append('obj64 = r"""'+big_txt+'"""')
     lines.append('import install_core')
     lines.append('install_core.disk_unpickle(obj64)')
@@ -39,37 +42,37 @@ def awsP(windows=False):
     imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean','AWS.AWS_setup as AWS_setup','AWS.AWS_query as AWS_query', 'boto3']
     lines = _importcode(imports)
     lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", 'who = AWS_query.get_resources']
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def azureP(windows=False):
     lines = [] # TODO
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def googleP(windows=False):
     lines = [] # TODO
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 # All these below are lower prority (<=5%)
 #https://www.statista.com/chart/18819/worldwide-market-share-of-leading-cloud-infrastructure-service-providers/
 def alibabaP(windows=False):
     lines = [] # TODO
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def ibmP(windows=False):
     lines = [] # TODO
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def salesforceP(windows=False):
     lines = [] # TODO
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def tencentP(windows=False):
     lines = [] # TODO
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def oracleP(windows=False):
     lines = [] # TODO
-    clipboard.copy(_joinlines(lines, windows))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
-if __name__ == '__main__':
+if __name__ == '__main__': # For running on your local machine.
     install()

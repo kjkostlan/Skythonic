@@ -6,6 +6,7 @@ try:
     _src_cache
 except:
     _src_cache = {}
+    _last_pickle = {}
 
 ############################# File operations ##################################
 
@@ -90,8 +91,8 @@ if len(_src_cache)==0: # One time on startup to skip updating everything.
 
 ############################# Pickling for a portable string ###################
 
-def disk_pickle():
-    # Pickles all the Python files (with UTF-8)
+def disk_pickle(diff=False):
+    # Pickles all the Python files (with UTF-8), or changed ones with diff.
     nthis_fname = len(abs_path(os.path.dirname(os.path.realpath(__file__)))) #https://stackoverflow.com/questions/5137497/find-the-current-directory-and-files-directory
 
     fname2contents = {}
@@ -100,10 +101,18 @@ def disk_pickle():
             if fname.endswith('.py'):
                 fname1 = abs_path(os.path.join(root, fname))
                 fname2contents[fname1] = fload(fname1)
-    fname2contents1 = dict(zip([k[nthis_fname:] for k in fname2contents.keys()], [x for x in fname2contents.values()]))
-    print('Stuff:', fname2contents1.keys())
+    fname_local2contents = dict(zip([k[nthis_fname:] for k in fname2contents.keys()], [x for x in fname2contents.values()]))
+
+    save_these = {}
+    for k in fname_local2contents.keys():
+        txt = fname_local2contents[k]
+        if _last_pickle.get(k,None) != txt or not diff:
+            save_these[k] = txt
+            _last_pickle[k] = txt
+
+    print('Pickling these:', save_these.keys())
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
-    return codecs.encode(pickle.dumps(fname2contents1), "base64").decode()
+    return codecs.encode(pickle.dumps(save_these), "base64").decode()
 
 def disk_unpickle(txt64, update=True):
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
