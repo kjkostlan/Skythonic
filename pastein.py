@@ -1,10 +1,10 @@
-# Uses Python pickling to generate a cut-and-past installer.
-# (these auto-set the clipboard).
-'''
-import pastein
-pastein.aws()
-'''
-import clipboard #clipboard.copy('foo'); pip install clipboard
+# Install these python tools with a singl Ctrl+V:
+#    import pastein; pastein.aws()
+# Then just paste these into your python-capable cloud shell (or Jumpbox shell, etc).
+#    Note: Windows shells will need to make the '\n' into '\r\n' and be in python to begin with.
+# (Python must be version 3)
+
+import clipboard #pip install clipboard
 import install_core
 
 def _common():
