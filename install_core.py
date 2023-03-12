@@ -1,6 +1,6 @@
 # Core installation and realtime updating features.
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
-import sys, os, codecs
+import io, sys, os, codecs, pickle
 
 try:
     _src_cache
@@ -97,12 +97,13 @@ def disk_pickle():
     fname2contents = {}
     for root, dirs, files in os.walk(".", topdown=False):
         for fname in files:
-            if fname.ends_with('.py'):
-                fname1 = abs_path(os.path.join(root, name))
+            if fname.endswith('.py'):
+                fname1 = abs_path(os.path.join(root, fname))
                 fname2contents[fname1] = fload(fname1)
     fname2contents1 = dict(zip([k[nthis_fname:] for k in fname2contents.keys()], [x for x in fname2contents.values()]))
+    print('Stuff:', fname2contents1.keys())
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
-    return codecs.encode(pickle.dumps(obj), "base64").decode()
+    return codecs.encode(pickle.dumps(fname2contents1), "base64").decode()
 
 def disk_unpickle(txt, update=True):
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
