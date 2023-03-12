@@ -1,6 +1,6 @@
 # Tools to set up some common kinds of resources
 import boto3
-import AWS_core
+import AWS.AWS_core as AWS_core
 def setup_jumpbox(): # The jumpbox is much more configurable than the cloud shell.
     ec2r = boto3.resource('ec2')
     ec2c = boto3.client('ec2')

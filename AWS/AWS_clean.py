@@ -1,5 +1,5 @@
 import boto3, time
-import AWS_query, AWS_core
+import AWS.AWS_query as AWS_query, AWS.AWS_core as AWS_core
 
 def nuclear_clean():
     # DELETE EVERYTHING DANGER!
