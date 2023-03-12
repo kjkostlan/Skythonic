@@ -88,7 +88,7 @@ def update_changed_files():
 if len(_src_cache)==0: # One time on startup to skip updating everything.
     update_src_cache()
 
-################################ Pickling ######################################
+############################# Pickling for a portable string ###################
 
 def disk_pickle():
     # Pickles all the Python files (with UTF-8)
@@ -105,9 +105,9 @@ def disk_pickle():
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
     return codecs.encode(pickle.dumps(fname2contents1), "base64").decode()
 
-def disk_unpickle(txt, update=True):
+def disk_unpickle(txt64, update=True):
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
-    fname2obj = pickle.loads(codecs.decode(pickled.encode(), "base64"))
+    fname2obj = pickle.loads(codecs.decode(txt64.encode(), "base64"))
     for fname, txt in fname2obj.items():
         fsave(fname, txt) # auto-makes encloding folders.
     if update:
