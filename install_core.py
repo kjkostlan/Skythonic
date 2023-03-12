@@ -13,8 +13,8 @@ def abs_path(fname): # Code from Termpylus
     return os.path.abspath(fname).replace('\\','/')
 
 def fsave(fname, txt):
-    os.makedirs(os.path.dirname(fname), exist_ok=True)
-    with io.open(fname, mode=mode, encoding="utf-8") as file_obj:
+    os.makedirs(abs_path(os.path.dirname(fname)), exist_ok=True)
+    with open(fname, mode='w', encoding="utf-8") as file_obj:
         file_obj.write(txt.replace('\r\n','\n'))
 
 def fload(fname): # Code adapted from Termpylus
@@ -80,7 +80,7 @@ def update_src_cache(): # Also returns which modules changed (only modules which
     return changed_modules
 
 def update_changed_files():
-    fnames = modules.module_fnames()
+    fnames = module_fnames()
     changed_modules = update_src_cache()
     for m in changed_modules:
         update_one_module(m, fnames[m])
@@ -109,6 +109,8 @@ def disk_unpickle(txt64, update=True):
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
     fname2obj = pickle.loads(codecs.decode(txt64.encode(), "base64"))
     for fname, txt in fname2obj.items():
+        if fname[0]=='/': # Relative paths need to not start with '/'
+            fname = fname[1:]
         fsave(fname, txt) # auto-makes encloding folders.
     if update:
         update_changed_files()

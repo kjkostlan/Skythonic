@@ -11,7 +11,7 @@ def _common():
     out = ['python3=3','python3','python=3','python'] # In or out of python shell.
 
     boot_txt = install_core.fload('install_core.py')
-    out.append('boot_txt="""'+boot_txt+'"""') # works because no triple """ in boot_txt.
+    out.append('boot_txt=r"""'+boot_txt+'"""') # works because no triple """ in boot_txt.
     out.append('boot_f_obj = open("install_core.py","w")')
     out.append('boot_f_obj.write(boot_txt)')
     out.append('boot_f_obj.close()')
