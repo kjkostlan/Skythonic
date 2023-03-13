@@ -19,3 +19,27 @@ def get_resources():
         machines = machines+pack['Instances']
     out['machines'] = machines
     return out
+
+def _default_custom():
+    dresc = {}; cresc = {}; resc = get_resources()
+    for k in resc.keys():
+        dresc[k] = []; cresc[k] = []
+        for x in resc[k]:
+            if k == 'rtables' and 'Associations' in x and len(x['Associations'])>0 and x['Associations'][0]['Main']:
+                dresc[k].append(x)
+            elif k == 'vpcs' and x['IsDefault']:
+                dresc[k].append(x)
+            elif k == 'sgroups' and x['GroupName']=='default':
+                dresc[k].append(x) # Every VPC makes a default security group.
+            else:
+                cresc[k].append(x)
+    return dresc, cresc
+
+def default_resources():
+    # Resources which are part of the default loadout and really shouldn't be modified too much or deleted.
+    # Some of these are created automatically upon creating custom resources and also get deleted automatically.
+    return _default_custom()[0]
+
+def custom_resources():
+    # The opposite of default_resources()
+    return _default_custom()[1]

@@ -1,6 +1,6 @@
 # Core installation and realtime updating features.
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
-import io, sys, os, codecs, pickle
+import io, sys, os, codecs, pickle, importlib
 
 try:
     _src_cache

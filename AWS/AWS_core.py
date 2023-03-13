@@ -3,7 +3,7 @@ import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 
-def assign_name(x, name):
+def assign_name(x, name): #Most everything can be named.
     x.create_tags(Tags=[{'Key': 'Name', 'Value': name}])
 
 def create(type, name, **kwargs):
@@ -32,22 +32,22 @@ def create(type, name, **kwargs):
     assign_name(x, name)
     return x
 
-def delete(obj_or_id):
-    # Delete an object given an id OR a description dict.
-    #print('On this object:', obj_or_id)
-    if type(obj_or_id) is dict:
-        avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId'} # TODO: more will be needed.
-        kys = obj_or_id.keys()
-        for ky in kys:
-            if ky not in avoid and ky.endswith('Id'):
-                id = obj_or_id[ky]
-                break
-        try:
-            id
-        except:
-            raise Exception('Cant extract the Id')
-    else:
-        id = obj_or_id
+def obj2id(obj_desc): # Gets the ID from the object.
+    if type(obj_desc) is str:
+        return obj_desc
+    id = None
+    avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId'} # TODO: more will be needed.
+    kys = obj_or_id.keys()
+    for ky in kys:
+        if ky not in avoid and ky.endswith('Id'):
+            id = obj_or_id[ky]
+            break
+    if id is None:
+        raise Exception("Can't extract the Id.")
+    return id
+
+def delete(desc_or_id): # Delete an object given an id OR a description dict.
+    id = obj2id(desc_or_id)
     if id.startswith('igw-'):
         attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[id])['InternetGateways'][0]['Attachments']
         for attch in attchs: # Must detach before deletion.
