@@ -81,19 +81,17 @@ def oracleP(windows=False):
 if __name__ == '__main__': # For running on your local machine.
     fresh = 1
     while True:
-        n = len(install_core.pickle_file_dict(fresh<=0))
-        if n>0:
-            if fresh>0:
-                _ = input('Press enter when ready to install '+str(n)+' files total: ')
-            else:
-                _ = input('Press enter when ready to install '+str(n)+' files need to be updated: ')
-            install(False, fresh<=0)
-            x = input('Your clipboard is ready. Press enter to look for file diffs or input "a" to install everything instead of a diff: ')
-            if x.strip().lower()=='a':
-                fresh = 2
-            elif x.strip().lower()=='q':
-                quit()
+        if fresh==0:
+            x = input('Press enter when ready to load changes to clipboard, or "a" load everything').lower().strip()
         else:
-            print('In main loop, no files need to be changed.')
-        time.sleep(2) if fresh<=0 else None
-        fresh = fresh-1
+            x = input('Press enter to load the project into a clipboard.').lower().strip()
+        if x=='q':
+            quit()
+        diff = fresh==0 and x !='a'
+        n = len(install_core.pickle_file_dict(diff))
+        if n==0:
+            print('No files changed')
+        else:
+            install(windows=False, diff=diff)
+            x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter to once you paste it into the cloud shell.')
+        fresh = 0
