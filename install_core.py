@@ -84,9 +84,11 @@ def update_changed_files():
     fnames = module_fnames()
     changed_modules = update_src_cache()
     for m in changed_modules:
+        print('Updating module:', m)
         update_one_module(m, fnames[m])
 
 if len(_src_cache)==0: # One time on startup to skip updating everything.
+    print('One time running.')
     update_src_cache()
 
 ############################# Pickling for a portable string ###################
