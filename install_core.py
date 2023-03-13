@@ -91,8 +91,8 @@ if len(_src_cache)==0: # One time on startup to skip updating everything.
 
 ############################# Pickling for a portable string ###################
 
-def disk_pickle(diff=False):
-    # Pickles all the Python files (with UTF-8), or changed ones with diff.
+def pickle_file_dict(diff=False):
+    # Files that need to be pickled for remote installation.
     nthis_fname = len(abs_path(os.path.dirname(os.path.realpath(__file__)))) #https://stackoverflow.com/questions/5137497/find-the-current-directory-and-files-directory
 
     fname2contents = {}
@@ -108,9 +108,16 @@ def disk_pickle(diff=False):
         txt = fname_local2contents[k]
         if _last_pickle.get(k,None) != txt or not diff:
             save_these[k] = txt
-            _last_pickle[k] = txt
 
+    return save_these
+
+def disk_pickle(diff=False):
+    # Pickles all the Python files (with UTF-8), or changed ones with diff.
+    # Updates the _last_pickle so only use when installing.
+    save_these = pickle_file_dict(diff)
     print('Pickling these:', save_these.keys())
+    for fname, txt in save_these.items():
+        _last_pickle[fname] = txt
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
     return codecs.encode(pickle.dumps(save_these), "base64").decode()
 

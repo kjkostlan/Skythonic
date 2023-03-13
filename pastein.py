@@ -3,7 +3,7 @@
 # Then just paste these into your python-capable cloud shell (or Jumpbox shell, etc).
 # (Python must be version 3)
 # Once you have it installed? Call awsP(), etc to add useful fns to your Python shell.
-import sys
+import sys, time
 import install_core
 
 def _importcode(mnames):
@@ -31,9 +31,13 @@ def install(windows=False, diff=False):
 
     big_txt = install_core.disk_pickle(diff)
     lines.append('obj64 = r"""'+big_txt+'"""')
-    lines.append('import install_core')
-    lines.append('install_core.disk_unpickle(obj64)')
-    lines.append('from pastein import *')
+    if diff:
+        lines.append('install_core.disk_unpickle(obj64)')
+        lines.append('install_core.update_changed_files()')
+    else:
+        lines.append('import install_core')
+        lines.append('install_core.disk_unpickle(obj64)')
+        lines.append('from pastein import *')
 
     clipboard.copy(_joinlines(lines, windows))
     print("Copied installation to clipboard!")
@@ -75,4 +79,21 @@ def oracleP(windows=False):
     exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 if __name__ == '__main__': # For running on your local machine.
-    install()
+    fresh = 1
+    while True:
+        n = len(install_core.pickle_file_dict(fresh<=0))
+        if n>0:
+            if fresh>0:
+                _ = input('Press enter when ready to install '+str(n)+' files total: ')
+            else:
+                _ = input('Press enter when ready to install '+str(n)+' files need to be updated: ')
+            install(False, fresh<=0)
+            x = input('Your clipboard is ready. Press enter to look for file diffs or input "a" to install everything instead of a diff: ')
+            if x.strip().lower()=='a':
+                fresh = 2
+            elif x.strip().lower()=='q':
+                quit()
+        else:
+            print('In main loop, no files need to be changed.')
+        time.sleep(2) if fresh<=0 else None
+        fresh = fresh-1
