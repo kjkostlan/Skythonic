@@ -32,8 +32,7 @@ def install(windows=False, diff=False):
     big_txt = install_core.disk_pickle(diff)
     lines.append('obj64 = r"""'+big_txt+'"""')
     if diff:
-        lines.append('install_core.disk_unpickle(obj64)')
-        lines.append('install_core.update_changed_files()')
+        lines.append('install_core.disk_unpickle(obj64, True)')
     else:
         lines.append('import install_core')
         lines.append('install_core.disk_unpickle(obj64)')
@@ -82,9 +81,9 @@ if __name__ == '__main__': # For running on your local machine.
     fresh = 1
     while True:
         if fresh==0:
-            x = input('Press enter when ready to load changes to clipboard, or "a" load everything').lower().strip()
+            x = input('If you made changes press enter to load them to clipboard; press "a" to load everything').lower().strip()
         else:
-            x = input('Press enter to load the project into a clipboard.').lower().strip()
+            x = input('Press enter to load the project into the clipboard as well as useful imports.').lower().strip()
         if x=='q':
             quit()
         diff = fresh==0 and x !='a'
@@ -93,5 +92,5 @@ if __name__ == '__main__': # For running on your local machine.
             print('No files changed')
         else:
             install(windows=False, diff=diff)
-            x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter to once you paste it into the cloud shell.')
+            x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in.')
         fresh = 0
