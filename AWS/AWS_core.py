@@ -26,7 +26,7 @@ def create(type, name, **kwargs):
     elif type in {'instance', 'instances', 'machine', 'machines'}:
         x = ec2r.create_instances(**kwargs)[0]
     elif type in {'address'}:
-        x = ec2r.allocate_address(**kwargs)
+        x = ec2c.allocate_address(**kwargs)
     else:
         raise Exception('Create ob type unrecognized:'+str(type))
     assign_name(x, name)
@@ -42,8 +42,6 @@ def obj2id(obj_desc): # Gets the ID from the object.
     for kp in priority:
         if kp in obj_desc:
             return obj_desc[kp]
-    if 'eni-' in str(obj_desc):
-        print('eni- bearing:', obj_desc)
     kys = obj_desc.keys()
     for ky in kys:
         if ky not in avoid and ky.endswith('Id'):
@@ -69,7 +67,7 @@ def id2obj(id):
     elif id.startswith('rtb-'):
         return ec2c.describe_route_tables(RouteTableIds=[id])['RouteTables'][0]
     elif id.startswith('i-'):
-        return ec2c.describe_instances(InstanceIds=[id])['Instances'][0]
+        return ec2c.describe_instances(InstanceIds=[id])['Reservations'][0]['Instances'][0]
     elif id.startswith('addr-'):
         return ec2c.describe_addresses(AddressIds=[id])['Addresses'][0]
     else:

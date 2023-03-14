@@ -73,7 +73,7 @@ def what_needs_these(custom_only=False, include_empty=False): # What Ids depend 
                 #        _add(nt['NetworkInterfaceId'], id)
                 if 'SubnetId' in desc:
                     _add(desc['SubnetId'], id)
-                if 'VpcId':
+                if 'VpcId' in desc:
                     _add(desc['VpcId'], id)
             if k=='rtables' and 'Associations' in desc:
                 for asc in desc['Associations']:
