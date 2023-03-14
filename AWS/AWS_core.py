@@ -39,8 +39,8 @@ def id2obj(id):
         return ec2c.describe_route_tables(RouteTableIds=[id])['RouteTables'][0]
     elif id.startswith('i-'):
         return ec2c.describe_instances(InstanceIds=[id])['Reservations'][0]['Instances'][0]
-    elif id.startswith('addr-') or id.startswith('eipalloc-'):
-        return ec2c.describe_addresses(AddressIds=[id])['Addresses'][0]
+    elif id.startswith('eipalloc-'):
+        return ec2c.describe_addresses(AllocationIds=[id])['Addresses'][0]
     else:
         raise Exception('TODO: handle this case:', id)
 
@@ -53,34 +53,40 @@ def assign_name(x, name): #Most everything can be named.
     else:
         x.create_tags(Tags=[{'Key': 'Name', 'Value': name}])
 
-def create(type, name, **kwargs):
-    type = type.lower()
-    if type in {'vpc'}: # Python only intruduced the switch statement in 3.10
+def create(rtype, name, **kwargs):
+    # Returns the ID, which is commonly introduced into other objects.
+    rtype = rtype.lower()
+    if rtype in {'vpc'}: # Python only intruduced the switch statement in 3.10
         x = ec2r.create_vpc(**kwargs)
         x.wait_until_available()
-    elif type in {'webgate','internetgateway'}:
+    elif rtype in {'webgate','internetgateway'}:
         x = ec2r.create_internet_gateway(**kwargs)
-    elif type in {'rtable','routetable'}:
+    elif rtype in {'rtable','routetable'}:
         x = ec2r.create_route_table(**kwargs)
-    elif type in {'subnet'}:
+    elif rtype in {'subnet'}:
         x = ec2r.create_subnet(**kwargs)
-    elif type in {'route'}:
+    elif rtype in {'route'}:
         x = ec2r.create_route(**kwargs)
-    elif type in {'securitygroup', 'sgroup'}:
+    elif rtype in {'securitygroup', 'sgroup'}:
         x = ec2r.create_security_group(**kwargs)
-    elif type in {'keypair'}:
+    elif rtype in {'keypair'}:
         x = ec2r.create_key_pair(**kwargs)
-    elif type in {'instance', 'instances', 'machine', 'machines'}:
+    elif rtype in {'instance', 'instances', 'machine', 'machines'}:
         x = ec2r.create_instances(**kwargs)[0]
-    elif type in {'address'}:
+    elif rtype in {'address'}:
         x = ec2c.allocate_address(**kwargs)
     else:
-        raise Exception('Create ob type unrecognized: '+type)
+        raise Exception('Create ob type unrecognized: '+rtype)
     #if type not in {'address'}:
     assign_name(x, name)
     #elif name is not None and name != '':
     #    print('Warning: Cannot tag a name to: '+type)
-    return x
+    if kwargs.get('raw_object', False): # Generally discouraged to work with.
+        return x
+    elif type(x) is dict:
+        return obj2id(x)
+    else:
+        return x.id
 
 def delete(desc_or_id): # Delete an object given an id OR a description dict.
     id = obj2id(desc_or_id)
@@ -101,8 +107,6 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
         ec2c.delete_route_table(RouteTableId=id)
     elif id.startswith('i-'):
         ec2c.terminate_instances(InstanceIds=[id])
-    elif id.startswith('addr-'): # Does this case exist?
-        raise Exception('TODO')
     elif id.startswith('eipalloc-'): # These are addresses
         desc = id2obj(desc_or_id)
         ec2c.release_address(AllocationId=desc['AllocationId'])
