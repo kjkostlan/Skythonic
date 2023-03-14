@@ -6,9 +6,13 @@ import AWS.AWS_query as AWS_query, AWS.AWS_core as AWS_core
 def dep_check_delete(x, xdeps):
     # Deletes x with a dep check for instances (and anything else that "lingers").
     desc = AWS_core.id2obj(x)
+    redo_deletes = True # False may save time but risks
+
     if '__deleted__' in str(desc):
-        return 0 # Already deleted, but still hanging out.
-    print('Deleting this object:', x)
+        if not redo_deletes:
+            return 0 # Already deleted, but still hanging out.
+    else:
+        print('Deleting this object:', x)
     id = AWS_core.obj2id(x)
     ec2c.create_tags(Tags=[{'Key': '__deleted__', 'Value': 'True'}],Resources=[id])
     def lingers(_id):
@@ -31,7 +35,7 @@ def dep_check_delete(x, xdeps):
                 raise Exception('DependencyViolation error on:', id, 'despite no reported lingering dependencies.')
         else: #Other kinds of errors.
             raise e
-    return 1
+    return int('__deleted__' not in str(desc))
 
 def nuclear_clean(): # DELETE EVERYTHING DANGER!
     confirm = input('Warning: will delete EVERTYTHING in the WHOLE ACCOUNT (not just the lab) leaving just the default resources; input y to proceed')
