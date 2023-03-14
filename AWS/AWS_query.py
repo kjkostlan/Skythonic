@@ -1,6 +1,7 @@
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
+import AWS.AWS_core as AWS_core
 
 def get_resources():
     # The most common resources.
@@ -43,3 +44,40 @@ def default_resources():
 def custom_resources():
     # The opposite of default_resources()
     return _default_custom()[1]
+
+def what_needs_these(custom_only=False, include_empty=False): # What Ids depend on us for each Id. Depend on means can't delete.
+    # (It is messy to use the deps map).
+    x = custom_resources() if custom_only else get_resources()
+    out = {}
+    def _add(a, b):
+        if a not in out:
+            out[a] = []
+        out[a].append(b)
+
+    for k in x.keys():
+        for desc in x[k]:
+            id = AWS_core.obj2id(desc)
+            if include_empty and id not in out:
+                out[id] = []
+            if k=='sgroups' and 'VpcId' in desc:
+                _add(desc['VpcId'], id)
+            if k=='webgates' and 'Attachments' in desc:
+                for atth in desc['Attachments']:
+                    _add(atth['VpcId'], id) # one way or two way need?
+            if k=='machines': # A big one!
+                if 'SecurityGroups' in desc:
+                    for sg in desc['SecurityGroups']:
+                        _add(sg['GroupId'], id)
+                #if 'NetworkInterfaces' in desc: #It makes one of these automatically, not sure the delete rules on this.
+                #    for nt in desc['NetworkInterfaces']:
+                #        _add(nt['NetworkInterfaceId'], id)
+                if 'SubnetId' in desc:
+                    _add(desc['SubnetId'], id)
+                if 'VpcId':
+                    _add(desc['VpcId'], id)
+            if k=='rtables' and 'Associations' in desc:
+                for asc in desc['Associations']:
+                    if 'SubnetId' in asc:
+                        #_add(asc['SubnetId'], id)
+                        _add(id, asc['SubnetId'])
+    return out
