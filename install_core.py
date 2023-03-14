@@ -70,25 +70,24 @@ def update_one_module(modulename, fname):
     except Exception as e:
         print('Updating FAILURE:', modulename, repr(e))
 
-def update_src_cache(): # Also returns which modules changed (only modules which were already loaded).
+def update_src_cache(): # Also returns which modules changed (only modules which were already in module_fnames).
     mod_f = module_fnames()
     changed_modules = [] # Must be already loaded.
     for k, v in mod_f.items():
         txt = fload(v)
-        if k in _src_cache and _src_cache[k] != txt:
+        if _src_cache.get(k,None) != txt:
             changed_modules.append(k)
-        _src_cache[k] = txt
+            _src_cache[k] = txt
     return changed_modules
 
 def update_changed_files():
     fnames = module_fnames()
     changed_modules = update_src_cache()
     for m in changed_modules:
-        print('Updating module:', m)
         update_one_module(m, fnames[m])
 
 if len(_src_cache)==0: # One time on startup to skip updating everything.
-    print('One time running.')
+    print('Initializing _src_cache.')
     update_src_cache()
 
 ############################# Pickling for a portable string ###################
@@ -129,6 +128,6 @@ def disk_unpickle(txt64, update=True):
     for fname, txt in fname2obj.items():
         if fname[0]=='/': # Relative paths need to not start with '/'
             fname = fname[1:]
-        fsave(fname, txt) # auto-makes encloding folders.
+        fsave(fname, txt) # auto-makes enclosing folders.
     if update:
         update_changed_files()
