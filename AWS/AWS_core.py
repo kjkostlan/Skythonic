@@ -1,7 +1,24 @@
 # Core AWS functions.
+import time
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
+
+def loop_try(f, f_catch, msg, delay=4):
+    # Waiting for something? Keep looping untill it succedes!
+    # f_catch() False means throw the error; f_catch should be very selective.
+    while True:
+        try:
+            return f()
+        except Exception as e:
+            if f_catch(e):
+                if callable(msg):
+                    print(msg())
+                else:
+                    print(msg)
+            else:
+                raise e
+        time.sleep(delay)
 
 def obj2id(obj_desc): # Gets the ID from the object.
     #(This is a bit tricky since some descs have multible ids)

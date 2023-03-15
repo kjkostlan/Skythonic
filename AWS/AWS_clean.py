@@ -23,27 +23,18 @@ def dep_check_delete(id_or_obj, xdeps):
         print('Deleting this object:', id)
 
     AWS_core.add_tags(id_or_obj, {'__deleted__':True})
-    try:
-        AWS_core.delete(id)
-    except Exception as e:
+
+    lingers = lambda: list(filter(has_been_deleted, xdeps))
+    f_try = lambda: AWS_core.delete(id)
+    def f_catch(e):
         if 'DependencyViolation' in repr(e):
-            who_lingers = list(filter(has_been_deleted, xdeps))
-            if len(who_lingers)>0: # Stuff that may take a while to delete.
-                while True:
-                    print('Lingering dependencies on:', id, ':', who_lingers, 'Will retry in a loop untill the deletion works.')
-                    try:
-                        AWS_core.delete(id_or_obj)
-                        break
-                    except Exception as e:
-                        if 'DependencyViolation' in repr(e):
-                            pass
-                        else:
-                            raise e
-                    time.sleep(4)
-            else: #Oops the dependency list isn't complete enough.
+            if len(lingers())==0:
                 raise Exception('DependencyViolation error on:', id, 'despite no reported lingering dependencies.')
-        else: #Other kinds of errors.
-            raise e
+            return True
+        return False
+    msg = lambda: 'Lingering dependencies on:'+ id+':'+str(lingers())+'Will retry in a loop untill the deletion works.'
+    AWS_core.loop_try(f_try, f_catch, msg, delay=4)
+
     return int('__deleted__' not in str(desc))
 
 def _nuclear_clean(only_skythonic_stuff=True): # DELETE EVERYTHING DANGER!

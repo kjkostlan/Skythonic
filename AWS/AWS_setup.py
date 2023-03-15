@@ -32,18 +32,17 @@ def setup_jumpbox(): # The jumpbox is much more configurable than the cloud shel
 
     vm_params = {'ImageId':'ami-0735c191cf914754d', 'InstanceType':'t2.micro',
                  'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter, 'KeyName':'jumpbox_keypair'}
-    x_id = AWS_core.create('machines', 'jumpbox_VM',**vm_params)
+    f_try = lambda: AWS_core.create('machines', 'jumpbox_VM',**vm_params)
+    f_catch = lambda: 'is not supported in your requested Availability Zone' in f_try
+    msg = 'Random not supported AZ errors, retrying'
+    x_id = AWS_core.loop_try(f_try, f_catch, msg, delay=4)
+
     addr = AWS_core.id2obj(AWS_core.create('address', 'jumpbox_address', Domain='vpc'))
-    while True:
-        try:
-            ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=x_id)
-            break
-        except Exception as e:
-            if "The pending instance" in repr(e) and "is not in a valid state" in repr(e):
-                print('Waiting for machine:'+x_id+' to start')
-                time.sleep(4)
-            else: # Only catch the specific exception.
-                raise e
+    f_try = lambda: ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=x_id)
+    f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
+    msg = 'Waiting for machine:'+x_id+' to start'
+    AWS_core.loop_try(f_try, f_catch, msg, delay=4)
+
     cmd = 'ssh -i jumpbox_privatekey.pem ubuntu@'+str(addr['PublicIp'])
     print('Use this to ssh:',cmd)
     # TODO: chmod 600 jump*
