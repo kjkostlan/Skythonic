@@ -45,6 +45,8 @@ def setup_jumpbox(): # The jumpbox is much more configurable than the cloud shel
 
     cmd = 'ssh -i jumpbox_privatekey.pem ubuntu@'+str(addr['PublicIp'])
     print('Use this to ssh:',cmd)
-    # TODO: chmod 600 jump*
+    # Also need to: chmod 600 jumpbox_privatekey.pem
     return x_id, cmd
+    # The authenticity can't be established; this is normal.
+    # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
 #ssh -i jumpbox_privatekey.pem ubuntu@<ip>
