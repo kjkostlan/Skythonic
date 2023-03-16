@@ -33,14 +33,17 @@ def setup_jumpbox(basename='jumpbox'): # The jumpbox is much more configurable t
     f_catch = lambda: 'is not supported in your requested Availability Zone' in f_try
     msg = 'Random not supported AZ errors, retrying'
     x_id = AWS_core.loop_try(f_try, f_catch, msg, delay=4)
-    vm.danger_key(x_id, key_material)
-    print('Machine set up and key saved')
+    pem_fname = vm.danger_key(x_id, ky_name, key_pair['key_material'], include_direct_pem_file=True)
+    print('Machine set up and key saved to:', pem_fname)
 
     addr = AWS_core.id2obj(AWS_core.create('address', basename+'_address', Domain='vpc'))
     f_try = lambda: ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=x_id)
     f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
     msg = 'Waiting for machine:'+x_id+' to start'
     AWS_core.loop_try(f_try, f_catch, msg, delay=4)
+
+    # TODO:
+    #https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
 
     #cmd = 'ssh -i jumpbox_privatekey.pem ubuntu@'+str(addr['PublicIp'])
     #print('Use this to ssh:',cmd)

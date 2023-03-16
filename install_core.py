@@ -2,33 +2,6 @@
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
 import io, sys, os, codecs, pickle, importlib
 
-############################# File operations ##################################
-
-def abs_path(fname): # Code from Termpylus
-    return os.path.abspath(fname).replace('\\','/')
-
-def rel_path(fname):
-    a = abs_path(fname)
-    ph = abs_path(os.path.dirname(os.path.realpath(__file__))) #https://stackoverflow.com/questions/5137497/find-the-current-directory-and-files-directory
-    nthis_folder = len(ph)
-    return ('./'+a[nthis_folder:]).replace('//','/')
-
-def fsave(fname, txt):
-    os.makedirs(abs_path(os.path.dirname(fname)), exist_ok=True)
-    with open(fname, mode='w', encoding="utf-8") as file_obj:
-        file_obj.write(txt.replace('\r\n','\n'))
-
-def fload(fname): # Code adapted from Termpylus
-    if not os.path.isfile(fname):
-        return None
-    with io.open(fname, mode="r", encoding="utf-8") as file_obj:
-        try:
-            x = file_obj.read()
-        except UnicodeDecodeError:
-            raise Exception('No UTF-8 for:', fname)
-        out = x.replace('\r\n','\n')
-        return out
-
 ########################### Modules and updating ###############################
 
 def clear_pycache(filename): # Code adapted from Termpylus.
@@ -60,8 +33,8 @@ def src_cache_from_disk():
     for root, dirs, files in os.walk(".", topdown=False): # TODO: exclude .git and __pycache__ if the time cost becomes significant.
         for fname in files:
             if fname.endswith('.py'):
-                fnamer = rel_path(os.path.join(root, fname))
-                fname2contents[fnamer] = fload(fnamer)
+                fnamer = file_io.rel_path(os.path.join(root, fname))
+                fname2contents[fnamer] = file_io.fload(fnamer)
     return fname2contents
 
 def src_cache_diff():
@@ -129,7 +102,7 @@ def disk_unpickle(txt64, update_us=True, update_vms=True):
             except:
                 print('Warning: file deletion during update failed for',fname)
         else:
-            fsave(fname, txt) # auto-makes enclosing folders.
+            file_io.fsave(fname, txt) # auto-makes enclosing folders.
     if update_us:
         update_python_interp()
     if update_vms:
