@@ -16,7 +16,7 @@ def _joinlines(lines, windows=False):
         out = '\n'+'\n'.join(lines)+'\n'
     return out
 
-def install(windows=False, diff=False):
+def install_txt(windows=False, diff=False):
     import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
 
     lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
@@ -35,11 +35,10 @@ def install(windows=False, diff=False):
         lines.append('install_core.disk_unpickle(obj64, True)')
     else:
         lines.append('import install_core')
-        lines.append('install_core.disk_unpickle(obj64)')
+        lines.append('install_core.disk_unpickle(obj64, True, True)')
         lines.append('from pastein import *')
 
-    clipboard.copy(_joinlines(lines, windows))
-    print("Copied installation to clipboard!")
+    return _joinlines(lines, windows)
 
 def awsP(windows=False):
     imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean','AWS.AWS_setup as AWS_setup','AWS.AWS_query as AWS_query', 'boto3']
@@ -78,19 +77,17 @@ def oracleP(windows=False):
     exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 if __name__ == '__main__': # For running on your local machine.
-    fresh = 1
     while True:
-        if fresh==0:
-            x = input('If you made changes press enter to load them to clipboard; press "a" to load everything').lower().strip()
-        else:
-            x = input('Press enter to load the project into the clipboard as well as useful imports.').lower().strip()
+        x = input('Press enter to copt the diffs into the clipboard (or press a to load the entire project):').lower().strip()
         if x=='q':
             quit()
-        diff = fresh==0 and x !='a'
-        n = len(install_core.pickle_file_dict(diff))
+        diff = x !='a'
+        n = len(install_core.src_cache_diff() if diff else install_core.src_cache_from_disk())
         if n==0:
             print('No files changed')
         else:
-            install(windows=False, diff=diff)
-            x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in.')
-        fresh = 0
+            txt = install_txt(windows=False, diff=diff)
+            clipboard.copy(txt)
+            x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in or c to cancel').lower().strip()
+            if x != 'c':
+                install_core.update_src_cache()

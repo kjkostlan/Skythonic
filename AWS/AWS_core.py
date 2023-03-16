@@ -1,6 +1,7 @@
 # Core AWS functions.
 import time
 import boto3
+import vm
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 
@@ -88,6 +89,11 @@ def add_tags(desc_or_id, d):
 
 def create(rtype, name, **kwargs):
     # Returns the ID, which is commonly introduced into other objects.
+    raw = False # needed for keypairs.
+    if kwargs.get('raw_object', False): # Generally discouraged to work with.
+        raw = True
+    if 'raw_object' in kwargs:
+        del kwargs['raw_object']
     rtype = rtype.lower()
     if rtype in {'vpc'}: # Python only intruduced the switch statement in 3.10
         x = ec2r.create_vpc(**kwargs)
@@ -111,7 +117,7 @@ def create(rtype, name, **kwargs):
     else:
         raise Exception('Create ob type unrecognized: '+rtype)
     add_tags(x, {'Name':name, '__Skythonic__':True})
-    if kwargs.get('raw_object', False): # Generally discouraged to work with.
+    if raw: # Generally discouraged to work with, except for keypairs.
         return x
     elif type(x) is dict:
         return obj2id(x)

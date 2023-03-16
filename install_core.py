@@ -2,16 +2,16 @@
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
 import io, sys, os, codecs, pickle, importlib
 
-try:
-    _src_cache
-except:
-    _src_cache = {}
-    _last_pickle = {}
-
 ############################# File operations ##################################
 
 def abs_path(fname): # Code from Termpylus
     return os.path.abspath(fname).replace('\\','/')
+
+def rel_path(fname):
+    a = abs_path(fname)
+    ph = abs_path(os.path.dirname(os.path.realpath(__file__))) #https://stackoverflow.com/questions/5137497/find-the-current-directory-and-files-directory
+    nthis_folder = len(ph)
+    return ('./'+a[nthis_folder:]).replace('//','/')
 
 def fsave(fname, txt):
     os.makedirs(abs_path(os.path.dirname(fname)), exist_ok=True)
@@ -30,23 +30,6 @@ def fload(fname): # Code adapted from Termpylus
         return out
 
 ########################### Modules and updating ###############################
-
-def module_file(m): # Code from Termpylus
-    if type(m) is str:
-        m = sys.modules[m]
-    if '__file__' not in m.__dict__ or m.__file__ is None:
-        return None
-    return abs_path(m.__file__)
-
-def module_fnames(): # Code adapted from Termpylus
-    # Only modules inside our folder.
-    out = {}
-    dir_path = abs_path(os.path.dirname(os.path.realpath(__file__)))
-    for k in sys.modules.keys():
-        fname = module_file(sys.modules[k])
-        if fname is not None and dir_path in fname:
-            out[k] = fname.replace('\\','/')
-    return out
 
 def clear_pycache(filename): # Code adapted from Termpylus.
     # This can intefere with updating.
@@ -70,64 +53,86 @@ def update_one_module(modulename, fname):
     except Exception as e:
         print('Updating FAILURE:', modulename, repr(e))
 
-def update_src_cache(): # Also returns which modules changed (only modules which were already in module_fnames).
-    mod_f = module_fnames()
-    changed_modules = [] # Must be already loaded.
-    for k, v in mod_f.items():
-        txt = fload(v)
-        if _src_cache.get(k,None) != txt:
-            changed_modules.append(k)
-            _src_cache[k] = txt
-    return changed_modules
+def src_cache_from_disk():
+    # Gets the src cache from the disk, filename => contetns with local cache.
+    # Looks for all python files within this directory.
+    fname2contents = {}
+    for root, dirs, files in os.walk(".", topdown=False): # TODO: exclude .git and __pycache__ if the time cost becomes significant.
+        for fname in files:
+            if fname.endswith('.py'):
+                fnamer = rel_path(os.path.join(root, fname))
+                fname2contents[fnamer] = fload(fnamer)
+    return fname2contents
 
-def update_changed_files():
+def src_cache_diff():
+    # Changed file local path => contents; deleted files map to None
+    current = src_cache_from_disk(); past = _src_cache
+    out = {}
+    for k in past.keys()
+        if k not in current:
+            out[k] = None
+    for k in current.keys():
+        if current[k] != past.get(k,None):
+            out[k] = current[k]
+    return out
+
+def update_src_cache(): # Also returns which modules changed (only modules which were already in module_fnames).
+    sc1 = src_cache_from_disk()
+    for k in _src_cache.keys():
+        del _src_cache[k]
+    for k in sc1.keys():
+        _src_cache[k] = sc1[k]
+
+def module_fnames: # code from Termpylus.
+    # Only modules that have files, and dict values are module names.
+    # Also can restrict to user-only files.
+    out = {}
+    for k in sys.modules.keys():
+        fname = sys.modules[k].__dict__.get('__file__', None)
+        if fname is not None:
+            out[k] = fname.replace('\\','/')
+    return out
+
+def update_python_interp():
     fnames = module_fnames()
-    changed_modules = update_src_cache()
+    delta = src_cache_diff()
+    changed_modules = TODO # get modulename from filename with __file__
     for m in changed_modules:
         update_one_module(m, fnames[m])
 
-if len(_src_cache)==0: # One time on startup to skip updating everything.
-    print('Initializing _src_cache.')
+try:
+    _src_cache
+except:
+    print('Initializing _src_cache (app startup).')
+    _src_cache = {}
     update_src_cache()
 
 ############################# Pickling for a portable string ###################
 
-def pickle_file_dict(diff=False):
-    # Files that need to be pickled for remote installation.
-    nthis_fname = len(abs_path(os.path.dirname(os.path.realpath(__file__)))) #https://stackoverflow.com/questions/5137497/find-the-current-directory-and-files-directory
-
-    fname2contents = {}
-    for root, dirs, files in os.walk(".", topdown=False):
-        for fname in files:
-            if fname.endswith('.py'):
-                fname1 = abs_path(os.path.join(root, fname))
-                fname2contents[fname1] = fload(fname1)
-    fname_local2contents = dict(zip([k[nthis_fname:] for k in fname2contents.keys()], [x for x in fname2contents.values()]))
-
-    save_these = {}
-    for k in fname_local2contents.keys():
-        txt = fname_local2contents[k]
-        if _last_pickle.get(k,None) != txt or not diff:
-            save_these[k] = txt
-
-    return save_these
-
 def disk_pickle(diff=False):
     # Pickles all the Python files (with UTF-8), or changed ones with diff.
     # Updates the _last_pickle so only use when installing.
-    save_these = pickle_file_dict(diff)
+    cache = src_cache_diff() if diff else src_cache_from_disk()
     print('Pickling these:', save_these.keys())
-    for fname, txt in save_these.items():
-        _last_pickle[fname] = txt
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
     return codecs.encode(pickle.dumps(save_these), "base64").decode()
 
-def disk_unpickle(txt64, update=True):
+def disk_unpickle(txt64, update_us=True, update_vms=True):
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
     fname2obj = pickle.loads(codecs.decode(txt64.encode(), "base64"))
     for fname, txt in fname2obj.items():
         if fname[0]=='/': # Relative paths need to not start with '/'
             fname = fname[1:]
-        fsave(fname, txt) # auto-makes enclosing folders.
-    if update:
-        update_changed_files()
+        if txt is None:
+            try:
+                os.remove(fname)
+            except:
+                print('Warning: file deletion during update failed for',fname)
+        else:
+            fsave(fname, txt) # auto-makes enclosing folders.
+    if update_us:
+        update_python_interp()
+    if update_vms:
+        import vm # delay the import because install_core has to run as standalone for fresh installs.
+        vm.update_vms_skythonic(src_cache_diff())
+    update_src_cache() # Update this also.
