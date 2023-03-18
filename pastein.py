@@ -4,7 +4,7 @@
 # (Python must be version 3)
 # Once you have it installed? Call awsP(), etc to add useful fns to your Python shell.
 import sys, time
-import install_core
+import install_core, file_io
 
 def _importcode(mnames):
     return ['import '+mname for mname in mnames]
@@ -17,17 +17,17 @@ def _joinlines(lines, windows=False):
     return out
 
 def install_txt(windows=False, diff=False):
-    import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
 
     lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
 
     if not diff: # Diff will only change the differences.
         lines.append('import sys, os, time, subprocess')
-        boot_txt = install_core.fload('install_core.py')
-        lines.append('pyboot_txt=r"""'+boot_txt+'"""') # works because no triple """ in boot_txt.
-        lines.append('pyboot_f_obj = open("install_core.py","w")')
-        lines.append('pyboot_f_obj.write(pyboot_txt)')
-        lines.append('pyboot_f_obj.close()')
+        for py_file in ['install_core.py', 'file_io.py']:
+            boot_txt = file_io.fload(py_file)
+            lines.append('pyboot_txt=r"""'+boot_txt+'"""') # works because no triple """ in boot_txt.
+            lines.append('pyboot_f_obj = open("'+py_file+'","w")')
+            lines.append('pyboot_f_obj.write(pyboot_txt)')
+            lines.append('pyboot_f_obj.close()')
 
     big_txt = install_core.disk_pickle(diff)
     lines.append('obj64 = r"""'+big_txt+'"""')
@@ -77,8 +77,10 @@ def oracleP(windows=False):
     exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 if __name__ == '__main__': # For running on your local machine.
+    import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
+
     while True:
-        x = input('Press enter to copt the diffs into the clipboard (or press a to load the entire project):').lower().strip()
+        x = input('Press enter to copy the diffs into the clipboard (or press a to load the entire project):').lower().strip()
         if x=='q':
             quit()
         diff = x !='a'
@@ -87,7 +89,8 @@ if __name__ == '__main__': # For running on your local machine.
             print('No files changed')
         else:
             txt = install_txt(windows=False, diff=diff)
+            new_cache = install_core.src_cache_from_disk()
             clipboard.copy(txt)
             x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in or c to cancel').lower().strip()
             if x != 'c':
-                install_core.update_src_cache()
+                install_core.update_src_cache(new_cache)

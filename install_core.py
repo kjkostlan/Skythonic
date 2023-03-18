@@ -1,6 +1,7 @@
 # Core installation and realtime updating features.
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
 import io, sys, os, codecs, pickle, importlib
+import file_io
 
 ########################### Modules and updating ###############################
 
@@ -41,7 +42,7 @@ def src_cache_diff():
     # Changed file local path => contents; deleted files map to None
     current = src_cache_from_disk(); past = _src_cache
     out = {}
-    for k in past.keys()
+    for k in past.keys():
         if k not in current:
             out[k] = None
     for k in current.keys():
@@ -49,14 +50,15 @@ def src_cache_diff():
             out[k] = current[k]
     return out
 
-def update_src_cache(): # Also returns which modules changed (only modules which were already in module_fnames).
-    sc1 = src_cache_from_disk()
-    for k in _src_cache.keys():
+def update_src_cache(new_cache=None): # Also returns which modules changed (only modules which were already in module_fnames).
+    if new_cache is None:
+        new_cache = src_cache_from_disk()
+    for k in list(_src_cache.keys()):
         del _src_cache[k]
-    for k in sc1.keys():
-        _src_cache[k] = sc1[k]
+    for k in new_cache.keys():
+        _src_cache[k] = new_cache[k]
 
-def module_fnames: # code from Termpylus.
+def module_fnames(): # code from Termpylus.
     # Only modules that have files, and dict values are module names.
     # Also can restrict to user-only files.
     out = {}
@@ -68,17 +70,20 @@ def module_fnames: # code from Termpylus.
 
 def update_python_interp():
     fnames = module_fnames()
+    inv_fnames = dict(zip(fnames.values(), fnames.keys()))
     delta = src_cache_diff()
-    changed_modules = TODO # get modulename from filename with __file__
-    for m in changed_modules:
-        update_one_module(m, fnames[m])
+    for fname in delta.keys():
+        if fname in inv_fnames:
+            mname = inv_fnames[fname]
+            if mname in sys.modules:
+                update_one_module(inv_fnames[fname], fname)
 
 try:
     _src_cache
 except:
-    print('Initializing _src_cache (app startup).')
     _src_cache = {}
     update_src_cache()
+    print(f'Initalized _src_cache with {len(_src_cache)} files (app startup).')
 
 ############################# Pickling for a portable string ###################
 
@@ -86,9 +91,9 @@ def disk_pickle(diff=False):
     # Pickles all the Python files (with UTF-8), or changed ones with diff.
     # Updates the _last_pickle so only use when installing.
     cache = src_cache_diff() if diff else src_cache_from_disk()
-    print('Pickling these:', save_these.keys())
+    print('Pickling these:', cache.keys())
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
-    return codecs.encode(pickle.dumps(save_these), "base64").decode()
+    return codecs.encode(pickle.dumps(cache), "base64").decode()
 
 def disk_unpickle(txt64, update_us=True, update_vms=True):
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3

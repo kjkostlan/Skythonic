@@ -1,5 +1,5 @@
 # File IO functions.
-import os
+import os, io
 
 def abs_path(fname): # Code from Termpylus
     return os.path.abspath(fname).replace('\\','/')
