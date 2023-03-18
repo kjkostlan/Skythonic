@@ -16,11 +16,11 @@ def _joinlines(lines, windows=False):
         out = '\n'+'\n'.join(lines)+'\n'
     return out
 
-def install_txt(windows=False, diff=False):
+def install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True):
 
     lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
 
-    if not diff: # Diff will only change the differences.
+    if pyboot_txt: # Diff will only change the differences.
         lines.append('import sys, os, time, subprocess')
         for py_file in ['install_core.py', 'file_io.py']:
             boot_txt = file_io.fload(py_file)
@@ -31,11 +31,10 @@ def install_txt(windows=False, diff=False):
 
     big_txt = install_core.disk_pickle(diff)
     lines.append('obj64 = r"""'+big_txt+'"""')
-    if diff:
-        lines.append('install_core.disk_unpickle(obj64, True)')
-    else:
+    if import_txt:
         lines.append('import install_core')
-        lines.append('install_core.disk_unpickle(obj64, True, True)')
+    lines.append('install_core.disk_unpickle(obj64, True)')
+    if import_txt:
         lines.append('from pastein import *')
 
     return _joinlines(lines, windows)
@@ -80,7 +79,8 @@ if __name__ == '__main__': # For running on your local machine.
     import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
 
     while True:
-        x = input('Press enter to copy the diffs into the clipboard (or press a to load the entire project):').lower().strip()
+        #install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True)
+        x = input('Enter to load diffs into clipboard (a to not diff, q to quit)').lower().strip()
         if x=='q':
             quit()
         diff = x !='a'
@@ -88,7 +88,7 @@ if __name__ == '__main__': # For running on your local machine.
         if n==0:
             print('No files changed')
         else:
-            txt = install_txt(windows=False, diff=diff)
+            txt = install_txt(windows=False, diff=diff, pyboot_txt=(not diff), import_txt=True)
             new_cache = install_core.src_cache_from_disk()
             clipboard.copy(txt)
             x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in or c to cancel').lower().strip()

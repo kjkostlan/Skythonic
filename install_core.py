@@ -68,10 +68,10 @@ def module_fnames(): # code from Termpylus.
             out[k] = fname.replace('\\','/')
     return out
 
-def update_python_interp():
+def update_python_interp(delta):
+    # Keep the Python intrepretator up to date
     fnames = module_fnames()
-    inv_fnames = dict(zip(fnames.values(), fnames.keys()))
-    delta = src_cache_diff()
+    inv_fnames = dict(zip([file_io.rel_path(v) for v in fnames.values()], fnames.keys()))
     for fname in delta.keys():
         if fname in inv_fnames:
             mname = inv_fnames[fname]
@@ -97,6 +97,7 @@ def disk_pickle(diff=False):
 
 def disk_unpickle(txt64, update_us=True, update_vms=True):
     #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
+
     fname2obj = pickle.loads(codecs.decode(txt64.encode(), "base64"))
     for fname, txt in fname2obj.items():
         if fname[0]=='/': # Relative paths need to not start with '/'
@@ -108,9 +109,11 @@ def disk_unpickle(txt64, update_us=True, update_vms=True):
                 print('Warning: file deletion during update failed for',fname)
         else:
             file_io.fsave(fname, txt) # auto-makes enclosing folders.
+    print('Saved to these files:', fname2obj.keys())
+    delta = src_cache_diff()
     if update_us:
-        update_python_interp()
+        update_python_interp(delta)
     if update_vms:
         import vm # delay the import because install_core has to run as standalone for fresh installs.
-        vm.update_vms_skythonic(src_cache_diff())
+        vm.update_vms_skythonic(delta)
     update_src_cache() # Update this also.

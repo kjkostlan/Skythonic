@@ -4,11 +4,15 @@ import os, io
 def abs_path(fname): # Code from Termpylus
     return os.path.abspath(fname).replace('\\','/')
 
-def rel_path(fname):
+def rel_path(fname): # Will default to abs_path if not inside this folders (less messy than double dots).
     a = abs_path(fname)
     ph = abs_path(os.path.dirname(os.path.realpath(__file__))) #https://stackoverflow.com/questions/5137497/find-the-current-directory-and-files-directory
     nthis_folder = len(ph)
-    return ('./'+a[nthis_folder:]).replace('//','/')
+
+    if ph in a:
+        return ('./'+a[nthis_folder:]).replace('//','/')
+    else:
+        return a
 
 def fsave(fname, txt): # Txt files only!
     os.makedirs(abs_path(os.path.dirname(fname)), exist_ok=True)
