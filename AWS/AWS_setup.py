@@ -23,7 +23,7 @@ def setup_jumpbox(basename='jumpbox'): # The jumpbox is much more configurable t
     inst_networkinter = [{'SubnetId': subnet_id, 'DeviceIndex': 0, 'PrivateIpAddress': '10.100.250.100',
                           'AssociatePublicIpAddress': False, 'Groups': [securitygroup_id]}]
     ky_name = basename+'_keypair'
-    key_pair = AWS_core.create(KeyName=ky_name, raw_object=True) #key_pair = AWS_core.create('keypair', 'Private Public', KeyName='ec2-keypair')#ec2.create_key_pair(KeyName='ec2-keypair')
+    key_pair = AWS_core.create('keypair', KeyName=ky_name, raw_object=True) #key_pair = AWS_core.create('keypair', 'Private Public', KeyName='ec2-keypair')#ec2.create_key_pair(KeyName='ec2-keypair')
     print('key set up')
 
     # TODO: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html
@@ -42,13 +42,8 @@ def setup_jumpbox(basename='jumpbox'): # The jumpbox is much more configurable t
     msg = 'Waiting for machine:'+x_id+' to start'
     AWS_core.loop_try(f_try, f_catch, msg, delay=4)
 
-    # TODO:
-    #https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
+    cmd = vm.ssh_cmd(x_id, addr, True)
+    print('Use this to ssh:',cmd)
+    return x_id, cmd
 
-    #cmd = 'ssh -i jumpbox_privatekey.pem ubuntu@'+str(addr['PublicIp'])
-    #print('Use this to ssh:',cmd)
-    # Also need to: chmod 600 jumpbox_privatekey.pem
-    return x_id
-    # The authenticity can't be established; this is normal.
-    # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
 #ssh -i jumpbox_privatekey.pem ubuntu@<ip>
