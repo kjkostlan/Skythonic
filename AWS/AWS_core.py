@@ -162,8 +162,19 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
     else:
         raise Exception('TODO: handle this case:', id)
 
-# TODO: have a generalize "assocate" function.
-def assoc_gateway(vpc, gate_id):
-    vpc.attach_internet_gateway(InternetGatewayId=gate_id)
-def assoc_subnet(vpc, subnet_id):
-    vpc.associate_with_subnet(SubnetId=subnet_id)
+def assoc(A, B, _swapped=False):
+    # Association, attachment, etc. Order does not matter unless both directions have meaning.
+    A = obj2id(A); B = obj2id(B)
+    if A.startswith('vpc-') and B.startswith('igw-'):
+        ec2c.attach_internet_gateway(VpcId=A, InternetGatewayId=B)
+    elif A.startswith('subnet-') and B.startswith('rtb-'):
+        ec2c.associate_route_table(SubnetId=A, RouteTableId=B)
+    elif A.startswith('eipalloc-') and B.startswith('i-'):
+        ec2c.associate_address(AllocationId=A,InstanceId=B)
+    elif _swapped:
+        raise Exception(f"Don't know how to attach {A} to {B}; this may require updating this function.")
+    else:
+        assoc(B, A, True)
+
+# def assoc_subnet(vpc, subnet_id): # TODO: how to do this with id?
+#    vpc.associate_with_subnet(SubnetId=subnet_id)
