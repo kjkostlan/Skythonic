@@ -5,7 +5,13 @@ import AWS.AWS_query as AWS_query, AWS.AWS_core as AWS_core
 
 def has_been_deleted(id):
     # To clean up stuff that lingers.
-    desc = AWS_core.id2obj(id, False)
+    try:
+        desc = AWS_core.id2obj(id, False)
+    except Exception as e:
+        if 'list index out of range' in repr(e): # Already deleted.
+            return True # When it ceases to exist this error can be raised.
+        else:
+            raise e
     if desc is None:
         return False
     tags = AWS_core.tag_dict(desc)
@@ -13,6 +19,7 @@ def has_been_deleted(id):
 
 def dep_check_delete(id_or_obj, xdeps):
     # Deletes x with a dep check for instances (and anything else that "lingers").
+    # Retruns True if it deleted an object for the first time and that exists.
     desc = AWS_core.id2obj(id_or_obj); id = AWS_core.obj2id(id_or_obj)
     redo_deletes = True # False may save time but risks skipping over stuff.
 
@@ -22,7 +29,14 @@ def dep_check_delete(id_or_obj, xdeps):
     else:
         print('Deleting this object:', id)
 
-    AWS_core.add_tags(id_or_obj, {'__deleted__':True})
+    try:
+        AWS_core.add_tags(id_or_obj, {'__deleted__':True})
+    except Exception as e:
+        if 'does not exist' in repr(e):
+            print(f'Tried to delete {id} but object doesnt exist; no need to delete.')
+            return 0
+        else:
+            raise e
 
     lingers = lambda: list(filter(has_been_deleted, xdeps))
     f_try = lambda: AWS_core.delete(id)
@@ -32,7 +46,7 @@ def dep_check_delete(id_or_obj, xdeps):
                 raise Exception('DependencyViolation error on:', id, 'despite no reported lingering dependencies.')
             return True
         return False
-    msg = lambda: 'Lingering dependencies on:'+ id+':'+str(lingers())+'Will retry in a loop untill the deletion works.'
+    msg = lambda: 'Lingering dependencies on '+ id+': '+str(lingers())+' Will retry in a loop untill the deletion works.'
     AWS_core.loop_try(f_try, f_catch, msg, delay=4)
 
     return int('__deleted__' not in str(desc))

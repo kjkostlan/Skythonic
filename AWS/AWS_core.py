@@ -7,7 +7,6 @@ ec2c = boto3.client('ec2')
 
 def loop_try(f, f_catch, msg, delay=4):
     # Waiting for something? Keep looping untill it succedes!
-    # f_catch() False means throw the error; f_catch should be very selective.
     while True:
         try:
             return f()
@@ -78,6 +77,7 @@ def tag_dict(desc_or_id):
     return out
 
 def add_tags(desc_or_id, d):
+    #botocore.exceptions.ClientError: An error occurred (InvalidInstanceID.NotFound) when calling the CreateTags operation: The instance ID 'i-0fb7af9af917db726' does not exist
     tags = [{'Key':str(k),'Value':str(d[k])} for k in d.keys()]
     if type(desc_or_id) is dict:
         id = obj2id(desc_or_id)
@@ -109,6 +109,7 @@ def create(rtype, name, **kwargs):
     elif rtype in {'securitygroup', 'sgroup'}:
         x = ec2r.create_security_group(**kwargs)
     elif rtype in {'keypair'}:
+        kwargs['KeyName'] = name # one of those irregularities in their API.
         x = ec2r.create_key_pair(**kwargs)
     elif rtype in {'instance', 'instances', 'machine', 'machines'}:
         x = ec2r.create_instances(**kwargs)[0]
@@ -116,7 +117,11 @@ def create(rtype, name, **kwargs):
         x = ec2c.allocate_address(**kwargs)
     else:
         raise Exception('Create ob type unrecognized: '+rtype)
-    add_tags(x, {'Name':name, '__Skythonic__':True})
+    if rtype not in {'keypair'}:
+        f = lambda: add_tags(x, {'Name':name, '__Skythonic__':True})
+        f_catch = lambda e: 'does not exist' in repr(e).lower()
+        msg = 'created a resource of type '+rtype+' waiting for it to start existing.'
+        loop_try(f, f_catch, msg, delay=4)
     if raw: # Generally discouraged to work with, except for keypairs.
         return x
     elif type(x) is dict:

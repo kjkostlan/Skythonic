@@ -85,12 +85,13 @@ if __name__ == '__main__': # For running on your local machine.
             quit()
         diff = x !='a'
         n = len(install_core.src_cache_diff() if diff else install_core.src_cache_from_disk())
+
+        txt = install_txt(windows=False, diff=diff, pyboot_txt=(not diff), import_txt=True)
+        new_cache = install_core.src_cache_from_disk()
+        clipboard.copy(txt)
         if n==0:
-            print('No files changed')
+            x = input('No pickled files, but press enter to paste in the import code to jumpstart your Python work.').lower().strip()
         else:
-            txt = install_txt(windows=False, diff=diff, pyboot_txt=(not diff), import_txt=True)
-            new_cache = install_core.src_cache_from_disk()
-            clipboard.copy(txt)
             x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in or c to cancel').lower().strip()
-            if x != 'c':
-                install_core.update_src_cache(new_cache)
+        if x != 'c':
+            install_core.update_src_cache(new_cache)

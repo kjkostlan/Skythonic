@@ -4,30 +4,35 @@
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
 import pickle, os
 import file_io
+import AWS.AWS_core as AWS_core
 
 pickle_fname = './softwareDump/vm_info.pypickle'
 
 def _pickleload():
-    if os.path.exists(pickle_fname):
-        return pickle.load(pickle_fname)
-    return {'PEM_private_keys':{}}
+    if os.path.exists(pickle_fname) and os.path.getsize(pickle_fname) > 0:
+        with open(pickle_fname,'rb') as f:
+            return pickle.load(f)
+    return {'instance_id2key_name':{}, 'instance_id2key_material':{}}
 def _picklesave(x):
-    return pickle.dump(pickle_fname, x)
+    if not os.path.exists('./softwareDump/'):
+        os.makedirs('./softwareDump/')
+    with open(pickle_fname,'wb') as f:
+        return pickle.dump(x, f)
 
 def update_vms_skythonic(diff):
     # Updates all skythonic files on VMs.
     # Diff can be a partial or full update.
     print('Warning: TODO: implement VM updates.')
 
-def _save_ky1(fname, material):
-    file_io.save(fname, key_material)
-    os.chmod(fname, '600')
+def _save_ky1(fname, key_material):
+    file_io.fsave(fname, key_material)
+    os.chmod(fname, 0o600) # Octal (not hex and not a string!)
 
 def danger_key(instance_id, ky_name, key_material):
     # Saves the private key's material unencrypted. Be careful out there!
     x = _pickleload()
-    x['PEM_private_keys'][instance_id] = key_material
-    x['key_names'][instance_id] = ky_name
+    x['instance_id2key_material'][instance_id] = key_material
+    x['instance_id2key_name'][instance_id] = ky_name
     _picklesave(x)
     fname = './softwareDump/'+ky_name+'.pem'
     _save_ky1(fname, key_material)
@@ -35,18 +40,18 @@ def danger_key(instance_id, ky_name, key_material):
 
 def ssh_cmd(instance_id, address, join=False):
     # Get the ssh cmd to use the key to enter instance_id.
-    # Will get a warning: The authenticity can't be established; this warning is normal.
+    # Will get a warning: The authenticity can't be established; this warning is normal and is safe to yes if it is a VM you create in your account.
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
     # Python or os.system?
     # https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
 
-    public_ip = AWS_core.id2obj(addr)['PublicIp']
+    public_ip = AWS_core.id2obj(address)['PublicIp']
     x = _pickleload()
     #cmd = 'ssh -i jumpbox_privatekey.pem ubuntu@'+str(addr['PublicIp'])
-    ky_name = x['key_names'][instance_id]
+    ky_name = x['instance_id2key_name'][instance_id]
     out = ['ssh', '-i', './softwareDump/'+ky_name+'.pem', 'ubuntu@'+str(public_ip)]
     if join:
         out[2] = '"'+out[2]+'"'
-        return out
+        return ' '.join(out)
     else:
         return out
