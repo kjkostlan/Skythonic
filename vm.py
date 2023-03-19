@@ -8,11 +8,18 @@ import AWS.AWS_core as AWS_core
 
 pickle_fname = './softwareDump/vm_info.pypickle'
 
+def _fillkeys(x):
+    kys = ['instance_id2key_name', 'key_name2key_material']
+    for k in kys:
+        if k not in x:
+            x[k] = {}
+    return x
+
 def _pickleload():
     if os.path.exists(pickle_fname) and os.path.getsize(pickle_fname) > 0:
         with open(pickle_fname,'rb') as f:
-            return pickle.load(f)
-    return {'instance_id2key_name':{}, 'instance_id2key_material':{}}
+            return _fillkeys(pickle.load(f))
+    return _fillkeys({})
 def _picklesave(x):
     if not os.path.exists('./softwareDump/'):
         os.makedirs('./softwareDump/')
@@ -31,8 +38,8 @@ def _save_ky1(fname, key_material):
 def danger_key(instance_id, ky_name, key_material):
     # Saves the private key's material unencrypted. Be careful out there!
     x = _pickleload()
-    x['instance_id2key_material'][instance_id] = key_material
     x['instance_id2key_name'][instance_id] = ky_name
+    x['key_name2key_material'][ky_name] = key_material
     _picklesave(x)
     fname = './softwareDump/'+ky_name+'.pem'
     _save_ky1(fname, key_material)
@@ -44,10 +51,8 @@ def ssh_cmd(instance_id, address, join=False):
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
     # Python or os.system?
     # https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
-
     public_ip = AWS_core.id2obj(address)['PublicIp']
     x = _pickleload()
-    #cmd = 'ssh -i jumpbox_privatekey.pem ubuntu@'+str(addr['PublicIp'])
     ky_name = x['instance_id2key_name'][instance_id]
     out = ['ssh', '-i', './softwareDump/'+ky_name+'.pem', 'ubuntu@'+str(public_ip)]
     if join:
