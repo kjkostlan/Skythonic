@@ -3,7 +3,7 @@ ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 import AWS.AWS_core as AWS_core
 
-def get_resources():
+def get_resources(ids=False):
     # The most common resources.
     out = {}
     out['vpcs'] = ec2c.describe_vpcs()['Vpcs']
@@ -19,6 +19,9 @@ def get_resources():
     for pack in ec2c.describe_instances()['Reservations']:
         machines = machines+pack['Instances']
     out['machines'] = machines
+    if ids:
+        for k, v in out.items():
+            out[k] = AWS_core.obj2id(k)
     return out
 
 def _default_custom():

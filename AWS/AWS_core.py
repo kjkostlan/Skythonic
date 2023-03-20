@@ -115,6 +115,9 @@ def create(rtype, name, **kwargs):
         x = ec2r.create_instances(**kwargs)[0]
     elif rtype in {'address'}:
         x = ec2c.allocate_address(**kwargs)
+    elif rtype in {'vpcpeer','vpcpeering'}:
+        x = ec2c.create_vpc_peering_connection(**kwargs)
+        ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=x['VpcPeeringConnection']['VpcPeeringConnectionId'])
     else:
         raise Exception('Create ob type unrecognized: '+rtype)
     if rtype not in {'keypair'}:
@@ -171,6 +174,9 @@ def assoc(A, B, _swapped=False):
         ec2c.associate_route_table(SubnetId=A, RouteTableId=B)
     elif A.startswith('eipalloc-') and B.startswith('i-'):
         ec2c.associate_address(AllocationId=A,InstanceId=B)
+    #elif A.startswith('vpc-') and B.startswith('vpc-'): # This is more like creating a new resource
+    #    peering = ec2c.create_vpc_peering_connection(VpcId=A, PeerVpcId=B)
+    #    ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=peering['VpcPeeringConnection']['VpcPeeringConnectionId'])
     elif _swapped:
         raise Exception(f"Don't know how to attach {A} to {B}; this may require updating this function.")
     else:

@@ -35,14 +35,16 @@ def _save_ky1(fname, key_material):
     file_io.fsave(fname, key_material)
     os.chmod(fname, 0o600) # Octal (not hex and not a string!)
 
-def danger_key(instance_id, ky_name, key_material):
-    # Saves the private key's material unencrypted. Be careful out there!
+def danger_key(instance_id, ky_name, key_material=None):
+    # Stores which instance uses what key.
+    # Saves the private key's material unencrypted (if not None). Be careful out there!
     x = _pickleload()
     x['instance_id2key_name'][instance_id] = ky_name
     x['key_name2key_material'][ky_name] = key_material
     _picklesave(x)
     fname = './softwareDump/'+ky_name+'.pem'
-    _save_ky1(fname, key_material)
+    if key_material is not None:
+        _save_ky1(fname, key_material)
     return fname
 
 def ssh_cmd(instance_id, address, join=False):
