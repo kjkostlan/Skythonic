@@ -2,6 +2,8 @@
 import time
 import boto3
 import vm
+import AWS.AWS_format as AWS_format
+import AWS.AWS_query as AWS_query
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 
@@ -20,67 +22,11 @@ def loop_try(f, f_catch, msg, delay=4):
                 raise e
         time.sleep(delay)
 
-def obj2id(obj_desc): # Gets the ID from the object.
-    #(This is a bit tricky since some descs have multible ids)
-    if type(obj_desc) is str:
-        return obj_desc
-    id = None
-    avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId'} # TODO: more will be needed.
-    priority = ['InstanceId', 'RouteTableId', 'SubnetId'] # Order matters here for objects with multible Id's.
-    for kp in priority:
-        if kp in obj_desc:
-            return obj_desc[kp]
-    kys = obj_desc.keys()
-    for ky in kys:
-        if ky not in avoid and ky.endswith('Id'):
-            id = obj_desc[ky]
-            break
-    if id is None:
-        raise Exception("Can't extract the Id.")
-    return id
-
-def id2obj(id, assert_exist=True):
-    if type(id) is dict:
-        return id # Already a description.
-    try:
-        if id.startswith('igw-'):
-            return ec2c.describe_internet_gateways(InternetGatewayIds=[id])['InternetGateways'][0]
-        elif id.startswith('vpc-'):
-            return ec2c.describe_vpcs(VpcIds=[id])['Vpcs'][0]
-        elif id.startswith('subnet-'):
-            return ec2c.describe_subnets(SubnetIds=[id])['Subnets'][0]
-        elif id.startswith('key-'): #Only needs the name.
-            return ec2c.describe_key_pairs(KeyPairIds=[id])['KeyPairs'][0]
-        elif id.startswith('sg-'):
-            return ec2c.describe_security_groups(GroupIds=[id])['SecurityGroups'][0]
-        elif id.startswith('rtb-'):
-            return ec2c.describe_route_tables(RouteTableIds=[id])['RouteTables'][0]
-        elif id.startswith('i-'):
-            return ec2c.describe_instances(InstanceIds=[id])['Reservations'][0]['Instances'][0]
-        elif id.startswith('eipalloc-'):
-            return ec2c.describe_addresses(AllocationIds=[id])['Addresses'][0]
-        else:
-            raise Exception('TODO: handle this case:', id)
-    except Exception as e:
-        if not assert_exist and 'does not exist' in repr(e):
-            return None
-        else:
-            raise e
-
-def tag_dict(desc_or_id):
-    # The clumsy Key Value pairs => a Python dict.
-    desc = id2obj(desc_or_id)
-    tags = desc.get('Tags',[])
-    out = {}
-    for tag in tags:
-        out[tag['Key']] = tag['Value']
-    return out
-
 def add_tags(desc_or_id, d):
     #botocore.exceptions.ClientError: An error occurred (InvalidInstanceID.NotFound) when calling the CreateTags operation: The instance ID 'i-0fb7af9af917db726' does not exist
     tags = [{'Key':str(k),'Value':str(d[k])} for k in d.keys()]
     if type(desc_or_id) is dict:
-        id = obj2id(desc_or_id)
+        id = AWS_format.obj2id(desc_or_id)
         ec2c.create_tags(Tags=tags,Resources=[id])
     elif type(desc_or_id) is str:
         ec2c.create_tags(Tags=tags,Resources=[desc_or_id])
@@ -116,8 +62,8 @@ def create(rtype, name, **kwargs):
     elif rtype in {'address'}:
         x = ec2c.allocate_address(**kwargs)
     elif rtype in {'vpcpeer','vpcpeering'}:
-        x = ec2c.create_vpc_peering_connection(**kwargs)
-        ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=x['VpcPeeringConnection']['VpcPeeringConnectionId'])
+        x = ec2c.create_vpc_peering_connection(**kwargs)['VpcPeeringConnection']
+        ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=x['VpcPeeringConnectionId'])
     else:
         raise Exception('Create ob type unrecognized: '+rtype)
     if rtype not in {'keypair'}:
@@ -128,12 +74,31 @@ def create(rtype, name, **kwargs):
     if raw: # Generally discouraged to work with, except for keypairs.
         return x
     elif type(x) is dict:
-        return obj2id(x)
+        return AWS_format.obj2id(x)
     else:
         return x.id
 
+def create_once(rtype, name, printouts, **kwargs):
+    # Creates a resource unless the name is already there.
+    # Returns the created or already-there resource.
+    r0 = AWS_query.get_by_name(rtype, name)
+    do_print = printouts is not None and printouts is not False
+    if printouts is True:
+        printouts = ''
+    elif type(printouts) is str:
+        printouts = printouts+' '
+    if r0 is not None:
+        if do_print:
+            print(str(printouts)+'already exists:', rtype, name)
+        return AWS_format.obj2id(r0)
+    else:
+        out = create(rtype, name, **kwargs)
+        if do_print:
+            print(str(printouts)+'creating:', rtype, name)
+        return out
+
 def delete(desc_or_id): # Delete an object given an id OR a description dict.
-    id = obj2id(desc_or_id)
+    id = AWS_format.obj2id(desc_or_id)
     if id.startswith('igw-'):
         attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[id])['InternetGateways'][0]['Attachments']
         for attch in attchs: # Must detach before deletion. TODO: detaching for everything.
@@ -152,7 +117,7 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
     elif id.startswith('i-'):
         ec2c.terminate_instances(InstanceIds=[id])
     elif id.startswith('eipalloc-'): # These are addresses
-        desc = id2obj(desc_or_id)
+        desc = AWS_format.id2obj(desc_or_id)
         ec2c.release_address(AllocationId=desc['AllocationId'])
         #if 'PublicIp' in desc:
         #    ec2c.disassociate_address(PublicIp=desc['PublicIp'])
@@ -162,14 +127,22 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
         #    ec2c.release_address(AssociationId=desc['AssociationId'])
         #else:
         #    raise Exception('Cannot hook onto: '+str(desc))
+    elif id.startswith('pcx-'):
+        ec2c.delete_vpc_peering_connection(VpcPeeringConnectionId=id)
     else:
         raise Exception('TODO: handle this case:', id)
 
 def assoc(A, B, _swapped=False):
     # Association, attachment, etc. Order does not matter unless both directions have meaning.
-    A = obj2id(A); B = obj2id(B)
+    # Idempotent (like Clojures assoc).
+    A = AWS_format.obj2id(A); B = AWS_format.obj2id(B)
     if A.startswith('vpc-') and B.startswith('igw-'):
-        ec2c.attach_internet_gateway(VpcId=A, InternetGatewayId=B)
+        try:
+            ec2c.attach_internet_gateway(VpcId=A, InternetGatewayId=B)
+        except Exception as e:
+            if 'is already attached' in repr(e) and A in repr(e) and B in repr(e):
+                return
+            raise e
     elif A.startswith('subnet-') and B.startswith('rtb-'):
         ec2c.associate_route_table(SubnetId=A, RouteTableId=B)
     elif A.startswith('eipalloc-') and B.startswith('i-'):

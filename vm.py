@@ -4,7 +4,7 @@
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
 import pickle, os
 import file_io
-import AWS.AWS_core as AWS_core
+import AWS.AWS_format as AWS_format
 
 pickle_fname = './softwareDump/vm_info.pypickle'
 
@@ -53,7 +53,10 @@ def ssh_cmd(instance_id, address, join=False):
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
     # Python or os.system?
     # https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
-    public_ip = AWS_core.id2obj(address)['PublicIp']
+    address = AWS_format.id2obj(address)
+    public_ip = address.get('PublicIp',None)
+    if public_ip is None:
+        public_ip = address['PublicIpAddress']
     x = _pickleload()
     ky_name = x['instance_id2key_name'][instance_id]
     out = ['ssh', '-i', './softwareDump/'+ky_name+'.pem', 'ubuntu@'+str(public_ip)]
