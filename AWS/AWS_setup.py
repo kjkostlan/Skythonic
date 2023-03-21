@@ -83,14 +83,13 @@ def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='S
     webgate_id = AWS_core.create_once('webgate', new_vpc_name+'_gate', True)
     AWS_core.assoc(vpc_id, webgate_id)
 
-    vpcs = AWS_query.get_resources()['vpcs']
-    old_vpc_id = None
-    for vpc in vpcs:
-        if AWS_format.tag_dict(vpc).get('Name', None)==old_vpcname:
-            old_vpc_id = AWS_format.obj2id(vpc)
-    if old_vpc_id is None:
-        raise Exception('Cannot find this vpc name:'+old_vpcname)
+    def _nameget(ty, name):
+        x = AWS_query.get_by_name(ty, name)
+        if x is None:
+            raise Exception(f'Cannot find this name: {x}; make sure setup_jumpbox has been called.')
+        return AWS_format.obj2id(x)
 
+    old_vpc_id = _nameget('vpc', old_vpcname)
     routetable_id = AWS_core.create_once('rtable', 'Spoke1_rtable', True, VpcId=vpc_id)
 
     basenames = ['web', 'app', 'db']
@@ -122,14 +121,24 @@ def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='S
     #The gateway is the VpcPeeringConnectionId
     peering_id = AWS_core.create_once('vpcpeer', '3lev_peer', True, VpcId=old_vpc_id, PeerVpcId=vpc_id) #AWS_core.assoc(old_vpc_id, vpc_id)
     rtables = ec2c.describe_route_tables()['RouteTables']
+
     old_rtable_id = None
-    for rt in rtables:
+    for rt in rtables: #TODO: better query fns.
         if old_vpc_id in str(rt):
             old_rtable_id = AWS_format.obj2id(rt)
     if old_rtable_id is None:
         raise Exception("cant find VPC peering old route table.")
-    ec2c.create_route(RouteTableId=old_rtable_id, DestinationCidrBlock='10.101.0.0/16',GatewayId=peering_id)
-    ec2c.create_route(RouteTableId=routetable_id, DestinationCidrBlock='10.100.0.0/16',GatewayId=peering_id)
+
+    try:
+        ec2c.create_route(RouteTableId=old_rtable_id, DestinationCidrBlock='10.101.0.0/16',GatewayId=peering_id)
+    except Exception as e:
+        if 'already exists' not in repr(e):
+            raise e
+    try:
+        ec2c.create_route(RouteTableId=routetable_id, DestinationCidrBlock='10.100.0.0/16',GatewayId=peering_id)
+    except Exception as e:
+        if 'already exists' not in repr(e):
+            raise e
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
     return cmds
