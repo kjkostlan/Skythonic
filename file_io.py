@@ -1,5 +1,5 @@
 # File IO functions.
-import os, io
+import os, io, pickle, codecs
 
 def abs_path(fname): # Code from Termpylus
     return os.path.abspath(fname).replace('\\','/')
@@ -29,3 +29,29 @@ def fload(fname): # Code adapted from Termpylus
             raise Exception('No UTF-8 for:', fname)
         out = x.replace('\r\n','\n')
         return out
+
+def pickle64(x):
+    # Pickles all the Python files (with UTF-8), or changed ones with diff.
+    # Updates the _last_pickle so only use when installing.
+    #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
+    return codecs.encode(pickle.dumps(x), "base64").decode()
+
+def disk_unpickle64(txt64):
+    # Saves to the disk, deletes None files. Pickle can handle lcoal paths.
+    fname2obj = pickle.loads(codecs.decode(txt64.encode(), "base64"))
+    for fname, txt in fname2obj.items():
+        if txt is None:
+            try:
+                os.remove(fname)
+            except:
+                print('Warning: file deletion during update failed for',fname)
+        else:
+            file_io.fsave(fname, txt) # auto-makes enclosing folders.
+    print('Saved to these files:', fname2obj.keys())
+    delta = src_cache_diff()
+    if update_us:
+        update_python_interp(delta)
+    if update_vms:
+        import vm # delay the import because install_core has to run as standalone for fresh installs.
+        vm.update_vms_skythonic(delta)
+    update_src_cache() # Update this also.

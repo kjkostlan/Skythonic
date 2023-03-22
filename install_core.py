@@ -1,6 +1,6 @@
 # Core installation and realtime updating features.
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
-import io, sys, os, codecs, pickle, importlib
+import io, sys, os, importlib
 import file_io
 
 ########################### Modules and updating ###############################
@@ -90,26 +90,16 @@ except:
 def disk_pickle(diff=False):
     # Pickles all the Python files (with UTF-8), or changed ones with diff.
     # Updates the _last_pickle so only use when installing.
-    cache = src_cache_diff() if diff else src_cache_from_disk()
-    print('Pickling these:', cache.keys())
-    #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
-    return codecs.encode(pickle.dumps(cache), "base64").decode()
+    delta = src_cache_diff() if diff else src_cache_from_disk()
+    for k in delta.keys():
+        if k[0]=='/':
+            raise Exception('Absolute-like filepath in the src cache (bug in this file).')
+    print('Pickling these:', delta.keys())
+    return file_io.pickle64(delta)
 
-def disk_unpickle(txt64, update_us=True, update_vms=True):
-    #https://stackoverflow.com/questions/30469575/how-to-pickle-and-unpickle-to-portable-string-in-python-3
+def unpickle_and_update(txt64, update_us=True, update_vms=True):
+    file_io.disk_unpickle64(txt64)
 
-    fname2obj = pickle.loads(codecs.decode(txt64.encode(), "base64"))
-    for fname, txt in fname2obj.items():
-        if fname[0]=='/': # Relative paths need to not start with '/'
-            fname = fname[1:]
-        if txt is None:
-            try:
-                os.remove(fname)
-            except:
-                print('Warning: file deletion during update failed for',fname)
-        else:
-            file_io.fsave(fname, txt) # auto-makes enclosing folders.
-    print('Saved to these files:', fname2obj.keys())
     delta = src_cache_diff()
     if update_us:
         update_python_interp(delta)

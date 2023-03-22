@@ -33,7 +33,7 @@ def install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True):
     lines.append('obj64 = r"""'+big_txt+'"""')
     if import_txt:
         lines.append('import install_core')
-    lines.append('install_core.disk_unpickle(obj64, True)')
+    lines.append('install_core.unpickle_and_update(obj64, True, True)')
     if import_txt:
         lines.append('from pastein import *')
 
