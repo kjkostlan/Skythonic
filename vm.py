@@ -65,3 +65,52 @@ def ssh_cmd(instance_id, address, join=False):
         return ' '.join(out)
     else:
         return out
+
+## General idea of how to run code on jump boxes:
+# Paramiko is built in.
+#https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
+def send_cmds(instance_id, bash_cmds, timeout=8):
+    # Valid bach cmds:
+    #  A string (will be split by newline)
+    #  A list/tuple (each entry is one line).
+    #  A function of (output, err). Use None to end the ssh fn.
+    print('Sending commands to:', instance_id)
+    # TODO: Gets the outputs.
+    #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
+    #https://stackoverflow.com/questions/59252659/ssh-using-python-via-private-keys
+    #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
+    #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
+    username = 'ubuntu'; hostname = TODO #username@hostname
+
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Bieng permissive is quite a bit easier...
+    client.connect(hostname, username=username, key_filename=key_filename, timeout=timeout)#password=passphrase)
+
+    outputs = []; errors = []
+
+    if type(bash_cmds) is str:
+        bash_cmds = '\n'.split(bash_cmds.strip())
+    if not callable(bash_cmds):
+        x = bash_cmds+[None]
+        bash_cmds = lambda out, err: next(x)
+
+    last_out = None; last_err = None
+    outputs = []; errs = []
+    while True:
+        the_cmd = bash_cmds(last_out, last_err)
+        if the_cmd is None or the_cmd is False:
+            break
+        _stdin, _stdout, _stderr = client.exec_command(the_cmd)
+        last_out = _stdout.read().decode()
+        last_err = _strerr.read().decode()
+        outputs.append(last_out); errs.append(last_err)
+
+    client.close()
+    return outputs, errs
+
+def send_files(instance_id, file2contents):
+    # None contents are deleted.
+    print('Sending files to a machine.')
+    # Step1: Open ssh client.
+    TODO
+    # Step2: Send.

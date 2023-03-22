@@ -107,3 +107,34 @@ def unpickle_and_update(txt64, update_us=True, update_vms=True):
         import vm # delay the import because install_core has to run as standalone for fresh installs.
         vm.update_vms_skythonic(delta)
     update_src_cache() # Update this also.
+
+############################ Bootstrapping an installation #####################
+
+def joinlines(lines, windows=False):
+    if windows:
+        out = '\r\n'+'\r\n'.join(lines)+'\r\n'
+    else:
+        out = '\n'+'\n'.join(lines)+'\n'
+    return out
+
+def bootstrap_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True):
+    lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
+
+    if pyboot_txt: # Diff will only change the differences.
+        lines.append('import sys, os, time, subprocess')
+        for py_file in ['install_core.py', 'file_io.py']:
+            boot_txt = file_io.fload(py_file)
+            lines.append('pyboot_txt=r"""'+boot_txt+'"""') # works because no triple """ in boot_txt.
+            lines.append('pyboot_f_obj = open("'+py_file+'","w")')
+            lines.append('pyboot_f_obj.write(pyboot_txt)')
+            lines.append('pyboot_f_obj.close()')
+
+    big_txt = disk_pickle(diff)
+    lines.append('obj64 = r"""'+big_txt+'"""')
+    if import_txt:
+        lines.append('import install_core')
+    lines.append('install_core.unpickle_and_update(obj64, True, True)')
+    if import_txt:
+        lines.append('from pastein import *')
+
+    return joinlines(lines, windows)
