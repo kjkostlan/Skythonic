@@ -86,7 +86,7 @@ def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='S
     def _nameget(ty, name):
         x = AWS_query.get_by_name(ty, name)
         if x is None:
-            raise Exception(f'Cannot find this name: {x}; make sure setup_jumpbox has been called.')
+            raise Exception(f'Cannot find this name: {name}; make sure setup_jumpbox has been called.')
         return AWS_format.obj2id(x)
 
     old_vpc_id = _nameget('vpc', old_vpcname)

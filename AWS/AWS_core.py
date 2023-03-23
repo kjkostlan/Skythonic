@@ -101,7 +101,7 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
     id = AWS_format.obj2id(desc_or_id)
     if id.startswith('igw-'):
         attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[id])['InternetGateways'][0]['Attachments']
-        for attch in attchs: # Must detach before deletion. TODO: detaching for everything.
+        for attch in attchs: # Not sure if this is needed.
             ec2c.detach_internet_gateway(InternetGatewayId=id, VpcId=attch['VpcId'])
         ec2c.delete_internet_gateway(InternetGatewayId=id)
     elif id.startswith('vpc-'):
@@ -115,18 +115,25 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
     elif id.startswith('rtb-'):
         ec2c.delete_route_table(RouteTableId=id)
     elif id.startswith('i-'):
+        stop_first = True
+        if stop_first:
+            try:
+                ec2c.stop_instances(InstanceIds=[id], Force=True)
+            except Exception as e:
+                if 'IncorrectInstanceState' not in str(e): # Common source of noise.
+                    print('Warning: error on force-stop instance, will still proceed to terminate:',str(e))
         ec2c.terminate_instances(InstanceIds=[id])
     elif id.startswith('eipalloc-'): # These are addresses
         desc = AWS_format.id2obj(desc_or_id)
+        f = ec2c.disassociate_address; kwargs = {}
+        for k in ['AssociationId', 'PublicIp']:
+            if k in desc:
+                kwargs[k] = desc[k]
+        try:
+            ec2c.disassociate_address(**kwargs)
+        except Exception as e:
+            print('Warning: cannot dissoc address, will still proceed with deletion anyway; err=', str(e))
         ec2c.release_address(AllocationId=desc['AllocationId'])
-        #if 'PublicIp' in desc:
-        #    ec2c.disassociate_address(PublicIp=desc['PublicIp'])
-        #    ec2c.release_address(PublicIp=desc['PublicIp'])
-        #elif 'AssociationId' in desc:
-        #    ec2c.disassociate_address(AssociationId=desc['AssociationId'])
-        #    ec2c.release_address(AssociationId=desc['AssociationId'])
-        #else:
-        #    raise Exception('Cannot hook onto: '+str(desc))
     elif id.startswith('pcx-'):
         ec2c.delete_vpc_peering_connection(VpcPeeringConnectionId=id)
     else:

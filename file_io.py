@@ -37,7 +37,7 @@ def pickle64(x):
     return codecs.encode(pickle.dumps(x), "base64").decode()
 
 def disk_unpickle64(txt64):
-    # Saves to the disk, deletes None files. Pickle can handle lcoal paths.
+    # Saves to the disk, deletes None files. Pickle can handle local paths.
     fname2obj = pickle.loads(codecs.decode(txt64.encode(), "base64"))
     for fname, txt in fname2obj.items():
         if txt is None:
@@ -46,12 +46,5 @@ def disk_unpickle64(txt64):
             except:
                 print('Warning: file deletion during update failed for',fname)
         else:
-            file_io.fsave(fname, txt) # auto-makes enclosing folders.
+            fsave(fname, txt) # auto-makes enclosing folders.
     print('Saved to these files:', fname2obj.keys())
-    delta = src_cache_diff()
-    if update_us:
-        update_python_interp(delta)
-    if update_vms:
-        import vm # delay the import because install_core has to run as standalone for fresh installs.
-        vm.update_vms_skythonic(delta)
-    update_src_cache() # Update this also.

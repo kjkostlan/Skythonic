@@ -48,6 +48,9 @@ def src_cache_diff():
     for k in current.keys():
         if current[k] != past.get(k,None):
             out[k] = current[k]
+    for k in out.keys():
+        if k[0]=='/':
+            raise Exception('Absolute-like filepath in the src cache (bug in this function).')
     return out
 
 def update_src_cache(new_cache=None): # Also returns which modules changed (only modules which were already in module_fnames).
@@ -87,26 +90,23 @@ except:
 
 ############################# Pickling for a portable string ###################
 
-def disk_pickle(diff=False):
+#def disk_pickle(diff=False):
     # Pickles all the Python files (with UTF-8), or changed ones with diff.
     # Updates the _last_pickle so only use when installing.
-    delta = src_cache_diff() if diff else src_cache_from_disk()
-    for k in delta.keys():
-        if k[0]=='/':
-            raise Exception('Absolute-like filepath in the src cache (bug in this file).')
-    print('Pickling these:', delta.keys())
-    return file_io.pickle64(delta)
+#    delta = src_cache_diff() if diff else src_cache_from_disk()
+#    print('Pickling these:', delta.keys())
+#    return file_io.pickle64(delta)
 
 def unpickle_and_update(txt64, update_us=True, update_vms=True):
-    file_io.disk_unpickle64(txt64)
 
+    file_io.disk_unpickle64(txt64)
     delta = src_cache_diff()
     if update_us:
         update_python_interp(delta)
     if update_vms:
         import vm # delay the import because install_core has to run as standalone for fresh installs.
         vm.update_vms_skythonic(delta)
-    update_src_cache() # Update this also.
+    update_src_cache()
 
 ############################ Bootstrapping an installation #####################
 
@@ -117,20 +117,22 @@ def joinlines(lines, windows=False):
         out = '\n'+'\n'.join(lines)+'\n'
     return out
 
-def bootstrap_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True):
+def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True):
     lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
+    quote3 = "''"+"'" # Can't appear in file.
 
     if pyboot_txt: # Diff will only change the differences.
         lines.append('import sys, os, time, subprocess')
         for py_file in ['install_core.py', 'file_io.py']:
             boot_txt = file_io.fload(py_file)
-            lines.append('pyboot_txt=r"""'+boot_txt+'"""') # works because no triple """ in boot_txt.
-            lines.append('pyboot_f_obj = open("'+py_file+'","w")')
-            lines.append('pyboot_f_obj.write(pyboot_txt)')
+            varname = py_file[0:-3]+'_src'
+            if quote3 in boot_txt:
+                raise Exception('This ad-hoc paste-in system cannot handle files with triple single quotes.')
+            lines.append(f'{varname}=r{quote3}{boot_txt}{quote3}') # works because no triple """ in boot_txt.
+            lines.append(f'pyboot_f_obj = open("{py_file}","w")')
+            lines.append(f'pyboot_f_obj.write({varname})')
             lines.append('pyboot_f_obj.close()')
-
-    big_txt = disk_pickle(diff)
-    lines.append('obj64 = r"""'+big_txt+'"""')
+    lines.append(f'obj64 = r"""{pickle64}"""')
     if import_txt:
         lines.append('import install_core')
     lines.append('install_core.unpickle_and_update(obj64, True, True)')

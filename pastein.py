@@ -43,21 +43,52 @@ def oracleP(windows=False):
 
 if __name__ == '__main__': # For running on your local machine.
     import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
+    from itertools import islice
+
+    def batched(iterable, n): #https://docs.python.org/3/library/itertools.html
+        "Batch data into tuples of length n. The last batch may be shorter."
+        # batched('ABCDEFG', 3) --> ABC DEF G
+        if n < 1:
+            raise ValueError('n must be at least one')
+        it = iter(iterable)
+        while True: # The := is as of Python 3.8 and had to be removed.
+            batch = tuple(islice(it, n))
+            if not batch:
+                break
+            yield batch
 
     while True:
         #install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True)
-        x = input('Enter to load diffs into clipboard (a to not diff, q to quit)').lower().strip()
+        x = input('<None> = load diffs, a = load all, a1/4 = load the 2nd quarter of files (size constraints of paste); q = quit.').lower().strip()
         if x=='q':
             quit()
-        diff = x !='a'
-        n = len(install_core.src_cache_diff() if diff else install_core.src_cache_from_disk())
 
-        txt = install_core.bootstrap_txt(windows=False, diff=diff, pyboot_txt=(not diff), import_txt=True)
-        new_cache = install_core.src_cache_from_disk()
+        a = 0 # For beaking down large pastes.
+        if x.startswith('a'):
+            all_files = install_core.src_cache_from_disk()
+            if '/' in x: # Only include some files.
+                pieces = x.strip().replace('a','').split('/')
+                kys = list(all_files.keys()); kys.sort()
+                a = int(pieces[0]); b = int(pieces[1])
+                sz = int(len(kys)/b+len(kys)/(len(kys)+1))
+                pieces1 = list(batched(kys, sz))
+                if len(pieces1) != b:
+                    raise Exception('bug in this code.')
+                piece = pieces1[a]
+                pickle_these = dict(zip(piece, [all_files[k] for k in piece]))
+            else:
+                pickle_these = all_files
+        else:
+            pickle_these = install_core.src_cache_diff()
+
+        big_txt = file_io.pickle64(pickle_these)
+        n = len(pickle_these)
+
+        txt = install_core.bootstrap_txt(False, big_txt, pyboot_txt=a==0 and 'a' in x, import_txt=True)
         clipboard.copy(txt)
         if n==0:
             x = input('No pickled files, but press enter to paste in the import code to jumpstart your Python work.').lower().strip()
         else:
             x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in or c to cancel').lower().strip()
         if x != 'c':
-            install_core.update_src_cache(new_cache)
+            install_core.update_src_cache()
