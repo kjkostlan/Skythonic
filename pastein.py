@@ -59,13 +59,17 @@ if __name__ == '__main__': # For running on your local machine.
 
     while True:
         #install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True)
+        cache_before_input = install_core.src_cache_from_disk()
+
         x = input('<None> = load diffs, a = load all, a1/4 = load the 2nd quarter of files (size constraints of paste); q = quit.').lower().strip()
         if x=='q':
             quit()
+        cache_afr_input = install_core.src_cache_from_disk()
+        cache_diff = install_core.src_cache_diff(old_cache=cache_before_input, new_cache=cache_afr_input)
 
         a = 0 # For beaking down large pastes.
         if x.startswith('a'):
-            all_files = install_core.src_cache_from_disk()
+            all_files = cache_afr_input
             if '/' in x: # Only include some files.
                 pieces = x.strip().replace('a','').split('/')
                 kys = list(all_files.keys()); kys.sort()
@@ -79,7 +83,7 @@ if __name__ == '__main__': # For running on your local machine.
             else:
                 pickle_these = all_files
         else:
-            pickle_these = install_core.src_cache_diff()
+            pickle_these = cache_diff
 
         big_txt = file_io.pickle64(pickle_these)
         n = len(pickle_these)
@@ -87,8 +91,7 @@ if __name__ == '__main__': # For running on your local machine.
         txt = install_core.bootstrap_txt(False, big_txt, pyboot_txt=a==0 and 'a' in x, import_txt=True)
         clipboard.copy(txt)
         if n==0:
-            x = input('No pickled files, but press enter to paste in the import code to jumpstart your Python work.').lower().strip()
+            print('No pickled files but code has been copied to jumpstart your Python work.')
         else:
-            x = input('Your clipboard is ready with: '+str(n)+' pickled files; press enter once pasted in or c to cancel').lower().strip()
-        if x != 'c':
-            install_core.update_src_cache()
+            print(f'Your clipboard is ready with: {n} pickled files; {list(pickle_these.keys())}; press enter once pasted in or c to cancel')
+        install_core.update_src_cache() # Not sure if necessary.
