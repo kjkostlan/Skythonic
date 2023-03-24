@@ -38,17 +38,21 @@ def src_cache_from_disk():
                 fname2contents[fnamer] = file_io.fload(fnamer)
     return fname2contents
 
-def src_cache_diff():
+def src_cache_diff(old_cache=None, new_cache=None):
     # Changed file local path => contents; deleted files map to None
-    current = src_cache_from_disk(); past = _src_cache
+    if old_cache is None:
+        old_cache = _src_cache
+    if new_cache is None:
+        new_cache = src_cache_from_disk()
+
     out = {}
-    for k in past.keys():
-        if k not in current:
+    for k in old_cache.keys():
+        if k not in new_cache:
             out[k] = None
-    for k in current.keys():
-        if current[k] != past.get(k,None):
-            out[k] = current[k]
-    for k in out.keys():
+    for k in new_cache.keys():
+        if new_cache[k] != old_cache.get(k,None):
+            out[k] = new_cache[k]
+    for k in old_cache.keys():
         if k[0]=='/':
             raise Exception('Absolute-like filepath in the src cache (bug in this function).')
     return out
