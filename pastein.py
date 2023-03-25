@@ -8,7 +8,7 @@ def _importcode(mnames):
 def awsP(windows=False):
     imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean','AWS.AWS_setup as AWS_setup','AWS.AWS_query as AWS_query', 'boto3']
     lines = _importcode(imports)
-    lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", 'who = AWS_query.get_resources']
+    lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", "iam = boto3.client('iam')", 'who = AWS_query.get_resources']
     exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def azureP(windows=False):

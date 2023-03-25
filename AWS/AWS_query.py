@@ -1,7 +1,9 @@
 import boto3
+import AWS.AWS_format as AWS_format
+
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
-import AWS.AWS_format as AWS_format
+iam = boto3.client('iam')
 
 def get_resources(ids=False, which_keys=None):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
@@ -38,6 +40,8 @@ def get_resources(ids=False, which_keys=None):
         out['addresses'] = ec2c.describe_addresses()['Addresses']
     if _hit({'vpcpeer','vpcpeering'}):
         out['peerings'] = ec2c.describe_vpc_peering_connections()['VpcPeeringConnections']
+    if _hit({'user','users'}):
+        out['users'] = iam.list_users()['Users']
     #out['tags'] = ec2c.describe_tags()['Tags'] # Contains other stuff we can query that instead (I think).
 
     if ids:

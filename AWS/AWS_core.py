@@ -6,6 +6,7 @@ import AWS.AWS_format as AWS_format
 import AWS.AWS_query as AWS_query
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
+iam = boto3.client('iam')
 
 def loop_try(f, f_catch, msg, delay=4):
     # Waiting for something? Keep looping untill it succedes!
@@ -61,12 +62,15 @@ def create(rtype, name, **kwargs):
         x = ec2r.create_instances(**kwargs)[0]
     elif rtype in {'address'}:
         x = ec2c.allocate_address(**kwargs)
+    elif rtype in {'user', 'users'}:
+        kwargs['UserName'] = name
+        iam.create_access_key(**kwargs)
     elif rtype in {'vpcpeer','vpcpeering'}:
         x = ec2c.create_vpc_peering_connection(**kwargs)['VpcPeeringConnection']
         ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=x['VpcPeeringConnectionId'])
     else:
         raise Exception('Create ob type unrecognized: '+rtype)
-    if rtype not in {'keypair'}:
+    if rtype not in {}:#{'keypair','user','users'}:
         f = lambda: add_tags(x, {'Name':name, '__Skythonic__':True})
         f_catch = lambda e: 'does not exist' in repr(e).lower()
         msg = 'created a resource of type '+rtype+' waiting for it to start existing.'

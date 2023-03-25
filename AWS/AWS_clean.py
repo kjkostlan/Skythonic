@@ -60,7 +60,7 @@ def _nuclear_clean(only_skythonic_stuff=True): # DELETE EVERYTHING DANGER!
     resc = AWS_query.custom_resources()
     deps = AWS_query.what_needs_these(custom_only=False, include_empty=True)
     n_delete=0
-    for k in ['peerings','addresses', 'machines', 'subnets', 'rtables','webgates','sgroups','vpcs','kpairs']: # Can the right order avoid needing deps?
+    for k in ['users', 'peerings','addresses', 'machines', 'subnets', 'rtables','webgates','sgroups','vpcs','kpairs']: # Can the right order avoid needing deps?
         if k not in resc:
             continue
         for x in resc[k]:
