@@ -3,9 +3,9 @@ import boto3
 import AWS.AWS_core as AWS_core
 import AWS.AWS_query as AWS_query
 import AWS.AWS_format as AWS_format
-import vm
+import vm, eye_term
 import time
-ec2r = boto3.resource('ec2'); ec2c = boto3.client('ec2')
+ec2r = boto3.resource('ec2'); ec2c = boto3.client('ec2'); iam = boto3.client('iam')
 
 def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
     # Creates a new key if need be, but the subnet and securitygroup must be already made.
@@ -32,6 +32,20 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
     # TODO new cmds run on the fresh machine: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html
     return inst_id
 
+def simple_admin_user(uname='BYOA'):
+    # Returns the key.
+    user = AWS_core.create_once('user', uname, True)
+    iam.attach_user_policy(UserName=uname, PolicyArn = 'arn:aws:iam::aws:policy/AdministratorAccess')
+    ky = vm.user_key(uname)
+    if ky is None:
+        print('Creating user key')
+        key_dict = iam.create_access_key(UserName=uname)
+        k0 = key_dict['AccessKey']['AccessKeyId']
+        k1 = key_dict['AccessKey']['SecretAccessKey']
+        vm.danger_user_key(uname, k0, k1)
+        ky = [k0, k1]
+    return ky
+
 def wait_and_attach_address(machine_id, address_id):
     # TODO: build this into the AWS_core function.
     addr = AWS_format.id2obj(address_id)
@@ -46,7 +60,7 @@ def wait_and_attach_address(machine_id, address_id):
     msg = 'Waiting for machine: '+machine_id+' to start'
     AWS_core.loop_try(f_try, f_catch, msg, delay=4)
 
-def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c'): # The jumpbox is much more configurable than the cloud shell.
+def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
     vpc_id = AWS_core.create_once('VPC', 'Hub', True, CidrBlock='10.100.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
@@ -70,10 +84,23 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c'): # The jumpbox i
     addr = AWS_core.create_once('address', basename+'_address', True, Domain='vpc')
     wait_and_attach_address(inst_id, addr)
 
-    cmd = vm.ssh_cmd(inst_id, addr, True)
-    print('Use this to ssh:',cmd)
-    print('Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.')
-    return inst_id, cmd
+    publicAWS_key, privateAWS_key = simple_admin_user(uname)
+
+    cmd = vm.ssh_cmd(inst_id, True)
+    print('Use this to ssh:', cmd)
+    print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
+
+    print('---Setting up AWS on the jump box---')
+    # Configure the jump box:
+    _ex = eye_term.basic_expect_fn
+    install_cmds = ['echo abc','sudo apt update', 'echo foo', 'sudo apt install awscli', 'Y', 'aws configure'] #'aws ec2 describe-vpcs --output text', 'echo bar'
+    exp_fns =       [None,     None,             None,       None,                      None, eye_term.basic_expect_fn('Access Key ID [None]:')]
+    #install_cmds  = ['echo foo', 'echo bar', 'echo baz'] # DEBUG test
+    _out, _err = vm.ez_ssh_cmds(inst_id, install_cmds)
+    print('Hopefully it worked (wait for dump below)!')
+    print(eye_term.termstr(install_cmds, _out, _err))
+    print('If the above terminal dump looks good, the AWS is probably well-configured.')
+    return inst_id, cmd, [_out, _err]
 
 def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')

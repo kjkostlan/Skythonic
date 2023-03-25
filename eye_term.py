@@ -169,10 +169,11 @@ def standard_is_done(p):
     sent_cmds = p.cmd_history
     return t>timeout_s or prompts[-1] is not None
 
-def termstr(_out, _err):
+def termstr(cmds, _out, _err):
     # Prints it in a format that is easier to read.
     pieces = []
     for i in range(len(_out)):
+        pieces.append('→'+cmds[i]+'←')
         pieces.append(_out[i])
         if _err is not None:
             pieces.append(_err[i])
