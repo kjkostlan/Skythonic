@@ -3,17 +3,30 @@
 # Don't forget the chmod 600 on the keys!
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
 import pickle, os
+import paramiko
 import file_io
 import AWS.AWS_format as AWS_format
+import eye_term
 
 pickle_fname = './softwareDump/vm_info.pypickle'
 
 def _fillkeys(x):
-    kys = ['instance_id2key_name', 'key_name2key_material']
+    kys = ['instance_id2key_name', 'key_name2key_material', 'username2AWS_key']
     for k in kys:
         if k not in x:
             x[k] = {}
     return x
+
+def get_ip(x): # Address or machine.
+    if type(x) is str and '.' in x: # Actually an ip address.
+        return x
+    if type(x) is str:
+        x = AWS_format.id2obj(x)
+    if 'PublicIp' in x:
+        return x['PublicIp']
+    if 'PublicIpAddress' in x:
+        return x['PublicIpAddress']
+    raise Exception('Cannot find the ip for:'+AWS_format.obj2id(x))
 
 def _pickleload():
     if os.path.exists(pickle_fname) and os.path.getsize(pickle_fname) > 0:
@@ -47,66 +60,59 @@ def danger_key(instance_id, ky_name, key_material=None):
         _save_ky1(fname, key_material)
     return fname
 
-def ssh_cmd(instance_id, address, join=False):
+def danger_user_key(user_name, public_key, private_key):
+    x = _pickleload()
+    x['username2AWS_key'][user_name] = [public_key, private_key]
+    _picklesave(x)
+    return True
+
+def key_fname(instance_id):
+    x = _pickleload(); ky_name = x['instance_id2key_name'][instance_id]
+    return './softwareDump/'+ky_name+'.pem'
+
+def user_key(uer_name):
+    x = _pickleload()
+    return x['username2AWS_key'].get(user_name, None)
+
+###############################Command line#####################################
+
+def ssh_cmd(instance_id, join=False):
     # Get the ssh cmd to use the key to enter instance_id.
     # Will get a warning: The authenticity can't be established; this warning is normal and is safe to yes if it is a VM you create in your account.
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
     # Python or os.system?
     # https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
-    address = AWS_format.id2obj(address)
-    public_ip = address.get('PublicIp',None)
-    if public_ip is None:
-        public_ip = address['PublicIpAddress']
-    x = _pickleload()
-    ky_name = x['instance_id2key_name'][instance_id]
-    out = ['ssh', '-i', './softwareDump/'+ky_name+'.pem', 'ubuntu@'+str(public_ip)]
+    instance_id = AWS_format.obj2id(instance_id)
+    public_ip = get_ip(instance_id)
+    out = ['ssh', '-i', key_fname(instance_id), 'ubuntu@'+str(public_ip)]
     if join:
         out[2] = '"'+out[2]+'"'
         return ' '.join(out)
     else:
         return out
 
-## General idea of how to run code on jump boxes:
-# Paramiko is built in.
-#https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
-def send_cmds(instance_id, bash_cmds, timeout=8):
-    # Valid bach cmds:
-    #  A string (will be split by newline)
-    #  A list/tuple (each entry is one line).
-    #  A function of (output, err). Use None to end the ssh fn.
-    print('Sending commands to:', instance_id)
-    # TODO: Gets the outputs.
+def ssh_pipe(instance_id, timeout=8):
+    # Returns a MessyPipe which can be interacted with. Don't forget to close() it.
+    username = 'ubuntu'; hostname = get_ip(instance_id) #username@hostname
+
+    #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
+    #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
+    client.connect(hostname, username=username, key_filename=key_fname(instance_id), timeout=timeout)#password=passphrase)
+
+    return eye_term.MessyPipe(client)
+
+def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None):
+    # This abstraction is quite leaky, so only use when things are simple.
     #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
     #https://stackoverflow.com/questions/59252659/ssh-using-python-via-private-keys
     #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
-    #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
-    username = 'ubuntu'; hostname = TODO #username@hostname
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Bieng permissive is quite a bit easier...
-    client.connect(hostname, username=username, key_filename=key_filename, timeout=timeout)#password=passphrase)
-
-    outputs = []; errors = []
-
-    if type(bash_cmds) is str:
-        bash_cmds = '\n'.split(bash_cmds.strip())
-    if not callable(bash_cmds):
-        x = bash_cmds+[None]
-        bash_cmds = lambda out, err: next(x)
-
-    last_out = None; last_err = None
-    outputs = []; errs = []
-    while True:
-        the_cmd = bash_cmds(last_out, last_err)
-        if the_cmd is None or the_cmd is False:
-            break
-        _stdin, _stdout, _stderr = client.exec_command(the_cmd)
-        last_out = _stdout.read().decode()
-        last_err = _strerr.read().decode()
-        outputs.append(last_out); errs.append(last_err)
-
-    client.close()
-    return outputs, errs
+    tubo = ssh_pipe(instance_id, timeout=8)
+    _out, _err = tubo.multi_API(bash_cmds, f_poll=f_poll)
+    tubo.close()
+    return _out, _err
 
 def send_files(instance_id, file2contents):
     # None contents are deleted.
