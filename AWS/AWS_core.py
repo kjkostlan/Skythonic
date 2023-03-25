@@ -37,8 +37,11 @@ def add_tags(desc_or_id, d):
             add_tags(AWS_format.id2obj(desc_or_id), d)
         else:
             ec2c.create_tags(Tags=tags,Resources=[desc_or_id])
-    else: # Actul objects, which are rarely worked with.
-        desc_or_id.create_tags(Tags=tags)
+    else: # Actual objects, which are rarely worked with.
+        if 'ec2.KeyPair' in str(type(desc_or_id)): # Random variations in the API...
+            add_tags(desc_or_id.key_pair_id, d)
+        else:
+            desc_or_id.create_tags(Tags=tags)
 
 def create(rtype, name, **kwargs):
     # Returns the ID, which is commonly introduced into other objects.
@@ -48,7 +51,7 @@ def create(rtype, name, **kwargs):
     if 'raw_object' in kwargs:
         del kwargs['raw_object']
     rtype = rtype.lower()
-    if rtype in {'vpc'}: # Python only intruduced the switch statement in 3.10
+    if rtype in {'vpc'}: # Python introduced "switch" in 3.10 but AWS shell is 3.7
         x = ec2r.create_vpc(**kwargs)
         x.wait_until_available()
     elif rtype in {'webgate','internetgateway'}:
@@ -147,7 +150,14 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
     elif id.startswith('pcx-'):
         ec2c.delete_vpc_peering_connection(VpcPeeringConnectionId=id)
     elif id.startswith('AID'):
-        iam.delete_user(UserName=AWS_format.id2obj(desc_or_id)['UserName'])
+        uname = AWS_format.id2obj(desc_or_id)['UserName']
+        policies = iam.list_attached_user_policies(UserName=uname)['AttachedPolicies']
+        for p in policies:
+            iam.detach_user_policy(UserName=uname, PolicyArn=p['PolicyArn'])
+        kys = iam.list_access_keys(UserName=uname)['AccessKeyMetadata']
+        for k in kys:
+            iam.delete_access_key(UserName=uname, AccessKeyId=k['AccessKeyId'])
+        iam.delete_user(UserName=uname)
     else:
         raise Exception('TODO: handle this case:', id)
 

@@ -70,7 +70,7 @@ def key_fname(instance_id):
     x = _pickleload(); ky_name = x['instance_id2key_name'][instance_id]
     return './softwareDump/'+ky_name+'.pem'
 
-def user_key(uer_name):
+def user_key(user_name):
     x = _pickleload()
     return x['username2AWS_key'].get(user_name, None)
 
