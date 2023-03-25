@@ -27,10 +27,16 @@ def add_tags(desc_or_id, d):
     #botocore.exceptions.ClientError: An error occurred (InvalidInstanceID.NotFound) when calling the CreateTags operation: The instance ID 'i-0fb7af9af917db726' does not exist
     tags = [{'Key':str(k),'Value':str(d[k])} for k in d.keys()]
     if type(desc_or_id) is dict:
-        id = AWS_format.obj2id(desc_or_id)
-        ec2c.create_tags(Tags=tags,Resources=[id])
+        if 'UserId' in desc_or_id: # Users arr handleded differently.
+            iam.tag_user(UserName=desc_or_id['UserName'],Tags=tags)
+        else:
+            id = AWS_format.obj2id(desc_or_id)
+            ec2c.create_tags(Tags=tags,Resources=[id])
     elif type(desc_or_id) is str:
-        ec2c.create_tags(Tags=tags,Resources=[desc_or_id])
+        if desc_or_id.startswith('AID'): # Users arr handleded differently.
+            add_tags(AWS_format.id2obj(desc_or_id), d)
+        else:
+            ec2c.create_tags(Tags=tags,Resources=[desc_or_id])
     else: # Actul objects, which are rarely worked with.
         desc_or_id.create_tags(Tags=tags)
 
@@ -64,7 +70,7 @@ def create(rtype, name, **kwargs):
         x = ec2c.allocate_address(**kwargs)
     elif rtype in {'user', 'users'}:
         kwargs['UserName'] = name
-        iam.create_access_key(**kwargs)
+        x = iam.create_user(**kwargs)['User']
     elif rtype in {'vpcpeer','vpcpeering'}:
         x = ec2c.create_vpc_peering_connection(**kwargs)['VpcPeeringConnection']
         ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=x['VpcPeeringConnectionId'])
@@ -140,6 +146,8 @@ def delete(desc_or_id): # Delete an object given an id OR a description dict.
         ec2c.release_address(AllocationId=desc['AllocationId'])
     elif id.startswith('pcx-'):
         ec2c.delete_vpc_peering_connection(VpcPeeringConnectionId=id)
+    elif id.startswith('AID'):
+        iam.delete_user(UserName=AWS_format.id2obj(desc_or_id)['UserName'])
     else:
         raise Exception('TODO: handle this case:', id)
 

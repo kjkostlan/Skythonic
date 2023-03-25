@@ -2,6 +2,7 @@
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
+iam = boto3.client('iam')
 
 def obj2id(obj_desc): # Gets the ID from the object.
     #(This is a bit tricky since some descs have multible ids)
@@ -45,6 +46,11 @@ def id2obj(id, assert_exist=True):
             return ec2c.describe_addresses(AllocationIds=[id])['Addresses'][0]
         elif id.startswith('pcx-'):
             return ec2c.describe_vpc_peering_connections(VpcPeeringConnectionIds=[id])['VpcPeeringConnections'][0]
+        elif id.startswith('AID'): # Have to filter manually (I think)
+            x = iam.list_users()['Users']
+            for xi in x:
+                if xi['UserId']==id:
+                    return xi
         else:
             raise Exception('TODO: handle this case:', id)
     except Exception as e:
@@ -56,7 +62,10 @@ def id2obj(id, assert_exist=True):
 def tag_dict(desc_or_id):
     # The clumsy Key Value pairs => a Python dict.
     desc = id2obj(desc_or_id)
-    tags = desc.get('Tags',[])
+    if 'UserName' in desc and 'UserId' in desc:
+        tags = iam.list_user_tags(UserName=desc['UserName'])['Tags']
+    else:
+        tags = desc.get('Tags',[])
     out = {}
     for tag in tags:
         out[tag['Key']] = tag['Value']
