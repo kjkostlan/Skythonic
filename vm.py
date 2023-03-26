@@ -105,6 +105,7 @@ def ssh_pipe(instance_id, timeout=8):
 
 def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None):
     # This abstraction is quite leaky, so only use when things are simple.
+    # f_poll can be a list 1:1 with bash_cmds but this usage is better dealt with paired_ssh_cmds.
     #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
     #https://stackoverflow.com/questions/59252659/ssh-using-python-via-private-keys
     #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
@@ -113,6 +114,10 @@ def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None):
     _out, _err = tubo.multi_API(bash_cmds, f_poll=f_poll)
     tubo.close()
     return _out, _err
+
+def paired_ssh_cmds(instance_id, cmd_pollfn_pairs, timeout=8):
+    # Pair each ssh_cmd with the cooresponding expect function.
+    return ez_ssh_cmds(instance_id, [x[0] for x in cmd_pollfn_pairs], timeout=timeout, f_poll=[(x+[None])[1] for x in cmd_pollfn_pairs])
 
 def send_files(instance_id, file2contents):
     # None contents are deleted.

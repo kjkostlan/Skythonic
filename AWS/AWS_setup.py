@@ -90,16 +90,28 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
     print('Use this to ssh:', cmd)
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
 
-    print('---Setting up AWS on the jump box---')
+    print('---Setting up AWS on the jump box (WARNING: long term AWS credentials posted to VM)---')
+    region_name = subnet_zone
+    if region_name[-1] in 'abcd':
+        region_name = region_name[0:-1]
+
     # Configure the jump box:
-    _ex = eye_term.basic_expect_fn
-    install_cmds = ['echo abc','sudo apt update', 'echo foo', 'sudo apt install awscli', 'Y', 'aws configure'] #'aws ec2 describe-vpcs --output text', 'echo bar'
-    exp_fns =       [None,     None,             None,       None,                      None, eye_term.basic_expect_fn('Access Key ID [None]:')]
-    #install_cmds  = ['echo foo', 'echo bar', 'echo baz'] # DEBUG test
-    _out, _err = vm.ez_ssh_cmds(inst_id, install_cmds)
+    # TODO: should these fns be refactored to vm?
+    _expt = eye_term.basic_expect_fn
+    cmd_fn_pairs = [['echo begin', None], ['sudo apt update', None],
+                    ['sudo apt install awscli', None], ['Y', None],
+                    ['aws configure', _expt('Access Key ID')],
+                    [publicAWS_key, _expt('Secret Access Key')],
+                    [privateAWS_key, _expt('region name')],
+                    [region_name, _expt('output format')],
+                    ['json', None], ['echo bash_test', None],
+                    ['aws ec2 describe-vpcs --output text', None], ['echo python_boto3_test', None],
+                    ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None], ['quit()', None]]
+
+    _out, _err = vm.paired_ssh_cmds(inst_id, cmd_fn_pairs, timeout=8)
     print('Hopefully it worked (wait for dump below)!')
-    print(eye_term.termstr(install_cmds, _out, _err))
-    print('If the above terminal dump looks good, the AWS is probably well-configured.')
+    print(eye_term.termstr(cmd_fn_pairs, _out, _err).replace(privateAWS_key,'*'*len(privateAWS_key)))
+    print('Check the above terminal dump, *including* the Bash and the Python AWS tests, to verify the installation.')
     return inst_id, cmd, [_out, _err]
 
 def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):

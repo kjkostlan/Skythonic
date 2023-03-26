@@ -151,10 +151,14 @@ def basic_wait(p, timeout=4):
     # A simple waiting function. TODO: bundle into a larger heuristic.
     return p.sure_of_EOF() or p.drought_len()>timeout
 
-def basic_expect_fn(the_pattern, is_re=True):
+def basic_expect_fn(the_pattern, is_re=False, timeout=12):
     # A standard expect fn based on text. Only looks for stuff in the last command.
     def _expt(p):
-        txt = ''.join(self.contents) # Mash the out and err together.
+        txt = ''.join(p.contents) # Mash the out and err together.
+        t = p.drought_len()
+        if t>timeout:
+            print('Warning: expect timeout on:', p.cmd_history[-1])
+            return True
         return re.search(the_pattern, txt) is not None if is_re else the_pattern in txt
     return _expt
 
@@ -162,18 +166,21 @@ def standard_is_done(p):
     # A default works-most-of-the-time pipe dryness detector.
     # Will undergo a lot of tweaks that try to extract the spatial information.
     all_lines = many_lines(p)
-    timeout_s = 8
+    timeout = 8
     prompts = likely_prompts(all_lines, True); t = p.drought_len()
+    if t>timeout:
+        print('Warning: default poll fn timeout on:', p.cmd_history[-1])
     if len(prompts)==0 or len(''.join(p.contents).strip())==0:
-        return t>timeout_s
+        return t>timeout
     sent_cmds = p.cmd_history
-    return t>timeout_s or prompts[-1] is not None
+    return t>timeout or prompts[-1] is not None
 
 def termstr(cmds, _out, _err):
-    # Prints it in a format that is easier to read.
+    # Prints it in a format that is easier to read. Useful for debugging or reporting.
     pieces = []
     for i in range(len(_out)):
-        pieces.append('→'+cmds[i]+'←')
+        c = cmds[i] if type(cmds[i]) is str else cmds[i][0]
+        pieces.append('→'+c+'←')
         pieces.append(_out[i])
         if _err is not None:
             pieces.append(_err[i])
