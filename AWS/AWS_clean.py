@@ -2,6 +2,7 @@ import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 import AWS.AWS_query as AWS_query, AWS.AWS_core as AWS_core, AWS.AWS_format as AWS_format
+import vm
 
 def has_been_deleted(id):
     # To clean up stuff that lingers.
@@ -78,6 +79,7 @@ def _nuclear_clean(only_skythonic_stuff=True): # DELETE EVERYTHING DANGER!
 
 def nuclear_clean():
     confirm = input('Warning: will delete EVERYTHING in the WHOLE ACCOUNT (not just the lab) leaving just the default resources; input y to proceed')
+    vm.remove_pickle()
     if confirm.strip().lower() !='y':
         print("Cancelled by user.")
         return None
@@ -85,6 +87,7 @@ def nuclear_clean():
 
 def skythonic_wipe():
     confirm = input('Warning: will delete EVERY resource created by Skythonic; using the __Skythonic__ tag, (not just the lab); input y to proceed')
+    vm.remove_pickle()
     if confirm.strip().lower() !='y':
         print("Cancelled by user.")
         return None

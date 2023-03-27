@@ -7,6 +7,10 @@ import AWS.AWS_query as AWS_query
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
+try:
+    logs # A simple way to report output without needing to print it.
+except:
+    logs = []
 
 def loop_try(f, f_catch, msg, delay=4):
     # Waiting for something? Keep looping untill it succedes!

@@ -39,6 +39,10 @@ def _picklesave(x):
     with open(pickle_fname,'wb') as f:
         return pickle.dump(x, f)
 
+def remove_pickle():
+    # Needed when the nuclear clean is called, otherwise ghost credentials could cause authentication problems.
+    _picklesave({})
+
 def update_vms_skythonic(diff):
     # Updates all skythonic files on VMs.
     # Diff can be a partial or full update.
@@ -109,7 +113,6 @@ def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None):
     #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
     #https://stackoverflow.com/questions/59252659/ssh-using-python-via-private-keys
     #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
-
     tubo = ssh_pipe(instance_id, timeout=8)
     _out, _err = tubo.multi_API(bash_cmds, f_poll=f_poll)
     tubo.close()

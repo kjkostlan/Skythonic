@@ -57,7 +57,7 @@ def wait_and_attach_address(machine_id, address_id):
             raise Exception('Address attached to the wrong machine.')
     f_try = lambda: AWS_core.assoc(addr['AllocationId'], machine_id) #ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=inst_id)
     f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
-    msg = 'Waiting for machine: '+machine_id+' to start'
+    msg = 'Waiting for machine: '+machine_id+' to start/be ready for attached address'
     AWS_core.loop_try(f_try, f_catch, msg, delay=4)
 
 def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): # The jumpbox is much more configurable than the cloud shell.
@@ -89,6 +89,8 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
     cmd = vm.ssh_cmd(inst_id, True)
     print('Use this to ssh:', cmd)
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
+    AWS_core.loop_try(lambda:vm.paired_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to be awake enough for ssh.', delay=4)
+
 
     print('---Setting up AWS on the jump box (WARNING: long term AWS credentials posted to VM)---')
     region_name = subnet_zone
@@ -104,14 +106,28 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
                     [publicAWS_key, _expt('Secret Access Key')],
                     [privateAWS_key, _expt('region name')],
                     [region_name, _expt('output format')],
-                    ['json', None], ['echo bash_test', None],
+                    ['json', None]]
+    test_cmd_fns = [['echo bash_test', None],
                     ['aws ec2 describe-vpcs --output text', None], ['echo python_boto3_test', None],
                     ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None], ['quit()', None]]
 
+    print('Wait about 60 seconds for the installation dump below.')
     _out, _err = vm.paired_ssh_cmds(inst_id, cmd_fn_pairs, timeout=8)
-    print('Hopefully it worked (wait for dump below)!')
+    txt = eye_term.termstr(cmd_fn_pairs, _out, _err).replace(privateAWS_key,'*'*len(privateAWS_key))
+    AWS_core.logs.append({'antiprintout_txt':txt})
+    #print('Txt len:', len(txt)) # TODO: printing the txt seems to cause issues.
+    print(txt)
+    print('Check the above dump to see if the installation was sucessful.')
+
+    reboot = True
+    if reboot:
+        ec2c.reboot_instances(InstanceIds=[inst_id])
+        AWS_core.loop_try(lambda:vm.paired_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to finish reboot.', delay=4)
+
+    print('Wait a few seconds for the AWS test dump below.')
+    _out, _err = vm.paired_ssh_cmds(inst_id, cmd_fn_pairs, timeout=8)
     print(eye_term.termstr(cmd_fn_pairs, _out, _err).replace(privateAWS_key,'*'*len(privateAWS_key)))
-    print('Check the above terminal dump, *including* the Bash and the Python AWS tests, to verify the installation.')
+    print('Check the above terminal dump to verify AWS CLI and AWS python boto3 is working.')
     return inst_id, cmd, [_out, _err]
 
 def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
