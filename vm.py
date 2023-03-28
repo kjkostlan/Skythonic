@@ -8,15 +8,6 @@ import file_io
 import AWS.AWS_format as AWS_format
 import eye_term
 
-pickle_fname = './softwareDump/vm_info.pypickle'
-
-def _fillkeys(x):
-    kys = ['instance_id2key_name', 'key_name2key_material', 'username2AWS_key']
-    for k in kys:
-        if k not in x:
-            x[k] = {}
-    return x
-
 def get_ip(x): # Address or machine.
     if type(x) is str and '.' in x: # Actually an ip address.
         return x
@@ -28,55 +19,10 @@ def get_ip(x): # Address or machine.
         return x['PublicIpAddress']
     raise Exception('Cannot find the ip for:'+AWS_format.obj2id(x))
 
-def _pickleload():
-    if os.path.exists(pickle_fname) and os.path.getsize(pickle_fname) > 0:
-        with open(pickle_fname,'rb') as f:
-            return _fillkeys(pickle.load(f))
-    return _fillkeys({})
-def _picklesave(x):
-    if not os.path.exists('./softwareDump/'):
-        os.makedirs('./softwareDump/')
-    with open(pickle_fname,'wb') as f:
-        return pickle.dump(x, f)
-
-def remove_pickle():
-    # Needed when the nuclear clean is called, otherwise ghost credentials could cause authentication problems.
-    _picklesave({})
-
 def update_vms_skythonic(diff):
     # Updates all skythonic files on VMs.
     # Diff can be a partial or full update.
     print('Warning: TODO: implement VM updates.')
-
-def _save_ky1(fname, key_material):
-    file_io.fsave(fname, key_material)
-    os.chmod(fname, 0o600) # Octal (not hex and not a string!)
-
-def danger_key(instance_id, ky_name, key_material=None):
-    # Stores which instance uses what key.
-    # Saves the private key's material unencrypted (if not None). Be careful out there!
-    x = _pickleload()
-    x['instance_id2key_name'][instance_id] = ky_name
-    x['key_name2key_material'][ky_name] = key_material
-    _picklesave(x)
-    fname = './softwareDump/'+ky_name+'.pem'
-    if key_material is not None:
-        _save_ky1(fname, key_material)
-    return fname
-
-def danger_user_key(user_name, public_key, private_key):
-    x = _pickleload()
-    x['username2AWS_key'][user_name] = [public_key, private_key]
-    _picklesave(x)
-    return True
-
-def key_fname(instance_id):
-    x = _pickleload(); ky_name = x['instance_id2key_name'][instance_id]
-    return './softwareDump/'+ky_name+'.pem'
-
-def user_key(user_name):
-    x = _pickleload()
-    return x['username2AWS_key'].get(user_name, None)
 
 ###############################Command line#####################################
 

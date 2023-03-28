@@ -5,46 +5,19 @@ import AWS.AWS_query as AWS_query
 import AWS.AWS_format as AWS_format
 import vm, eye_term
 import time
+import covert
 ec2r = boto3.resource('ec2'); ec2c = boto3.client('ec2'); iam = boto3.client('iam')
 
 def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
     # Creates a new key if need be, but the subnet and securitygroup must be already made.
+    # Returns inst_id, None, fname
     inst_networkinter = [{'SubnetId': subnet_id, 'DeviceIndex': 0, 'PrivateIpAddress': private_ip,
                           'AssociatePublicIpAddress': False, 'Groups': [securitygroup_id]}]
     vm_params = {'ImageId':'ami-0735c191cf914754d', 'InstanceType':'t2.micro',
                  'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter,
                  'KeyName':key_name}
 
-    key_mat = None
-    try: # Cant use create_once because of the ephemeral key_material.
-        key_pair = AWS_core.create('keypair', key_name, raw_object=True)
-        key_mat = key_pair.key_material
-    except Exception as e:
-        if 'The keypair already exists' not in str(e)+repr(e): # Key already exists
-            raise e
-
-    inst_id = AWS_core.create_once('machine', vm_name, True, **vm_params)
-
-    pem_fname = vm.danger_key(inst_id, key_name, key_mat)
-    if key_mat is not None:
-        print('Key saved to:', pem_fname)
-
-    # TODO new cmds run on the fresh machine: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html
-    return inst_id
-
-def simple_admin_user(uname='BYOA'):
-    # Returns the key.
-    user = AWS_core.create_once('user', uname, True)
-    iam.attach_user_policy(UserName=uname, PolicyArn = 'arn:aws:iam::aws:policy/AdministratorAccess')
-    ky = vm.user_key(uname)
-    if ky is None:
-        print('Creating user key')
-        key_dict = iam.create_access_key(UserName=uname)
-        k0 = key_dict['AccessKey']['AccessKeyId']
-        k1 = key_dict['AccessKey']['SecretAccessKey']
-        vm.danger_user_key(uname, k0, k1)
-        ky = [k0, k1]
-    return ky
+    return covert.vm_dangerkey(vm_name, vm_params)
 
 def wait_and_attach_address(machine_id, address_id):
     # TODO: build this into the AWS_core function.
@@ -84,7 +57,8 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
     addr = AWS_core.create_once('address', basename+'_address', True, Domain='vpc')
     wait_and_attach_address(inst_id, addr)
 
-    publicAWS_key, privateAWS_key = simple_admin_user(uname)
+    user_id = covert.user_dangerkey(uname)
+    publicAWS_key, privateAWS_key = covert.get_key(user_id)
 
     cmd = vm.ssh_cmd(inst_id, True)
     print('Use this to ssh:', cmd)
