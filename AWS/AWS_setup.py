@@ -91,7 +91,6 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
     AWS_core.loop_try(lambda:vm.paired_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to be awake enough for ssh.', delay=4)
 
-
     print('---Setting up AWS on the jump box (WARNING: long term AWS credentials posted to VM)---')
     region_name = subnet_zone
     if region_name[-1] in 'abcd':
@@ -101,34 +100,34 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
     # TODO: should these fns be refactored to vm?
     _expt = eye_term.basic_expect_fn
     cmd_fn_pairs = [['echo begin', None], ['sudo apt update', None],
-                    ['sudo apt install awscli', None], ['Y', None],
+                    ['sudo apt install awscli', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
+                    ['Y', _expt('~$', timeout=128)], # Not sure why this breaks the standard expect.
                     ['aws configure', _expt('Access Key ID')],
                     [publicAWS_key, _expt('Secret Access Key')],
-                    [privateAWS_key, _expt('region name')],
+                    ['"'+privateAWS_key+'"', _expt('region name')],
                     [region_name, _expt('output format')],
                     ['json', None]]
     test_cmd_fns = [['echo bash_test', None],
                     ['aws ec2 describe-vpcs --output text', None], ['echo python_boto3_test', None],
                     ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None], ['quit()', None]]
 
-    print('Wait about 60 seconds for the installation dump below.')
-    _out, _err = vm.paired_ssh_cmds(inst_id, cmd_fn_pairs, timeout=8)
-    txt = eye_term.termstr(cmd_fn_pairs, _out, _err).replace(privateAWS_key,'*'*len(privateAWS_key))
-    AWS_core.logs.append({'antiprintout_txt':txt})
-    #print('Txt len:', len(txt)) # TODO: printing the txt seems to cause issues.
-    print(txt)
+    print('Beginning installation. Should take about 60 seconds')
+    _out0, _err0, pipe0 = vm.paired_ssh_cmds(inst_id, cmd_fn_pairs, timeout=8, printouts=True)
     print('Check the above dump to see if the installation was sucessful.')
 
-    reboot = True
-    if reboot:
-        ec2c.reboot_instances(InstanceIds=[inst_id])
-        AWS_core.loop_try(lambda:vm.paired_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to finish reboot.', delay=4)
+    try:
+        reboot = False
+        if reboot:
+            ec2c.reboot_instances(InstanceIds=[inst_id])
+            AWS_core.loop_try(lambda:vm.paired_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to finish reboot.', delay=4)
 
-    print('Wait a few seconds for the AWS test dump below.')
-    _out, _err = vm.paired_ssh_cmds(inst_id, cmd_fn_pairs, timeout=8)
-    print(eye_term.termstr(cmd_fn_pairs, _out, _err).replace(privateAWS_key,'*'*len(privateAWS_key)))
-    print('Check the above terminal dump to verify AWS CLI and AWS python boto3 is working.')
-    return inst_id, cmd, [_out, _err]
+        print('Runnings AWS tests that should take under 10 seconds total.')
+        _out1, _err1, pipe1 = vm.paired_ssh_cmds(inst_id, test_cmd_fns, timeout=8, printouts=True)
+        print('Check the above terminal dump to verify AWS CLI and AWS python boto3 is working.')
+    except Exception as e:
+        print('WARNING: the jumpbox testing code threw an exception:', repr(e))
+        pipe1 = None
+    return inst_id, cmd, [pipe0, pipe1]
 
 def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')
