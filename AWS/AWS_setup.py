@@ -30,7 +30,7 @@ def wait_and_attach_address(machine_id, address_id):
             raise Exception('Address attached to the wrong machine.')
     f_try = lambda: AWS_core.assoc(addr['AllocationId'], machine_id) #ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=inst_id)
     f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
-    msg = 'Waiting for machine: '+machine_id+' to start/be ready for attached address'
+    msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
     AWS_core.loop_try(f_try, f_catch, msg, delay=4)
 
 def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): # The jumpbox is much more configurable than the cloud shell.
@@ -71,14 +71,14 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
         region_name = region_name[0:-1]
 
     # Configure the jump box:
-    # TODO: should these fns be refactored to vm?
+    # TODO: should this kind of code be refactored to vm?
     _expt = eye_term.basic_expect_fn
     cmd_fn_pairs = [['echo begin', None], ['sudo apt update', None],
                     ['sudo apt install awscli', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
                     ['Y', _expt('~$', timeout=128)], # Not sure why this breaks the standard expect.
                     ['aws configure', _expt('Access Key ID')],
                     [publicAWS_key, _expt('Secret Access Key')],
-                    ['"'+privateAWS_key+'"', _expt('region name')],
+                    [privateAWS_key, _expt('region name')],
                     [region_name, _expt('output format')],
                     ['json', None]]
     test_cmd_fns = [['echo bash_test', None],

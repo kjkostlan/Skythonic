@@ -2,11 +2,10 @@
 # See: https://stackoverflow.com/questions/51026026/how-to-pass-private-key-as-text-to-ssh
 # Don't forget the chmod 600 on the keys!
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
-import pickle, os
 import paramiko
 import file_io
 import AWS.AWS_format as AWS_format
-import eye_term
+import eye_term, covert
 
 def get_ip(x): # Address or machine.
     if type(x) is str and '.' in x: # Actually an ip address.
@@ -26,7 +25,7 @@ def update_vms_skythonic(diff):
 
 ###############################Command line#####################################
 
-def ssh_cmd(instance_id, join=False):
+def ssh_cmd(instance_id, join_arguments=False):
     # Get the ssh cmd to use the key to enter instance_id.
     # Will get a warning: The authenticity can't be established; this warning is normal and is safe to yes if it is a VM you create in your account.
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
@@ -34,8 +33,8 @@ def ssh_cmd(instance_id, join=False):
     # https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
     instance_id = AWS_format.obj2id(instance_id)
     public_ip = get_ip(instance_id)
-    out = ['ssh', '-i', key_fname(instance_id), 'ubuntu@'+str(public_ip)]
-    if join:
+    out = ['ssh', '-i', covert.get_key(instance_id)[1], 'ubuntu@'+str(public_ip)]
+    if join_arguments:
         out[2] = '"'+out[2]+'"'
         return ' '.join(out)
     else:
@@ -49,7 +48,7 @@ def ssh_pipe(instance_id, timeout=8, printouts=True):
     #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
-    client.connect(hostname, username=username, key_filename=key_fname(instance_id), timeout=timeout)#password=passphrase)
+    client.connect(hostname, username=username, key_filename=covert.get_key(instance_id)[1], timeout=timeout)#password=passphrase)
 
     return eye_term.MessyPipe(client, printouts)
 
