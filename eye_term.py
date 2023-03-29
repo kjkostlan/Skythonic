@@ -69,11 +69,11 @@ class MessyPipe:
                 #Maybe read multible bytes at once? https://stackoverflow.com/questions/44736204/how-to-find-out-how-many-bytes-in-socket-before-recv-in-python
                 out = []
                 while self.channel.recv_ready():
-                    out.append(self.channel.recv(1).decode('ascii'))
+                    out.append(self.channel.recv(1).decode('UTF-8'))
                 _out = ''.join(out)
                 err = []
                 while self.channel.recv_stderr_ready():
-                    err.append(self.channel.recv_stderr(1).decode('ascii'))
+                    err.append(self.channel.recv_stderr(1).decode('UTF-8'))
                 _err = ''.join(err)
                 if self.printouts:
                     if len(_out)>0:
@@ -142,7 +142,7 @@ class MessyPipe:
             raise Exception('Debug mode, remove this raise in production:', f_poll)
             self.poll_log.append({'f_poll forgot to append pipe.poll_log when it returned true':True})
         self.poll_log[-1]['last_cmd'] = self.cmd_history[-1]
-        self.poll_log[-1]['contents'] = self.contents.copy()
+        self.poll_log[-1]['combined_contents'] = self.combined_contents
         out = self.contents.copy()
         self.empty()
         return out
@@ -171,22 +171,14 @@ def non_empty_lines(txt):
     txt = txt.replace('\r\n','\n').strip()
     return list(filter(lambda x: len(x)>0, txt.split('\n')))
 
-def likely_prompts(lines, include_fails=True):
-    # Guesses the (most recent) shell prompt thing that prepends each line.
-    # This can change i.e. if you enter a Python session.
-    patterns = [r'[#>\$]', r'continue\? *\[Y\/n\]']
-    out = []
-    for l in lines: # There are more efficient ways if speed becomes a problem here.
-        passed = False
-        for the_pattern in patterns:
-            ixs = [x.end() for x in re.finditer(the_pattern, l)]
-            if len(ixs)>0:
-                out.append(l[0:ixs[-1]])
-                passed = True
-                break
-        if include_fails and not passed:
-            out.append(None)
-    return out
+def looks_like_prompt(line):
+    # When most cmds finish they return to foo/bar/baz$, or xyz>, etc.
+    # This determines whether the line is one of these.
+    line = line.strip()
+    for ending in ['$', '>', '#', 'continue? [Y/n]']:
+        if line.endswith(ending):
+            return True
+    return False
 
 def basic_wait(p, timeout=4):
     # A simple waiting function. TODO: bundle into a larger heuristic.
@@ -212,12 +204,12 @@ def standard_is_done(p, timeout=8):
     # Will undergo a lot of tweaks that try to extract the spatial information.
     #all_lines = many_lines(p)
     lines = non_empty_lines(p.combined_contents)
-    prompts = likely_prompts(lines, True); t = p.drought_len()
+    t = p.drought_len()
     if t>timeout:
         print('Warning: default poll fn timeout on:', p.cmd_history[-1])
         p.poll_log.append({'reason':f'Timeout {timeout}s on the default fn.'})
         return True
-    elif len(prompts)>0 and prompts[-1]:
+    elif len(lines)>0 and looks_like_prompt(lines[-1]):
         p.poll_log.append({'reason':'The last line looks like a command prompt which is ready for the cmd fn.'})
         return True
     return False

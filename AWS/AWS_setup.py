@@ -10,7 +10,7 @@ ec2r = boto3.resource('ec2'); ec2c = boto3.client('ec2'); iam = boto3.client('ia
 
 def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
     # Creates a new key if need be, but the subnet and securitygroup must be already made.
-    # Returns inst_id, None, fname
+    # Returns inst_id, None, fname.
     inst_networkinter = [{'SubnetId': subnet_id, 'DeviceIndex': 0, 'PrivateIpAddress': private_ip,
                           'AssociatePublicIpAddress': False, 'Groups': [securitygroup_id]}]
     vm_params = {'ImageId':'ami-0735c191cf914754d', 'InstanceType':'t2.micro',
@@ -71,16 +71,18 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
         region_name = region_name[0:-1]
 
     # Configure the jump box:
-    # TODO: should this kind of code be refactored to vm?
+    # TODO: refactor to vm?
     _expt = eye_term.basic_expect_fn
-    cmd_fn_pairs = [['echo begin', None], ['sudo apt update', None],
-                    ['sudo apt install awscli', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
+    cmd_fn_pairs = [['echo begin', None], ['sudo apt-get update', None],
+                    ['sudo apt-get install awscli', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
                     ['Y', _expt('~$', timeout=128)], # Not sure why this breaks the standard expect.
                     ['aws configure', _expt('Access Key ID')],
                     [publicAWS_key, _expt('Secret Access Key')],
                     [privateAWS_key, _expt('region name')],
                     [region_name, _expt('output format')],
-                    ['json', None]]
+                    ['json', None],
+                    ['sudo apt-get install python3-pip', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
+                    ['Y', None], ['pip3 install boto3']]
     test_cmd_fns = [['echo bash_test', None],
                     ['aws ec2 describe-vpcs --output text', None], ['echo python_boto3_test', None],
                     ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None], ['quit()', None]]
