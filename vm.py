@@ -112,12 +112,15 @@ def install_aws(instance_id, user_name, region_name, printouts=True):
         pipes.append(tubo)
 
     test_cmd_fns = [['echo bash_test', None],
-                    ['aws ec2 describe-vpcs --output text', None], ['echo python_boto3_test', None],
-                    ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None], ['quit()', None]]
+                    ['aws ec2 describe-vpcs --output text', None, 'CIDRBLOCKASSOCIATIONSET'], ['echo python_boto3_test', None],
+                    ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None, "'Vpcs': [{'CidrBlock'"],
+                    ['quit()', None]]
 
     for pair in test_cmd_fns:
-        tubo.API(pair[0], f_poll=pair[1], dt_min=0.01, dt_max=1)
-
+        _out, _err = tubo.API(pair[0], f_poll=pair[1], dt_min=0.01, dt_max=1)
+        if len(pair)>2:
+            if pair[2] not in _out:
+                raise Exception(f'Command {pair[0]} expected to have {pair[2]} in its output which wasnt found. Either a change to the API or an installation error.')
     tubo.close()
     if printouts:
         print('Check the above installation to ensure it works.')
