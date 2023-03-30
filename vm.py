@@ -53,7 +53,7 @@ def ssh_pipe(instance_id, timeout=8, printouts=True):
     return eye_term.MessyPipe(client, printouts)
 
 def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None, printouts=True):
-    # This abstraction is quite leaky, so only use when things are simple.
+    # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
     # f_poll can be a list 1:1 with bash_cmds but this usage is better dealt with paired_ssh_cmds.
     #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
     #https://stackoverflow.com/questions/59252659/ssh-using-python-via-private-keys
@@ -63,9 +63,9 @@ def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None, printouts=True):
     tubo.close()
     return _out, _err, tubo
 
-def paired_ssh_cmds(instance_id, cmd_pollfn_pairs, timeout=8, printouts=True):
+#def paired_ssh_cmds(instance_id, cmd_pollfn_pairs, timeout=8, printouts=True):
     # Pair each ssh_cmd with the cooresponding expect function.
-    return ez_ssh_cmds(instance_id, [x[0] for x in cmd_pollfn_pairs], timeout=timeout, f_poll=[(x+[None])[1] for x in cmd_pollfn_pairs], printouts=printouts)
+#    return ez_ssh_cmds(instance_id, [x[0] for x in cmd_pollfn_pairs], timeout=timeout, f_poll=[(x+[None])[1] for x in cmd_pollfn_pairs], printouts=printouts)
 
 def send_files(instance_id, file2contents):
     # None contents are deleted.
@@ -73,3 +73,52 @@ def send_files(instance_id, file2contents):
     # Step1: Open ssh client.
     TODO
     # Step2: Send.
+
+##########################Installation tools####################################
+
+def install_aws(instance_id, user_name, region_name, printouts=True):
+    # Installs and tests AWS on a machine, raising Exceptions if the process fails.
+    # user_name is NOT the vm's user_name.
+    eye_term.loop_try(lambda:ez_ssh_cmds(instance_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Retrying {instance_id} in a loop (in case the vm is starting up).', delay=4)
+
+    user_id = covert.user_dangerkey(user_name)
+    publicAWS_key, privateAWS_key = covert.get_key(user_id)
+
+    tubo = ssh_pipe(instance_id, timeout=8, printouts=printouts); pipes = [tubo]
+
+    _expt = eye_term.basic_expect_fn
+    cmd_fn_pairs = [['echo begin', None], ['sudo apt-get update', None],
+                    ['sudo apt-get install awscli', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
+                    ['Y', None], # _expt('~$', timeout=128)
+                    ['aws configure', _expt('Access Key ID')],
+                    [publicAWS_key, _expt('Secret Access Key')],
+                    [privateAWS_key, _expt('region name')],
+                    [region_name, _expt('output format')],
+                    ['json', None],
+                    ['sudo apt-get install python3-pip', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
+                    ['Y', None], ['pip3 install boto3', None]]
+
+    if printouts:
+        print('Beginning installation. Should take about 60 seconds')
+    for pair in cmd_fn_pairs:
+        tubo.API(pair[0], f_poll=pair[1], dt_min=0.01, dt_max=1)
+
+    reboot = False
+    if reboot:
+        tubo.close()
+        ec2c.reboot_instances(InstanceIds=[inst_id])
+        AWS_core.loop_try(lambda:ez_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to finish reboot.', delay=4)
+        tubo = ssh_pipe(instance_id, timeout=8, printouts=printouts)
+        pipes.append(tubo)
+
+    test_cmd_fns = [['echo bash_test', None],
+                    ['aws ec2 describe-vpcs --output text', None], ['echo python_boto3_test', None],
+                    ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None], ['quit()', None]]
+
+    for pair in test_cmd_fns:
+        tubo.API(pair[0], f_poll=pair[1], dt_min=0.01, dt_max=1)
+
+    tubo.close()
+    if printouts:
+        print('Check the above installation to ensure it works.')
+    return pipes

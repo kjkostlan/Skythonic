@@ -7,6 +7,34 @@
 #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
 import time, re
 
+def loop_try(f, f_catch, msg, delay=4):
+    # Waiting for something? Keep looping untill it succedes!
+    # Useful for some shell/concurrency operations.
+    while True:
+        try:
+            return f()
+        except Exception as e:
+            if f_catch(e):
+                if callable(msg):
+                    print(msg())
+                else:
+                    print(msg)
+            else:
+                raise e
+        time.sleep(delay)
+
+def utf8_one_char(read_bytes_fn):
+    # One unicode char may be multible bytes, but if so the first n-1 bytes are not valid single byte chars.
+    # See: https://en.wikipedia.org/wiki/UTF-8
+    bytes = read_bytes_fn(1)
+    while True:
+        try:
+            return bytes.decode('UTF-8')
+        except UnicodeDecodeError as e:
+            if 'unexpected end of data' not in str(e):
+                raise e
+            bytes = bytes+read_bytes_fn(1)
+
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
     def __init__(self, client, printouts, use_file_objs=False):
@@ -55,7 +83,7 @@ class MessyPipe:
                     grow = []
                     while True:
                         try:
-                            grow.append(file_like_obj.read(1).decode())
+                            grow.append(utf8_one_char(file_like_obj.read))
                         except Exception as e:
                             if 'timeout()' not in repr(e):
                                 raise e
@@ -69,11 +97,11 @@ class MessyPipe:
                 #Maybe read multible bytes at once? https://stackoverflow.com/questions/44736204/how-to-find-out-how-many-bytes-in-socket-before-recv-in-python
                 out = []
                 while self.channel.recv_ready():
-                    out.append(self.channel.recv(1).decode('UTF-8'))
+                    out.append(utf8_one_char(self.channel.recv))
                 _out = ''.join(out)
                 err = []
                 while self.channel.recv_stderr_ready():
-                    err.append(self.channel.recv_stderr(1).decode('UTF-8'))
+                    err.append(utf8_one_char(self.channel.recv_stderr))
                 _err = ''.join(err)
                 if self.printouts:
                     if len(_out)>0:

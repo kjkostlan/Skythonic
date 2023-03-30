@@ -57,7 +57,7 @@ def vm_dangerkey(vm_name, vm_params):
     return inst_id
 
 def user_dangerkey(user_name):
-    # WARNING: makes an admin user.
+    # WARNING: makes an ADMIN user.
     user = AWS_core.create_once('user', user_name, True)
     try:
         iam.attach_user_policy(UserName=user_name, PolicyArn = 'arn:aws:iam::aws:policy/AdministratorAccess')
@@ -96,47 +96,3 @@ def get_key(id_or_desc):
         return x['username2AWS_key'][uname]
     else:
         raise Exception('No key associated with this kind of resource id: '+id)
-
-'''
-def simple_admin_user(uname='BYOA'):
-    # Returns the key.
-    user = AWS_core.create_once('user', uname, True)
-    iam.attach_user_policy(UserName=uname, PolicyArn = 'arn:aws:iam::aws:policy/AdministratorAccess')
-    ky = vm.user_key(uname)
-    if ky is None:
-        print('Creating user key')
-        key_dict = iam.create_access_key(UserName=uname)
-        k0 = key_dict['AccessKey']['AccessKeyId']
-        k1 = key_dict['AccessKey']['SecretAccessKey']
-        vm.danger_user_key(uname, k0, k1)
-        ky = [k0, k1]
-    return ky
-
-
-#def danger_user_key(user_name, public_key, private_key):
-#    x = _pickleload()
-#    x['username2AWS_key'][user_name] = [public_key, private_key]
-#    _picklesave(x)
-#    return True
-
-#def key_fname(instance_id):
-#    x = _pickleload(); ky_name = x['instance_id2key_name'][instance_id]
-#    return './softwareDump/'+ky_name+'.pem'
-
-#def user_key(user_name):
-#    x = _pickleload()
-#    return x['username2AWS_key'].get(user_name, None)
-
-#def danger_key(instance_id, ky_name, key_material=None):
-    # Stores which instance uses what key.
-    # Saves the private key's material unencrypted (if not None). Be careful out there!
-#    x = _pickleload()
-#    x['instance_id2key_name'][instance_id] = ky_name
-#    x['key_name2key_material'][ky_name] = key_material
-#    _picklesave(x)
-#    fname = './softwareDump/'+ky_name+'.pem'
-#    if key_material is not None:
-#        _save_ky1(fname, key_material)
-#    return fname
-
-'''

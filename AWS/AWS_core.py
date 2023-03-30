@@ -1,9 +1,9 @@
 # Core AWS functions.
 import time
 import boto3
-import vm
 import AWS.AWS_format as AWS_format
 import AWS.AWS_query as AWS_query
+import eye_term
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
@@ -11,21 +11,6 @@ try:
     logs # A simple way to report output without needing to print it.
 except:
     logs = []
-
-def loop_try(f, f_catch, msg, delay=4):
-    # Waiting for something? Keep looping untill it succedes!
-    while True:
-        try:
-            return f()
-        except Exception as e:
-            if f_catch(e):
-                if callable(msg):
-                    print(msg())
-                else:
-                    print(msg)
-            else:
-                raise e
-        time.sleep(delay)
 
 def add_tags(desc_or_id, d):
     #botocore.exceptions.ClientError: An error occurred (InvalidInstanceID.NotFound) when calling the CreateTags operation: The instance ID 'i-0fb7af9af917db726' does not exist
@@ -83,11 +68,11 @@ def create(rtype, name, **kwargs):
         ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=x['VpcPeeringConnectionId'])
     else:
         raise Exception('Create ob type unrecognized: '+rtype)
-    if rtype not in {}:#{'keypair','user','users'}:
-        f = lambda: add_tags(x, {'Name':name, '__Skythonic__':True})
-        f_catch = lambda e: 'does not exist' in repr(e).lower()
-        msg = 'created a resource of type '+rtype+' waiting for it to start existing.'
-        loop_try(f, f_catch, msg, delay=4)
+
+    f = lambda: add_tags(x, {'Name':name, '__Skythonic__':True})
+    f_catch = lambda e: 'does not exist' in repr(e).lower()
+    msg = 'created a resource of type '+rtype+' waiting for it to start existing.'
+    eye_term.loop_try(f, f_catch, msg, delay=4)
     if raw: # Generally discouraged to work with, except for keypairs.
         return x
     elif type(x) is dict:

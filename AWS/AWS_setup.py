@@ -31,9 +31,9 @@ def wait_and_attach_address(machine_id, address_id):
     f_try = lambda: AWS_core.assoc(addr['AllocationId'], machine_id) #ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=inst_id)
     f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
     msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
-    AWS_core.loop_try(f_try, f_catch, msg, delay=4)
+    eye_term.loop_try(f_try, f_catch, msg, delay=4)
 
-def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): # The jumpbox is much more configurable than the cloud shell.
+def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOA'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
     vpc_id = AWS_core.create_once('VPC', 'Hub', True, CidrBlock='10.100.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
@@ -57,53 +57,18 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', uname='BYOA'): #
     addr = AWS_core.create_once('address', basename+'_address', True, Domain='vpc')
     wait_and_attach_address(inst_id, addr)
 
-    user_id = covert.user_dangerkey(uname)
-    publicAWS_key, privateAWS_key = covert.get_key(user_id)
-
     cmd = vm.ssh_cmd(inst_id, True)
     print('Use this to ssh:', cmd)
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
-    AWS_core.loop_try(lambda:vm.paired_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to be awake enough for ssh.', delay=4)
 
     print('---Setting up AWS on the jump box (WARNING: long term AWS credentials posted to VM)---')
     region_name = subnet_zone
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    # Configure the jump box:
-    # TODO: refactor to vm?
-    _expt = eye_term.basic_expect_fn
-    cmd_fn_pairs = [['echo begin', None], ['sudo apt-get update', None],
-                    ['sudo apt-get install awscli', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
-                    ['Y', _expt('~$', timeout=128)], # Not sure why this breaks the standard expect.
-                    ['aws configure', _expt('Access Key ID')],
-                    [publicAWS_key, _expt('Secret Access Key')],
-                    [privateAWS_key, _expt('region name')],
-                    [region_name, _expt('output format')],
-                    ['json', None],
-                    ['sudo apt-get install python3-pip', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
-                    ['Y', None], ['pip3 install boto3']]
-    test_cmd_fns = [['echo bash_test', None],
-                    ['aws ec2 describe-vpcs --output text', None], ['echo python_boto3_test', None],
-                    ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None], ['quit()', None]]
+    pipes = vm.install_aws(inst_id, user_name, region_name, printouts=True)
 
-    print('Beginning installation. Should take about 60 seconds')
-    _out0, _err0, pipe0 = vm.paired_ssh_cmds(inst_id, cmd_fn_pairs, timeout=8, printouts=True)
-    print('Check the above dump to see if the installation was sucessful.')
-
-    try:
-        reboot = False
-        if reboot:
-            ec2c.reboot_instances(InstanceIds=[inst_id])
-            AWS_core.loop_try(lambda:vm.paired_ssh_cmds(inst_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Waiting for {inst_id} to finish reboot.', delay=4)
-
-        print('Runnings AWS tests that should take under 10 seconds total.')
-        _out1, _err1, pipe1 = vm.paired_ssh_cmds(inst_id, test_cmd_fns, timeout=8, printouts=True)
-        print('Check the above terminal dump to verify AWS CLI and AWS python boto3 is working.')
-    except Exception as e:
-        print('WARNING: the jumpbox testing code threw an exception:', repr(e))
-        pipe1 = None
-    return inst_id, cmd, [pipe0, pipe1]
+    return inst_id, cmd, pipes
 
 def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')

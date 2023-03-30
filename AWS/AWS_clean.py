@@ -2,7 +2,7 @@ import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 import AWS.AWS_query as AWS_query, AWS.AWS_core as AWS_core, AWS.AWS_format as AWS_format
-import covert
+import covert, eye_term
 
 def has_been_deleted(id):
     # To clean up stuff that lingers.
@@ -53,7 +53,7 @@ def dep_check_delete(id_or_obj, xdeps):
             return True
         return False
     msg = lambda: 'Lingering dependencies on '+ id+': '+str(lingers())+' Will retry in a loop untill the deletion works.'
-    AWS_core.loop_try(f_try, f_catch, msg, delay=4)
+    eye_term.loop_try(f_try, f_catch, msg, delay=4)
 
     return int('__deleted__' not in str(desc))
 
