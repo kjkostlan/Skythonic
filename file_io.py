@@ -1,5 +1,5 @@
 # File IO functions.
-import os, io, pickle, codecs
+import os, io, pickle, codecs, shutil
 
 def abs_path(fname): # Code from Termpylus
     return os.path.abspath(fname).replace('\\','/')
@@ -29,6 +29,24 @@ def fload(fname): # Code adapted from Termpylus
             raise Exception('No UTF-8 for:', fname)
         out = x.replace('\r\n','\n')
         return out
+
+def empty_folder(folder, ignore_permiss_error=False):
+    # Useful for installation, since actually deleting the folder works.
+    import stat
+    def del_rw(action, name, exc): #https://stackoverflow.com/questions/21261132/shutil-rmtree-to-remove-readonly-files
+        os.chmod(name, stat.S_IWRITE)
+        os.remove(name)
+    # https://stackoverflow.com/questions/185936/how-to-delete-the-contents-of-a-folder
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            elif os.path.isdir(file_path):
+                shutil.rmtree(file_path, onerror=del_rw)
+        except PermissionError as e:
+            if not ignore_permiss_error:
+                raise e
 
 def pickle64(x):
     # Pickles all the Python files (with UTF-8), or changed ones with diff.

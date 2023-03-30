@@ -1,6 +1,6 @@
 # Core installation and realtime updating features.
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
-import io, sys, os, importlib
+import io, sys, os, importlib, shutil
 import file_io
 
 ########################### Modules and updating ###############################
@@ -85,6 +85,18 @@ def update_python_interp(delta):
             if mname in sys.modules:
                 update_one_module(inv_fnames[fname], fname)
 
+def replace_with_Git_fetch(branch='main', folder='.'):
+    # Uses git fetch. WARNING: removes everything in folder.
+    if os.path.exists(folder):
+        file_io.empty_folder(folder, ignore_permiss_error=True)
+    else:
+        os.makedirs(folder, exist_ok=True)
+    if os.path.exists(folder+'/install_core.py'):
+        raise Exception('Folder not cleaned in preparation for GitHub fetch.')
+    os.system(f'git clone -b "{branch}" "https://github.com/kjkostlan/Skythonic" "{folder}"')
+    if not os.path.exists(folder+'/install_core.py'):
+        raise Exception('Files not created; likely non-existant Git branch or Git not installed.')
+
 try:
     _src_cache
 except:
@@ -94,22 +106,17 @@ except:
 
 ############################# Pickling for a portable string ###################
 
-#def disk_pickle(diff=False):
-    # Pickles all the Python files (with UTF-8), or changed ones with diff.
-    # Updates the _last_pickle so only use when installing.
-#    delta = src_cache_diff() if diff else src_cache_from_disk()
-#    print('Pickling these:', delta.keys())
-#    return file_io.pickle64(delta)
-
 def unpickle_and_update(txt64, update_us=True, update_vms=True):
-
     file_io.disk_unpickle64(txt64)
     delta = src_cache_diff()
     if update_us:
         update_python_interp(delta)
     if update_vms:
-        import vm # delay the import because install_core has to run as standalone for fresh installs.
-        vm.update_vms_skythonic(delta)
+        try:
+            import vm # delay the import because install_core has to run as standalone for fresh installs.
+            vm.update_vms_skythonic(delta)
+        except ModuleNotFoundError:
+            print('Cant update the vms because vm hasent been downloaded yet.')
     update_src_cache()
 
 ############################ Bootstrapping an installation #####################
@@ -121,7 +128,7 @@ def joinlines(lines, windows=False):
         out = '\n'+'\n'.join(lines)+'\n'
     return out
 
-def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True):
+def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True, github_txt=False):
     lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
     quote3 = "''"+"'" # Can't appear in file.
 
@@ -140,7 +147,10 @@ def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True):
     if import_txt:
         lines.append('import install_core')
     lines.append('install_core.unpickle_and_update(obj64, True, True)')
+    if github_txt: # This is an interactive tool => use dev branch.
+        lines.append("import install_core")
+        #lines.append("sudo apt-get install git") # Would this help to have?
+        lines.append("install_core.replace_with_Git_fetch(branch='dev', folder='.')")
     if import_txt:
         lines.append('from pastein import *')
-
     return joinlines(lines, windows)

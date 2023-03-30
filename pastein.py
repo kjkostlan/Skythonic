@@ -61,13 +61,15 @@ if __name__ == '__main__': # For running on your local machine.
         #install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True)
         cache_before_input = install_core.src_cache_from_disk()
 
-        x = input('<None> = load diffs, a = load all, a1/4 = load the 2nd quarter of files (size constraints of paste); q = quit.').lower().strip()
+        x = input('<None> = load diffs, gb = GitHub dev fetch + include bootstrap; q = quit.')
+        x = x.lower().strip()
         if x=='q':
             quit()
         cache_afr_input = install_core.src_cache_from_disk()
         cache_diff = install_core.src_cache_diff(old_cache=cache_before_input, new_cache=cache_afr_input)
 
         a = 0 # For beaking down large pastes.
+        pickle_these = {}
         if x.startswith('a'):
             all_files = cache_afr_input
             if '/' in x: # Only include some files.
@@ -82,15 +84,19 @@ if __name__ == '__main__': # For running on your local machine.
                 pickle_these = dict(zip(piece, [all_files[k] for k in piece]))
             else:
                 pickle_these = all_files
-        else:
+        elif 'g' not in x:
             pickle_these = cache_diff
 
         big_txt = file_io.pickle64(pickle_these)
         n = len(pickle_these)
 
-        txt = install_core.bootstrap_txt(False, big_txt, pyboot_txt=a==0 and 'a' in x, import_txt=True)
+        txt = install_core.bootstrap_txt(False, big_txt, pyboot_txt=(a==0 and 'a' in x) or 'b' in x, import_txt=True, github_txt='g' in x)
         clipboard.copy(txt)
-        if n==0:
+        if 'g' in x and 'b' in x:
+            print('Bootstrap ready with GitHub fetch.')
+        elif 'g' in x:
+            print('GitHub fetch ready.')
+        elif n==0:
             print('No pickled files but code has been copied to jumpstart your Python work.')
         else:
             print(f'Your clipboard is ready with: {n} pickled files; {list(pickle_these.keys())}; press enter once pasted in or c to cancel')
