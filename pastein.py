@@ -61,7 +61,7 @@ if __name__ == '__main__': # For running on your local machine.
         #install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True)
         cache_before_input = install_core.src_cache_from_disk()
 
-        x = input('<None> = load diffs, gb = GitHub dev fetch + include bootstrap; q = quit.')
+        x = input('<None> = load diffs, g = GitHub dev fetch; b = include bootstrap; f = bootstrap with git fetch; q = quit.')
         x = x.lower().strip()
         if x=='q':
             quit()
@@ -90,9 +90,12 @@ if __name__ == '__main__': # For running on your local machine.
         big_txt = file_io.pickle64(pickle_these)
         n = len(pickle_these)
 
-        txt = install_core.bootstrap_txt(False, big_txt, pyboot_txt=(a==0 and 'a' in x) or 'b' in x, import_txt=True, github_txt='g' in x)
+        if 'f' in x:
+            txt = install_core.gitHub_bootstrap_txt(False)
+        else:
+            txt = install_core.bootstrap_txt(False, big_txt, pyboot_txt=(a==0 and 'a' in x) or 'b' in x, import_txt=True, github_txt='g' in x)
         clipboard.copy(txt)
-        if 'g' in x and 'b' in x:
+        if 'g' in x and ('b' in x or 'f' in x):
             print('Bootstrap ready with GitHub fetch.')
         elif 'g' in x:
             print('GitHub fetch ready.')
