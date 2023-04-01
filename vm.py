@@ -43,8 +43,8 @@ def ssh_cmd(instance_id, join_arguments=False):
 def ssh_pipe(instance_id, timeout=8, printouts=True):
     # Returns a MessyPipe which can be interacted with. Don't forget to close() it.
     username = 'ubuntu'; hostname = get_ip(instance_id) #username@hostname
-
-    return eye_term.MessyPipe('ssh', {'username':username,'hostname':hostname, 'timeout':timeout}, printouts)
+    key_filename = covert.get_key(instance_id)[1]
+    return eye_term.MessyPipe('ssh', {'username':username,'hostname':hostname, 'timeout':timeout, 'key_filename':key_filename}, printouts)
 
 def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.

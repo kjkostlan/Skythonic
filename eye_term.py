@@ -63,7 +63,6 @@ class ThreadSafeList():
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
     def __init__(self, proc_type, proc_args, printouts, return_bytes=False, use_file_objs=False):
-        self.client = client
         self.proc_type = proc_type
         self.send_f = None # Send strings OR bytes.
         self.stdout_f = None # Returns an empty bytes if there is nothing to get.
@@ -86,6 +85,7 @@ class MessyPipe:
         if proc_type == 'shell':
             #https://stackoverflow.com/questions/375427/a-non-blocking-read-on-a-subprocess-pipe-in-python/4896288#4896288
             #https://stackoverflow.com/questions/156360/get-all-items-from-thread-queue
+            import subprocess
             def _read_loop(the_pipe, safe_list):
                 while True:
                     safe_list.append(ord(the_pipe.read(1)) if return_bytes else utf8_one_char(the_pipe.read))
@@ -126,15 +126,16 @@ class MessyPipe:
             #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
             # https://stackoverflow.com/questions/40451767/paramiko-recv-ready-returns-false-values
             #https://gist.github.com/kdheepak/c18f030494fea16ffd92d95c93a6d40d
+            import paramiko
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
-            client.connect(hostname, username=username, key_filename=covert.get_key(instance_id)[1], timeout=timeout)#password=passphrase)
+            client.connect(**proc_args) #password=passphrase) #proc_args['hostname'],
             channel = client.invoke_shell()
             self._streams = channel
             if use_file_objs:
                 TODO # This needs to be fixed or use_file_objs as a deprecated features.
                 channel.settimeout(0.125)
-                self._streams = [self.channel.makefile_stdin('wb'), self.channel.makefile('rb'), self.channel.makefile_stderr('rb')]#, self.channel.makefile('rb')]
+                self._streams = [channel.makefile_stdin('wb'), channel.makefile('rb'), channel.makefile_stderr('rb')]#, channel.makefile('rb')]
                 [self.send_f, self.stdout_f, stlf.stderr_f] = [s.read for s in self._streams]
             else:
                 def _send(x, include_newline=True):
@@ -143,11 +144,11 @@ class MessyPipe:
                 self.send_f = _send
                 def _get_bytes(ready_fn, read_fn):
                     out = []
-                    while self.channel.recv_ready():
+                    while channel.recv_ready():
                         out.append(ord(read_fn(1)) if return_bytes else utf8_one_char(read_fn))
                     return ''.join(out).encode() if return_bytes else ''.join(out)
-                self.stdout_f = lambda: _get_bytes(channel.recv_ready, self.channel.recv)
-                self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, self.channel.recv_stderr)
+                self.stdout_f = lambda: _get_bytes(channel.recv_ready, channel.recv)
+                self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, channel.recv_stderr)
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
             self.close = client.close
