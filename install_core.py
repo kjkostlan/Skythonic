@@ -97,6 +97,19 @@ def replace_with_Git_fetch(branch='main', folder='.'):
     if not os.path.exists(folder+'/install_core.py'):
         raise Exception('Files not created; likely non-existant Git branch or Git not installed.')
 
+def install_git_fetch(branch='main'):
+    # Fetches git in a temporary folder and copies the contents here.
+    clean_here = True # Extra cleanup. Not necessary?
+    if clean_here:
+        file_io.empty_folder('.', keeplist='softwaredump')
+    tmp_folder = './softwaredump/GitDump'
+    if not os.path.exists(tmp_folder):
+        os.makedirs(tmp_folder, exist_ok=True)
+    else:
+        file_io.empty_folder(tmp_folder)
+    replace_with_Git_fetch(branch=branch, folder=tmp_folder)
+    file_io.copy_with_overwrite(tmp_folder, '.', ignore_permiss_error=True)
+
 try:
     _src_cache
 except:
@@ -147,10 +160,10 @@ def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True, github_tx
     if import_txt:
         lines.append('import install_core')
     lines.append('install_core.unpickle_and_update(obj64, True, True)')
-    if github_txt: # This is an interactive tool => use dev branch.
+    if github_txt: # This is an interactive tool => use dev branch not main.
         lines.append("import install_core")
         #lines.append("sudo apt-get install git") # Would this help to have?
-        lines.append("install_core.replace_with_Git_fetch(branch='dev', folder='.')")
+        lines.append("install_core.install_git_fetch(branch='dev')")
     if import_txt:
         lines.append('from pastein import *')
     return joinlines(lines, windows)

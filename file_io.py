@@ -30,23 +30,40 @@ def fload(fname): # Code adapted from Termpylus
         out = x.replace('\r\n','\n')
         return out
 
-def empty_folder(folder, ignore_permiss_error=False):
-    # Useful for installation, since actually deleting the folder works.
+def power_delete(filder, ignore_permiss_error=False):
     import stat
     def del_rw(action, name, exc): #https://stackoverflow.com/questions/21261132/shutil-rmtree-to-remove-readonly-files
         os.chmod(name, stat.S_IWRITE)
         os.remove(name)
+    try:
+        if os.path.isfile(file_path) or os.path.islink(file_path):
+            os.unlink(file_path)
+        elif os.path.isdir(file_path):
+            shutil.rmtree(file_path, onerror=del_rw)
+    except PermissionError as e:
+        if not ignore_permiss_error:
+            raise e
+
+def empty_folder(folder, ignore_permiss_error=False, keeplist=None):
+    # Useful for installation, since actually deleting the folder can cause problems.
     # https://stackoverflow.com/questions/185936/how-to-delete-the-contents-of-a-folder
     for filename in os.listdir(folder):
-        file_path = os.path.join(folder, filename)
-        try:
-            if os.path.isfile(file_path) or os.path.islink(file_path):
-                os.unlink(file_path)
-            elif os.path.isdir(file_path):
-                shutil.rmtree(file_path, onerror=del_rw)
-        except PermissionError as e:
-            if not ignore_permiss_error:
-                raise e
+        if filename in keeplist:
+            continue
+        power_delete(os.path.join(folder, filename), ignore_permiss_error)
+
+def copy_with_overwrite(folderA, folderB, ignore_permiss_error=False):
+    #Everything in folderA ends up in folderB. Files and folders with the same name are deleted first.
+    filesb = set(os.listdir(folderB))
+    for fname in os.listdir(folderA):
+        filder = os.path.join(folder, filename)
+        if fname in filesb:
+            power_delete(filder, ignore_permiss_error=True)
+        if not os.path.exists(filder): # Still may exist when ignore_permiss.
+            if os.path.isfile(filder):
+                shutil.copyfile(folderA+'/'+filder, folderB+'/'+filder)
+            else:
+                shutil.copytree(folderA+'/'+filder, folderB+'/'+filder)
 
 def pickle64(x):
     # Pickles all the Python files (with UTF-8), or changed ones with diff.
