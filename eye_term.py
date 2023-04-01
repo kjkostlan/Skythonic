@@ -25,7 +25,8 @@ def loop_try(f, f_catch, msg, delay=4):
 
 def utf8_one_char(read_bytes_fn):
     # One unicode char may be multible bytes, but if so the first n-1 bytes are not valid single byte chars.
-    # See: https://en.wikipedia.org/wiki/UTF-8
+    # See: https://en.wikipedia.org/wiki/UTF-8.
+    # TODO: consider: class io.TextIOWrapper(buffer, encoding=None, errors=None, newline=None, line_buffering=False, write_through=False)
     bytes = read_bytes_fn(1)
     while True:
         try:
@@ -35,13 +36,39 @@ def utf8_one_char(read_bytes_fn):
                 raise e
             bytes = bytes+read_bytes_fn(1)
 
+class ThreadSafeList():
+    # Fill in a read loop on another thread and then use pop_all()
+    # https://superfastpython.com/thread-safe-list/
+    def __init__(self):
+        self._list = list()
+        self._lock = threading.Lock()
+    def append(self, value):
+        with self._lock:
+            self._list.append(value)
+    def pop(self):
+        with self._lock:
+            return self._list.pop()
+    def get(self, index):
+        with self._lock:
+            return self._list[index]
+    def length(self):
+        with self._lock:
+            return len(self._list)
+    def pop_all(self):
+        with self._lock:
+            out = self._list.copy()
+            self._list = []
+            return out
+
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
-    def __init__(self, client, printouts, use_file_objs=False):
+    def __init__(self, proc_type, proc_args, printouts, return_bytes=False, use_file_objs=False):
         self.client = client
-        self.ctype = str(type(client))
-        self.channel = None
-        self.filelike_streams = None
+        self.proc_type = proc_type
+        self.send_f = None # Send strings OR bytes.
+        self.stdout_f = None # Returns an empty bytes if there is nothing to get.
+        self.stderr_f = None
+        self._streams = None # Mainly used for debugging.
         self.color = 'linux'
         self.remove_control_chars = True # **Only on printing** Messier but should prevent terminal upsets.
         self.printouts = printouts # True when debugging.
@@ -52,19 +79,80 @@ class MessyPipe:
         self.history_contents = ['',''] # Includes history.
         self.cmd_history = []
         self.combined_contents = '' # Better approximation to the printout combining out and err.
-        if 'paramiko.client.SSHClient' in self.ctype:
-            self.channel = client.invoke_shell()
+
+        _to_str = lambda x: x if type(x) is str else x.decode()
+        _to_bytes = lambda x: x if type(x) is bytes else x.encode()
+
+        if proc_type == 'shell':
+            #https://stackoverflow.com/questions/375427/a-non-blocking-read-on-a-subprocess-pipe-in-python/4896288#4896288
+            #https://stackoverflow.com/questions/156360/get-all-items-from-thread-queue
+            def _read_loop(the_pipe, safe_list):
+                while True:
+                    safe_list.append(ord(the_pipe.read(1)) if return_bytes else utf8_one_char(the_pipe.read))
+                #for line in iter(out.readline, b''): # Could readline be better or is it prone to getting stuck?
+                #    safe_list.append(line)
+                #out.close()
+            terminal = 'cmd' if os.name=='nt' else 'bash' # Windows vs non-windows.
+            posix_mode = 'posix' in sys.builtin_module_names
+            if not proc_args:
+                procX = terminal
+            elif type(proc_args) is str:
+                procX = proc_args
+            elif type(proc_args) is list or type(proc_args) is tuple:
+                procX = ' '.join(proc_args)
+            elif type(proc_args) is dict:
+                procX = ' '.join([k+' '+proc_args[k] for k in proc_args.keys()])
+            else:
+                raise Exception('For the shell, the type of proc args must be str, list, or dict.')
+            p = subprocess.Popen(procX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=posix_mode) #bufsize=1, shell=True
+
+            def _send(x, include_newline=True):
+                x = _to_bytes(_to_str(x)+'\n' if include_newline else x)
+                p.stdin.write(x); p.stdin.flush() # Flushing seems to be needed.
+            self.send_f = _send
+            stdout_store = ThreadSafeList()
+            stderr_store = ThreadSafeList()
+            t = threading.Thread(target=read_loop, args=(p.stdout, stdout_store))
+            t.daemon = True # thread dies with the program
+            t.start()
+            t = threading.Thread(target=read_loop, args=(p.stderr, stderr_store))
+            t.daemon = True # thread dies with the program
+            t.start()
+            self.stdout_f = _read_loop(the_pipe, stdout_store)
+            self.stderr_f = _read_loop(the_pipe, stderr_store)
+            self.close = p.kill
+        elif proc_type == 'ssh':
+            #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
+            #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
+            # https://stackoverflow.com/questions/40451767/paramiko-recv-ready-returns-false-values
+            #https://gist.github.com/kdheepak/c18f030494fea16ffd92d95c93a6d40d
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
+            client.connect(hostname, username=username, key_filename=covert.get_key(instance_id)[1], timeout=timeout)#password=passphrase)
+            channel = client.invoke_shell()
+            self._streams = channel
             if use_file_objs:
-                self.channel.settimeout(0.125)
-                self.filelike_streams = [self.channel.makefile_stdin('wb'), self.channel.makefile('rb'), self.channel.makefile_stderr('rb')]#, self.channel.makefile('rb')]
+                TODO # This needs to be fixed or use_file_objs as a deprecated features.
+                channel.settimeout(0.125)
+                self._streams = [self.channel.makefile_stdin('wb'), self.channel.makefile('rb'), self.channel.makefile_stderr('rb')]#, self.channel.makefile('rb')]
+                [self.send_f, self.stdout_f, stlf.stderr_f] = [s.read for s in self._streams]
+            else:
+                def _send(x, include_newline=True):
+                    x = _to_str(x)+('\n' if include_newline else '')
+                    channel.send(x)
+                self.send_f = _send
+                def _get_bytes(ready_fn, read_fn):
+                    out = []
+                    while self.channel.recv_ready():
+                        out.append(ord(read_fn(1)) if return_bytes else utf8_one_char(read_fn))
+                    return ''.join(out).encode() if return_bytes else ''.join(out)
+                self.stdout_f = lambda: _get_bytes(channel.recv_ready, self.channel.recv)
+                self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, self.channel.recv_stderr)
 
-            chan = client.get_transport().open_session()
-
-            self.close = lambda: client.close()
-        else: #TODO: more types of pipes (local processes, etc)
-            raise Exception("Unknown client type:"+str(type(client)))
-        # https://stackoverflow.com/questions/40451767/paramiko-recv-ready-returns-false-values
-        #https://gist.github.com/kdheepak/c18f030494fea16ffd92d95c93a6d40d
+            #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
+            self.close = client.close
+        else: # TODO: more kinds of pipes.
+            raise Exception('proc_type must be "shell" or "ssh"')
 
     def update(self):
         _out = None; _err = None
@@ -76,45 +164,18 @@ class MessyPipe:
                         txt = txt.replace(chr(cix),'֍'+hex(cix)+'֍')
                 return txt
             return txt
-
-        if 'paramiko.client.SSHClient' in self.ctype:
-            if self.filelike_streams is not None:
-                def _read(file_like_obj):
-                    grow = []
-                    while True:
-                        try:
-                            grow.append(utf8_one_char(file_like_obj.read))
-                        except Exception as e:
-                            if 'timeout()' not in repr(e):
-                                raise e
-                            break
-                    return ''.join(grow)
-                _out = _read(self.filelike_streams[1])
-                _err = _read(self.filelike_streams[2])
-            else:
-                #https://www.accadius.com/reading-the-ssh-output/
-                #https://docs.paramiko.org/en/stable/api/channel.html
-                #Maybe read multible bytes at once? https://stackoverflow.com/questions/44736204/how-to-find-out-how-many-bytes-in-socket-before-recv-in-python
-                out = []
-                while self.channel.recv_ready():
-                    out.append(utf8_one_char(self.channel.recv))
-                _out = ''.join(out)
-                err = []
-                while self.channel.recv_stderr_ready():
-                    err.append(utf8_one_char(self.channel.recv_stderr))
-                _err = ''.join(err)
-                if self.printouts:
-                    if len(_out)>0:
-                        print(_boring_txt(_out), end='') # Newlines should be contained within the feed so there is no need to print them directly.
-                    if len(_err)>0:
-                        print(_boring_txt(_err), end='')
-                self.combined_contents = self.combined_contents+_out+_err
-        else:
-            raise Exception('This code currently does not understand: '+self.ctype)
+        _out = self.stdout_f()
+        _err = self.stderr_f()
+        if self.printouts:
+            if len(_out)>0:
+                print(_boring_txt(_out), end='') # Newlines should be contained within the feed so there is no need to print them directly.
+            if len(_err)>0:
+                print(_boring_txt(_err), end='')
+        self.combined_contents = self.combined_contents+_out+_err
         new_stuff = [_out, _err]
         for i in range(len(new_stuff)):
             if len(new_stuff[i])>0:
-                self.t1 = time.time() # T1 is updated whenever the pipe sends stuff.
+                self.t1 = time.time() # T1 is updated whenever we recieve anything.
                 self.contents[i] = self.contents[i]+new_stuff[i]
 
     def empty(self, remove_history=False):
@@ -128,7 +189,7 @@ class MessyPipe:
     def drought_len(self):
         return time.time() - self.t1
 
-    def send(self, txt):
+    def send(self, txt, include_newline=True):
         # The non-blocking operation.
         #https://stackoverflow.com/questions/6203653/how-do-you-execute-multiple-commands-in-a-single-session-in-paramiko-python
         self.cmd_history.append(txt)
@@ -138,13 +199,7 @@ class MessyPipe:
                 print('\x1b[0;33;40m'+'→'+'\x1b[6;30;42m' +txt+'\x1b[0;33;40m'+'←'+'\x1b[0m')
             else:
                 print('→'+txt+'←')
-        if 'paramiko.client.SSHClient' in self.ctype:
-            if self.filelike_streams is not None:
-                self.filelike_streams[0].write(txt+'\n')
-            else:
-                self.channel.send(txt+'\n')
-        else:
-            raise Exception('This code currently does not understand: '+self.ctype)
+        self.send_f(txt, include_newline=include_newline)
 
     def API(self, txt, f_poll=None, dt_min=0.0001, dt_max=1):
         # Sents the command, then calls f_poll(self) repeatedly with gradually increasing dt.
@@ -189,11 +244,10 @@ class MessyPipe:
 
     def sure_of_EOF(self):
         # Only if we are sure! Not all that useful since it isn't often triggered.
-        # Note: this fn doesn't seem to be reliable.
-        if 'paramiko.client.SSHClient' in self.ctype:
             #https://stackoverflow.com/questions/35266753/paramiko-python-module-hangs-at-stdout-read
-            ended_list = [False, False] # TODO: fix this.
-            return len(list(filter(lambda x: x, ended_list)))==len(ended_list)
+        #    ended_list = [False, False] # TODO: fix this.
+        #    return len(list(filter(lambda x: x, ended_list)))==len(ended_list)
+        return False # TODO: mayve once in a while there are pipes that are provably closable.
 
 def non_empty_lines(txt):
     txt = txt.replace('\r\n','\n').strip()

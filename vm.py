@@ -44,13 +44,7 @@ def ssh_pipe(instance_id, timeout=8, printouts=True):
     # Returns a MessyPipe which can be interacted with. Don't forget to close() it.
     username = 'ubuntu'; hostname = get_ip(instance_id) #username@hostname
 
-    #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
-    #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
-    client.connect(hostname, username=username, key_filename=covert.get_key(instance_id)[1], timeout=timeout)#password=passphrase)
-
-    return eye_term.MessyPipe(client, printouts)
+    return eye_term.MessyPipe('ssh', {'username':username,'hostname':hostname, 'timeout':timeout}, printouts)
 
 def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
@@ -69,7 +63,10 @@ def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None, printouts=True):
 
 def send_files(instance_id, file2contents):
     # None contents are deleted.
-    print('Sending files to a machine.')
+    print(f'Specifying {len(file2contents)} files on a machine.')
+
+    #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
+
     # Step1: Open ssh client.
     TODO
     # Step2: Send.
@@ -87,16 +84,17 @@ def install_aws(instance_id, user_name, region_name, printouts=True):
     tubo = ssh_pipe(instance_id, timeout=8, printouts=printouts); pipes = [tubo]
 
     _expt = eye_term.basic_expect_fn
+    longer_wait = lambda pipey: eye_term.standard_is_done(pipey, timeout=128)
     cmd_fn_pairs = [['echo begin', None], ['sudo apt-get update', None],
-                    ['sudo apt-get install awscli', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
-                    ['Y', None], # _expt('~$', timeout=128)
+                    ['sudo apt-get install awscli', longer_wait],
+                    ['Y', longer_wait],
                     ['aws configure', _expt('Access Key ID')],
                     [publicAWS_key, _expt('Secret Access Key')],
                     [privateAWS_key, _expt('region name')],
                     [region_name, _expt('output format')],
                     ['json', None],
-                    ['sudo apt-get install python3-pip', lambda pipey: eye_term.standard_is_done(pipey, timeout=128)],
-                    ['Y', None], ['pip3 install boto3', None]]
+                    ['sudo apt-get install python3-pip', longer_wait],
+                    ['Y', longer_wait], ['pip3 install boto3', None]]
 
     if printouts:
         print('Beginning installation. Should take about 60 seconds')
