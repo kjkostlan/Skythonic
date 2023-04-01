@@ -169,7 +169,7 @@ def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True, github_tx
     return joinlines(lines, windows)
 
 def gitHub_bootstrap_txt(windows=False):
-    txt = '''
+    txt = """
 python3=3 # Python vs Python3.
 python3
 python=3
@@ -189,7 +189,7 @@ for fname in fnames:
 print(f'Curled github bootstrap branch {branch} to folder {os.path.realpath(".")}; the GitHub curl requests may be a few minutes out of date.')
 import install_core # Now that the file has been created.
 install_core.install_git_fetch(branch=branch)
-    '''
+    """
     if windows:
         txt = txt.replace('\n','\r\n')
     return txt
