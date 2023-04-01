@@ -188,7 +188,7 @@ for fname in fnames:
 
 print(f'Curled github bootstrap branch {branch} to folder {os.path.realpath(".")}; the GitHub curl requests may be a few minutes out of date.')
 import install_core # Now that the file has been created.
-install_core.install_git_fetch(branch='dev')
+install_core.install_git_fetch(branch=branch)
     '''
     if windows:
         txt = txt.replace('\n','\r\n')
