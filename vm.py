@@ -108,6 +108,7 @@ def install_aws(instance_id, user_name, region_name, printouts=True):
                         'region name':region_name, 'output format':'json'}
     line_endings = {'$','>'}
     cmds = ['echo begin', 'sudo apt-get update', 'sudo apt-get install awscli', 'aws configure',
+            'sudo apt-get install ssh',
             'sudo apt-get install python3-pip', 'pip3 install boto3', 'echo done']
     _cmd_list_fixed_prompt(tubo, cmds, line_end_prompts, lambda cmd:128 if cmd else 6.0)
 
