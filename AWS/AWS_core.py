@@ -157,10 +157,13 @@ def assoc(A, B, _swapped=False):
     if A.startswith('vpc-') and B.startswith('igw-'):
         try:
             ec2c.attach_internet_gateway(VpcId=A, InternetGatewayId=B)
-        except Exception as e:
+        except Exception as e: # TODO: don't duplicate this code. Instead bundle it into a fn if more "already associated" errors exist.
             if 'is already attached' in repr(e) and A in repr(e) and B in repr(e):
                 return
-            raise e
+            elif 'is already attached' in repr(e):
+                raise Exception(' '.join(['Tried to assoc:', A, 'to', B, 'But there is already a different association:', str(list(filter(lambda x:'igw-' in x or 'vpc-' in x, repr(e).split(' '))))]))
+            else:
+                raise e
     elif A.startswith('subnet-') and B.startswith('rtb-'):
         ec2c.associate_route_table(SubnetId=A, RouteTableId=B)
     elif A.startswith('eipalloc-') and B.startswith('i-'):

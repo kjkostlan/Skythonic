@@ -5,17 +5,35 @@ ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
 
-def get_resources(ids=False, which_keys=None):
+def dplane(x, out=None):
+    # Flattens a nested dictionary into 2D: [key][index].
+    if type(x) is list or type(x) is tuple:
+        x = dict(zip(range(len(x)), x))
+    if type(x) is set:
+        x = dict(zip(x,x))
+    if out is None:
+        out = {}
+    _is_coll = lambda x: type(x) in [list, tuple, dict, set]
+    for k in x.keys():
+        if k not in out:
+            out[k] = []
+        if _is_coll(x[k]):
+            dplane(x[k], out)
+        else:
+            out[k].append(x[k])
+    return out
+
+def get_resources(ids=False, which_types=None, ignore_lingering_resources=True):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
     out = {}
 
-    if which_keys is not None and type(which_keys) is not str:
-        which_keys = set([wc.lower() for wc in which_keys])
+    if which_types is not None and type(which_types) is not str:
+        which_types = set([wc.lower() for wc in which_types])
 
     def _hit(kys):
-        if type(which_keys) is str:
-            return which_keys.lower() in kys
-        return which_keys is None or len(which_keys.intersection, kys)>0
+        if type(which_types) is str:
+            return which_types.lower() in kys
+        return which_types is None or len(set(which_types).intersection(kys))>0
 
     if _hit({'vpc'}): # Python only intruduced the switch statement in 3.10
         out['vpcs'] = ec2c.describe_vpcs()['Vpcs']
@@ -35,6 +53,8 @@ def get_resources(ids=False, which_keys=None):
         machines = []
         for pack in ec2c.describe_instances()['Reservations']:
             machines = machines+pack['Instances']
+        if ignore_lingering_resources:
+            machines = list(filter(lambda m:'terminated' not in str(m.get('State',None)), machines))
         out['machines'] = machines
     if _hit({'address'}):
         out['addresses'] = ec2c.describe_addresses()['Addresses']
@@ -48,20 +68,37 @@ def get_resources(ids=False, which_keys=None):
         for k, v in out.items():
             out[k] = AWS_format.obj2id(k)
 
-    if type(which_keys) is str: # SPlice for a str, which is different than a one element set.
+    if type(which_types) is str: # SPlice for a str, which is different than a one element set.
         out = out[list(out.keys())[0]]
 
     return out
 
-def get_by_name(rtype, name):
-    # None if the resource doesn't exist.
+def get_by_tag(rtype, k, v): # Gets a given tag.
     resc = get_resources(False, rtype)
     for r in resc:
-        if AWS_format.tag_dict(r).get('Name',None) == name:
-            if rtype in {'instance', 'instances', 'machine', 'machines'} and 'terminated' in str(r['State']):
-                continue # Don't include those terminated machines that hang around.
+        if AWS_format.tag_dict(r).get(k,None) == v:
             return r
-    return None
+
+def get_by_name(rtype, name): # Convenience fn.
+    return get_by_tag(rtype, 'Name', name)
+
+def flat_lookup(rtype, k, v, assert_range=None):
+    # Flat resource lokup. Not recommended for tags.
+    resc = get_resources(False, rtype)
+    if assert_range is None:
+        assert_range = [0, 1e100]
+    elif tpye(assert_range) is int:
+        assert_range = [assert_range, assert_range]
+    out = []
+    for r in resc:
+        r2 = dplane(r)
+        if v in r2.get(k, []):
+            out.append(r)
+    if len(out)<assert_range[0]:
+        raise Exception(f'Too few matches to {rtype} {k} {v}')
+    elif len(out)>assert_range[1]:
+        raise Exception(f'Too many matches to {rtype} {k} {v}')
+    return out
 
 def _default_custom():
     dresc = {}; cresc = {}; resc = get_resources()

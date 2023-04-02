@@ -70,7 +70,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOA'
 
     return inst_id, cmd, pipes
 
-def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
+def setup_threetier(key_name='basic_keypair', jbox_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsHostnames={'Value': True})
@@ -84,7 +84,7 @@ def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='S
             raise Exception(f'Cannot find this name: {name}; make sure setup_jumpbox has been called.')
         return AWS_format.obj2id(x)
 
-    old_vpc_id = _nameget('vpc', old_vpcname)
+    jbox_vpc_id = _nameget('vpc', jbox_vpcname)
     routetable_id = AWS_core.create_once('rtable', 'Spoke1_rtable', True, VpcId=vpc_id)
 
     basenames = ['web', 'app', 'db']
@@ -111,15 +111,15 @@ def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='S
         addr = AWS_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
         wait_and_attach_address(inst_ids[i], addr)
 
-        cmds.append(vm.ssh_cmd(inst_ids[i], addr, True))
+        cmds.append(vm.ssh_cmd(inst_ids[i], True))
 
     #The gateway is the VpcPeeringConnectionId
-    peering_id = AWS_core.create_once('vpcpeer', '3lev_peer', True, VpcId=old_vpc_id, PeerVpcId=vpc_id) #AWS_core.assoc(old_vpc_id, vpc_id)
+    peering_id = AWS_core.create_once('vpcpeer', '3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #AWS_core.assoc(jbox_vpc_id, vpc_id)
     rtables = ec2c.describe_route_tables()['RouteTables']
 
     old_rtable_id = None
     for rt in rtables: #TODO: better query fns.
-        if old_vpc_id in str(rt):
+        if jbox_vpc_id in str(rt):
             old_rtable_id = AWS_format.obj2id(rt)
     if old_rtable_id is None:
         raise Exception("cant find VPC peering old route table.")
@@ -135,5 +135,10 @@ def setup_threetier(key_name='basic_keypair', old_vpcname='Hub', new_vpc_name='S
         if 'already exists' not in repr(e):
             raise e
 
+    # Testing time:
+    machine = AWS_query.flat_lookup(rtype, 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0]
+    print(f'Testing ssh ping from machine {obj2id(machine)}')
+
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
+    TODO
     return cmds
