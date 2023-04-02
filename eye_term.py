@@ -202,46 +202,62 @@ class MessyPipe:
                 print('→'+txt+'←')
         self.send_f(txt, include_newline=include_newline)
 
-    def API(self, txt, f_poll=None, dt_min=0.0001, dt_max=1):
-        # Sents the command, then calls f_poll(self) repeatedly with gradually increasing dt.
-        # When f_poll returns True it will return the result and clear self.
-        # A default f_poll if it is None
+    def API(self, txt, f_polls=None, timeout=None, dt_min=0.001, dt_max=2.0):
+        # Behaves like an API, returning out, err, and information about which polling fn suceeded.
+        # Optional timeout if all polling fns fail.
         self.send(txt)
         dt = dt_min
         npoll0 = len(self.poll_log)
-        if f_poll is None:
-            f_poll = standard_is_done
-        while not f_poll(self):
+        if f_polls is None:
+            f_polls = {'default':standard_is_done}
+        elif callable(f_polls):
+            f_polls = {'user':f_polls}
+        elif type(f_polls) is list or type(f_polls) is tuple:
+            f_polls = dict(zip(range(len(f_polls)), f_polls))
+        which_poll=None
+        while which_poll is None:
+            for k in f_polls.keys():
+                if f_polls[k](self):
+                    which_poll=k
+                    break
             time.sleep(dt)
             dt = min(dt*1.414, dt_max)
+            td = self.drought_len()
             if self.printouts:
-                td = self.drought_len()
                 if td>6:
                     if self.color=='linux':
-                        print('\x1b[0;33;40m'+f'{td} seconds has elapsed with no input.'+'\x1b[0m')
+                        print('\x1b[0;33;40m'+f'{td} seconds has elapsed with dry pipes.'+'\x1b[0m')
                     else:
-                        print(f'{td} seconds has elapsed with no input.')
+                        print(f'{td} seconds has elapsed with dry pipes.')
             self.update()
+            if timeout is not None and td>timeout:
+                if self.printouts:
+                    print(f'Warning: API_timeout on cmd {txt}; ')
+                self.poll_log.append({'API_timeout':True})
+                break
         if len(self.poll_log)==npoll0:
-            raise Exception('Debug mode, remove this raise in production:', f_poll)
+            #raise Exception('Debug mode to find fns which don't record properly, remove this raise in production:', f_poll)
             self.poll_log.append({'f_poll forgot to append pipe.poll_log when it returned true':True})
+
+        self.poll_log[-1]['f'] = f_polls
+        self.poll_log[-1]['drought'] = self.drought_len()
         self.poll_log[-1]['last_cmd'] = self.cmd_history[-1]
         self.poll_log[-1]['combined_contents'] = self.combined_contents
         out = self.contents.copy()
         self.empty()
-        return out
+        return out[0], out[1], which_poll
 
-    def multi_API(self, cmds, f_poll=None, dt_min=0.0001, dt_max=1):
+    def multi_API(self, cmds, f_polls=None, dt_min=0.0001, dt_max=1):
         # For simplier series of commands.
         # Returns output, errors. f_poll can be a list of fns 1:1 with cmds.
-        outputs = []; errs = []
+        outputs = []; errs = []; polls_info = []
         self.empty()
         for i in range(len(cmds)):
-            f_poll1 = f_poll[i] if (type(f_poll) is list or type(f_poll) is tuple) else f_poll
-            out, err = self.API(cmds[i], f_poll=f_poll1, dt_min=dt_min, dt_max=dt_max)
+            out, err, poll_info = self.API(cmds[i], f_poll=f_polls, dt_min=dt_min, dt_max=dt_max)
             outputs.append(out)
             errs.append(err)
-        return outputs, errs
+            polls_info.append(poll_info)
+        return outputs, errs, polls_info
 
     def sure_of_EOF(self):
         # Only if we are sure! Not all that useful since it isn't often triggered.
@@ -249,53 +265,6 @@ class MessyPipe:
         #    ended_list = [False, False] # TODO: fix this.
         #    return len(list(filter(lambda x: x, ended_list)))==len(ended_list)
         return False # TODO: mayve once in a while there are pipes that are provably closable.
-
-def non_empty_lines(txt):
-    txt = txt.replace('\r\n','\n').strip()
-    return list(filter(lambda x: len(x)>0, txt.split('\n')))
-
-def looks_like_prompt(line):
-    # When most cmds finish they return to foo/bar/baz$, or xyz>, etc.
-    # This determines whether the line is one of these.
-    line = line.strip()
-    for ending in ['$', '>', '#', 'continue? [Y/n]']:
-        if line.endswith(ending):
-            return True
-    return False
-
-def basic_wait(p, timeout=4):
-    # A simple waiting function. TODO: bundle into a larger heuristic.
-    return p.sure_of_EOF() or p.drought_len()>timeout
-
-def basic_expect_fn(the_pattern, is_re=False, timeout=12):
-    # A standard expect fn based on text. Only looks for stuff in the last command.
-    def _expt(p):
-        txt = ''.join(p.contents) # Mash the out and err together.
-        t = p.drought_len()
-        if t>timeout:
-            print(f'Warning: expect timeout {timeout} after:', p.cmd_history[-1], 'expecting:', the_pattern)
-            p.poll_log.append({'reason':f'Timeout {timeout}s waiting for {the_pattern}.'})
-            return True
-        if re.search(the_pattern, txt) is not None if is_re else the_pattern in txt:
-            p.poll_log.append({'reason':f'Found {the_pattern}'})
-            return True
-        return False
-    return _expt
-
-def standard_is_done(p, timeout=8):
-    # A default works-most-of-the-time pipe dryness detector.
-    # Will undergo a lot of tweaks that try to extract the spatial information.
-    #all_lines = many_lines(p)
-    lines = non_empty_lines(p.combined_contents)
-    t = p.drought_len()
-    if t>timeout:
-        print('Warning: default poll fn timeout on:', p.cmd_history[-1])
-        p.poll_log.append({'reason':f'Timeout {timeout}s on the default fn.'})
-        return True
-    elif len(lines)>0 and looks_like_prompt(lines[-1]):
-        p.poll_log.append({'reason':'The last line looks like a command prompt which is ready for the cmd fn.'})
-        return True
-    return False
 
 def termstr(cmds, _out, _err):
     # Prints it in a format that is easier to read.
@@ -311,3 +280,66 @@ def termstr(cmds, _out, _err):
     txt = txt.replace('\r\n','\n')
     txt = txt.replace('\n\n','\n')
     return txt
+
+##################Expect-like tools, but with more granularity##################
+
+def _non_empty_lines(txt):
+    txt = txt.replace('\r\n','\n').strip()
+    return list(filter(lambda x: len(x)>0, txt.split('\n')))
+
+def looks_like_prompt(line):
+    # When most cmds finish they return to foo/bar/baz$, or xyz>, etc.
+    # This determines whether the line is one of these.
+    line = line.strip()
+    for ending in ['$', '>', '#', 'continue? [Y/n]']:
+        if line.endswith(ending):
+            return True
+    return False
+
+def last_line(p):
+    # Last non-empty line (empty if no such line exists).
+    txt = ''.join(p.contents) # Mash the out and err together.
+    lines = _non_empty_lines(txt)
+    if len(lines)==0:
+        return ''
+    #if p.drought_len()>2: # DEBUG
+    #    print('LAST LINE:', lines[-1], lines[-1].strip().endswith('$'))
+    return lines[-1]
+
+def with_timeout(p, f, timeout=6, message=None, printouts=True):
+    # Uses f (f(pipe)=>bool) as an expect with a timeout.
+    # Alternative to calling pipe.API with a timeout.
+    x = {}
+    if message is None:
+        message = str(f)
+    if f(p) or p.sure_of_EOF():
+        x['reason'] = 'Detected '+str(message)
+        p.poll_log.append(x)
+        return True
+    if p.drought_len()>timeout:
+        msg1 = f'Warning: timeout of {timeout} exceeded for {message}.'
+        x['reason'] = msg1
+        if printouts:
+            print(msg1)
+        p.poll_log.append(x)
+        return True
+    return False
+
+def basic_wait(p, timeout=1.25):
+    # A simple waiting function which always times out. Does not print timeouts b/c will always time out.
+    return with_timeout(p, lambda p: False, timeout, '(this fn always times out)', False)
+
+def basic_expect_fn(p, the_pattern, is_re=False, timeout=12, printouts=True):
+    def f(p): # A standard expect fn based on text. Only looks for stuff in the last command.
+        txt = ''.join(p.contents) # Mash the out and err together.
+        return re.search(the_pattern, txt) is not None if is_re else the_pattern in txt
+    return with_timeout(p, f, timeout, 'searching for: '+str(the_pattern), printouts)
+
+def standard_is_done(p, timeout=8, printouts=True):
+    # A default works-most-of-the-time pipe dryness detector.
+    # Will undergo a lot of tweaks that try to extract the spatial information.
+    def f(p):
+        lines = _non_empty_lines(p.combined_contents)
+        return len(lines)>0 and looks_like_prompt(lines[-1])
+
+    return with_timeout(p, f, timeout, 'searching for end-of-line cmds', printouts)

@@ -46,14 +46,14 @@ def ssh_pipe(instance_id, timeout=8, printouts=True):
     key_filename = covert.get_key(instance_id)[1]
     return eye_term.MessyPipe('ssh', {'username':username,'hostname':hostname, 'timeout':timeout, 'key_filename':key_filename}, printouts)
 
-def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_poll=None, printouts=True):
+def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_polls=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
     # f_poll can be a list 1:1 with bash_cmds but this usage is better dealt with paired_ssh_cmds.
     #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
     #https://stackoverflow.com/questions/59252659/ssh-using-python-via-private-keys
     #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
     tubo = ssh_pipe(instance_id, timeout=timeout, printouts=printouts)
-    _out, _err = tubo.multi_API(bash_cmds, f_poll=f_poll)
+    _out, _err, _ = tubo.multi_API(bash_cmds, f_polls=f_polls)
     tubo.close()
     return _out, _err, tubo
 
@@ -73,33 +73,43 @@ def send_files(instance_id, file2contents):
 
 ##########################Installation tools####################################
 
+def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
+    def check_line(_tubo, txt):
+        lline = eye_term.last_line(_tubo)
+        if len(txt)<6: # Heuristic.
+            return lline.strip().endswith(txt)
+        else:
+            return txt in lline
+    line_end_poll = lambda _tubo: check_line(_tubo, '$') or check_line(_tubo, '>')
+    f_polls = {'_vanilla':line_end_poll}
+
+    for k in response_map.keys():
+        f_polls[k] = lambda _tubo, txt=k: check_line(_tubo, txt)
+    for cmd in cmds:
+        _out, _err, poll_info = tubo.API(cmd, f_polls, timeout=timeout_f(cmd))
+        if 'awscli not found' in str(_err): # TODO: handle this error.
+            raise Exception('AWS CLI not found error can randomally appear. Try running the setup script again.')
+        while poll_info and poll_info != '_vanilla':
+            _,_, poll_info = tubo.API(response_map[poll_info], f_polls, timeout=timeout_f(cmd))
+
 def install_aws(instance_id, user_name, region_name, printouts=True):
     # Installs and tests AWS on a machine, raising Exceptions if the process fails.
     # user_name is NOT the vm's user_name.
-    eye_term.loop_try(lambda:ez_ssh_cmds(instance_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Retrying {instance_id} in a loop (in case the vm is starting up).', delay=4)
+    eye_term.loop_try(lambda:ez_ssh_cmds(instance_id, [], timeout=4), lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e), f'Retrying ssh to {instance_id} in a loop (in case the vm is starting up).', delay=4)
 
     user_id = covert.user_dangerkey(user_name)
     publicAWS_key, privateAWS_key = covert.get_key(user_id)
 
     tubo = ssh_pipe(instance_id, timeout=8, printouts=printouts); pipes = [tubo]
 
-    _expt = eye_term.basic_expect_fn
-    longer_wait = lambda pipey: eye_term.standard_is_done(pipey, timeout=128)
-    cmd_fn_pairs = [['echo begin', None], ['sudo apt-get update', None],
-                    ['sudo apt-get install awscli', longer_wait],
-                    ['Y', longer_wait],
-                    ['aws configure', _expt('Access Key ID')],
-                    [publicAWS_key, _expt('Secret Access Key')],
-                    [privateAWS_key, _expt('region name')],
-                    [region_name, _expt('output format')],
-                    ['json', None],
-                    ['sudo apt-get install python3-pip', longer_wait],
-                    ['Y', longer_wait], ['pip3 install boto3', None]]
-
-    if printouts:
-        print('Beginning installation. Should take about 60 seconds')
-    for pair in cmd_fn_pairs:
-        tubo.API(pair[0], f_poll=pair[1], dt_min=0.01, dt_max=1)
+    print('Beginning installation. Should take about 60 seconds')
+    line_end_prompts = {'Which services should be restarted?':'-a','continue? [Y/n]':'Y',
+                        'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+                        'region name':region_name, 'output format':'json'}
+    line_endings = {'$','>'}
+    cmds = ['echo begin', 'sudo apt-get update', 'sudo apt-get install awscli', 'aws configure',
+            'sudo apt-get install python3-pip', 'pip3 install boto3', 'echo done']
+    _cmd_list_fixed_prompt(tubo, cmds, line_end_prompts, lambda cmd:128 if cmd else 6.0)
 
     reboot = False
     if reboot:
@@ -109,17 +119,17 @@ def install_aws(instance_id, user_name, region_name, printouts=True):
         tubo = ssh_pipe(instance_id, timeout=8, printouts=printouts)
         pipes.append(tubo)
 
-    test_cmd_fns = [['echo bash_test', None],
-                    ['aws ec2 describe-vpcs --output text', None, 'CIDRBLOCKASSOCIATIONSET'], ['echo python_boto3_test', None],
-                    ['python3', None], ['import boto3', None], ["boto3.client('ec2').describe_vpcs()", None, "'Vpcs': [{'CidrBlock'"],
-                    ['quit()', None]]
+    test_cmd_fns = [['echo bash_test'],
+                    ['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'], ['echo python_boto3_test'],
+                    ['python3'], ['import boto3'], ["boto3.client('ec2').describe_vpcs()", "'Vpcs': [{'CidrBlock'"],
+                    ['quit()']]
 
     for pair in test_cmd_fns:
-        _out, _err = tubo.API(pair[0], f_poll=pair[1], dt_min=0.01, dt_max=1)
-        if len(pair)>2:
-            if pair[2] not in _out:
-                raise Exception(f'Command {pair[0]} expected to have {pair[2]} in its output which wasnt found. Either a change to the API or an installation error.')
-    tubo.close()
+        _out, _err, _ = tubo.API(pair[0], f_polls=None, dt_min=0.01, dt_max=1)
+        if len(pair)>1:
+            if pair[1] not in _out:
+                raise Exception(f'Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.')
+    tubo.close(); pipes.append(tubo)
     if printouts:
         print('Check the above installation to ensure it works.')
     return pipes
