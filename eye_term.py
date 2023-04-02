@@ -69,7 +69,7 @@ class MessyPipe:
         self.stderr_f = None
         self._streams = None # Mainly used for debugging.
         self.color = 'linux'
-        self.remove_control_chars = True # **Only on printing** Messier but should prevent terminal upsets.
+        self.remove_control_chars = False # **Only on printing** Messier but should prevent terminal upsets.
         self.printouts = printouts # True when debugging.
         self.t0 = time.time() # Time since last clear.
         self.t1 = time.time() # Time of last sucessful read.
@@ -130,6 +130,10 @@ class MessyPipe:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
             client.connect(**proc_args) #password=passphrase) #proc_args['hostname'],
+            use_keepalive=True
+            if use_keepalive: #https://stackoverflow.com/questions/5402919/prevent-sftp-ssh-session-timeout-with-paramiko
+                transport = client.get_transport()
+                transport.set_keepalive(30)
             channel = client.invoke_shell()
             self._streams = channel
             if use_file_objs:
@@ -144,7 +148,7 @@ class MessyPipe:
                 self.send_f = _send
                 def _get_bytes(ready_fn, read_fn):
                     out = []
-                    while channel.recv_ready():
+                    while ready_fn():
                         out.append(ord(read_fn(1)) if return_bytes else utf8_one_char(read_fn))
                     return ''.join(out).encode() if return_bytes else ''.join(out)
                 self.stdout_f = lambda: _get_bytes(channel.recv_ready, channel.recv)
@@ -152,6 +156,7 @@ class MessyPipe:
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
             self.close = client.close
+            self.API('echo ssh_session_begin')
         else: # TODO: more kinds of pipes.
             raise Exception('proc_type must be "shell" or "ssh"')
 
@@ -190,11 +195,11 @@ class MessyPipe:
     def drought_len(self):
         return time.time() - self.t1
 
-    def send(self, txt, include_newline=True):
+    def send(self, txt, include_newline=True, suppress_input_prints=False):
         # The non-blocking operation.
         #https://stackoverflow.com/questions/6203653/how-do-you-execute-multiple-commands-in-a-single-session-in-paramiko-python
         self.cmd_history.append(txt)
-        if self.printouts:
+        if self.printouts and not suppress_input_prints:
             if self.color=='linux':
                 #https://stackoverflow.com/questions/287871/how-do-i-print-colored-text-to-the-terminal
                 print('\x1b[0;33;40m'+'→'+'\x1b[6;30;42m' +txt+'\x1b[0;33;40m'+'←'+'\x1b[0m')
@@ -226,6 +231,7 @@ class MessyPipe:
             if self.printouts:
                 if td>6:
                     if self.color=='linux':
+                        # Colors: https://misc.flogisoft.com/bash/tip_colors_and_formatting
                         print('\x1b[0;33;40m'+f'{td} seconds has elapsed with dry pipes.'+'\x1b[0m')
                     else:
                         print(f'{td} seconds has elapsed with dry pipes.')

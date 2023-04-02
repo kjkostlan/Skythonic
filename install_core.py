@@ -101,8 +101,8 @@ def install_git_fetch(branch='main'):
     # Fetches git in a temporary folder and copies the contents here.
     clean_here = True # Extra cleanup. Not necessary?
     if clean_here:
-        file_io.empty_folder('.', keeplist='softwaredump')
-    tmp_folder = './softwaredump/GitDump'
+        file_io.empty_folder('.', keeplist='softwareDump')
+    tmp_folder = './softwareDump/GitDump'
     if not os.path.exists(tmp_folder):
         os.makedirs(tmp_folder, exist_ok=True)
     else:

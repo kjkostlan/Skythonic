@@ -79,16 +79,16 @@ def _nuclear_clean(only_skythonic_stuff=True): # DELETE EVERYTHING DANGER!
 
 def nuclear_clean():
     confirm = input('Warning: will delete EVERYTHING in the WHOLE ACCOUNT (not just the lab) leaving just the default resources; input y to proceed')
-    covert.remove_pickle()
     if confirm.strip().lower() !='y':
         print("Cancelled by user.")
         return None
+    covert.remove_pickle()
     _nuclear_clean(False)
 
 def skythonic_wipe():
     confirm = input('Warning: will delete EVERY resource created by Skythonic; using the __Skythonic__ tag, (not just the lab); input y to proceed')
-    covert.remove_pickle()
     if confirm.strip().lower() !='y':
         print("Cancelled by user.")
         return None
+    covert.remove_pickle()
     _nuclear_clean(True)
