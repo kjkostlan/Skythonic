@@ -110,7 +110,6 @@ def setup_threetier(key_name='basic_keypair', jbox_vpcname='Hub', new_vpc_name='
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
         addr = AWS_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
         wait_and_attach_address(inst_ids[i], addr)
-
         cmds.append(vm.ssh_cmd(inst_ids[i], True))
 
     #The gateway is the VpcPeeringConnectionId
@@ -136,9 +135,16 @@ def setup_threetier(key_name='basic_keypair', jbox_vpcname='Hub', new_vpc_name='
             raise e
 
     # Testing time:
-    machine = AWS_query.flat_lookup(rtype, 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0]
-    print(f'Testing ssh ping from machine {obj2id(machine)}')
+    jbox_id = AWS_format.obj2id(AWS_query.flat_lookup('machine', 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+    print(f'Testing ssh ping from machine {jbox_id}')
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
-    TODO
+    is_ssh = True # TODO: True in the cloud shell, False if we are in the jumpbox.
+    tubo = vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
+    tubo.API('ping -c 2 localhost')
+    for ip in ips:
+        cmd = f'ping -c 2 {ip}'
+        tubo.API(cmd, timeout=16)
+    tubo.close()
+    print('Check the above ssh test')
     return cmds

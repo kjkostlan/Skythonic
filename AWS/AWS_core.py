@@ -1,4 +1,4 @@
-# Core AWS functions.
+# Lower level AWS functions. Simplifies some aspects of the API, but not designed to cover every last case.
 import time
 import boto3
 import AWS.AWS_format as AWS_format
@@ -92,6 +92,8 @@ def create_once(rtype, name, printouts, **kwargs):
     if r0 is not None:
         if do_print:
             print(str(printouts)+'already exists:', rtype, name)
+        if rtype in {'instance', 'instances', 'machine', 'machines'}:
+            ec2c.start_instances(InstanceIds=[AWS_format.obj2id(r0)])
         return AWS_format.obj2id(r0)
     else:
         out = create(rtype, name, **kwargs)
@@ -175,6 +177,10 @@ def assoc(A, B, _swapped=False):
         raise Exception(f"Don't know how to attach {A} to {B}; this may require updating this function.")
     else:
         assoc(B, A, True)
-
 # def assoc_subnet(vpc, subnet_id): # TODO: how to do this with id?
 #    vpc.associate_with_subnet(SubnetId=subnet_id)
+
+def disassoc(A, B, _swapped=False):
+    # Opposite of assoc and Idempotent.
+    TODO
+dissoc = disassoc # For those familiar with Clojure...

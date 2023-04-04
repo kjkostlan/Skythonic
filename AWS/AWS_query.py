@@ -23,7 +23,13 @@ def dplane(x, out=None):
             out[k].append(x[k])
     return out
 
-def get_resources(ids=False, which_types=None, ignore_lingering_resources=True):
+def lingers(desc_or_id):
+    #desc = AWS_format.id2obj(desc_or_id)
+    #instance 'terminated' in str(m.get('State',None)) # Alternative way for machines.
+    #peering ['Status']['Code']=='deleted'. #Alternate for deleted.
+    return AWS_format.tag_dict(desc_or_id).get('__deleted__',False)
+
+def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
     out = {}
 
@@ -53,8 +59,6 @@ def get_resources(ids=False, which_types=None, ignore_lingering_resources=True):
         machines = []
         for pack in ec2c.describe_instances()['Reservations']:
             machines = machines+pack['Instances']
-        if ignore_lingering_resources:
-            machines = list(filter(lambda m:'terminated' not in str(m.get('State',None)), machines))
         out['machines'] = machines
     if _hit({'address'}):
         out['addresses'] = ec2c.describe_addresses()['Addresses']
@@ -68,13 +72,17 @@ def get_resources(ids=False, which_types=None, ignore_lingering_resources=True):
         for k, v in out.items():
             out[k] = AWS_format.obj2id(k)
 
+    if ignore_lingering_resources:
+        for k in out.keys():
+            out[k] = list(filter(lambda x: not lingers(x), out[k]))
+
     if type(which_types) is str: # SPlice for a str, which is different than a one element set.
         out = out[list(out.keys())[0]]
 
     return out
 
 def get_by_tag(rtype, k, v): # Gets a given tag.
-    resc = get_resources(False, rtype)
+    resc = get_resources(rtype)
     for r in resc:
         if AWS_format.tag_dict(r).get(k,None) == v:
             return r
@@ -84,10 +92,10 @@ def get_by_name(rtype, name): # Convenience fn.
 
 def flat_lookup(rtype, k, v, assert_range=None):
     # Flat resource lokup. Not recommended for tags.
-    resc = get_resources(False, rtype)
+    resc = get_resources(rtype)
     if assert_range is None:
         assert_range = [0, 1e100]
-    elif tpye(assert_range) is int:
+    elif type(assert_range) is int:
         assert_range = [assert_range, assert_range]
     out = []
     for r in resc:

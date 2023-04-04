@@ -30,6 +30,24 @@ def fload(fname): # Code adapted from Termpylus
         out = x.replace('\r\n','\n')
         return out
 
+def folder_load(folder_path, initial_path=None, allowed_extensions=None, acc=None):
+    # filename => values.
+    if acc is None:
+        acc = {}
+    if initial_path is None:
+        initial_path = folder_path
+    for filename in os.listdir(folder_path):
+        fname = folder_path+'/'+filename
+        if os.path.isdir(fname):
+            folder_load(fname, initial_path, allowed_extensions, acc)
+        else:
+            if allowed_extensions is not None:
+                if '.' not in filename or filename.split('.')[-1] not in allowed_extensions:
+                    continue
+            acc[fname[len(initial_path):]] = fload(fname)
+
+    return acc
+
 def power_delete(filder, ignore_permiss_error=False):
     import stat
     def del_rw(action, name, exc): #https://stackoverflow.com/questions/21261132/shutil-rmtree-to-remove-readonly-files
@@ -47,6 +65,9 @@ def power_delete(filder, ignore_permiss_error=False):
 def empty_folder(folder, ignore_permiss_error=False, keeplist=None):
     # Useful for installation, since actually deleting the folder can cause problems.
     # https://stackoverflow.com/questions/185936/how-to-delete-the-contents-of-a-folder
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+        return
     for filename in os.listdir(folder):
         if keeplist is not None and filename in keeplist:
             continue

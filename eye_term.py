@@ -5,7 +5,7 @@
 # *Of course* the 2023+ solution is AI, but this one should be fairly simple.
 #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
 #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
-import time, re
+import time, re, os, sys, threading
 
 def loop_try(f, f_catch, msg, delay=4):
     # Waiting for something? Keep looping untill it succedes!
@@ -62,14 +62,14 @@ class ThreadSafeList():
 
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
-    def __init__(self, proc_type, proc_args, printouts, return_bytes=False, use_file_objs=False):
+    def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False):
         self.proc_type = proc_type
         self.send_f = None # Send strings OR bytes.
         self.stdout_f = None # Returns an empty bytes if there is nothing to get.
         self.stderr_f = None
         self._streams = None # Mainly used for debugging.
         self.color = 'linux'
-        self.remove_control_chars = False # **Only on printing** Messier but should prevent terminal upsets.
+        self.remove_control_chars = True # **Only on printing** Messier but should prevent terminal upsets.
         self.printouts = printouts # True when debugging.
         self.t0 = time.time() # Time since last clear.
         self.t1 = time.time() # Time of last sucessful read.
@@ -86,12 +86,6 @@ class MessyPipe:
             #https://stackoverflow.com/questions/375427/a-non-blocking-read-on-a-subprocess-pipe-in-python/4896288#4896288
             #https://stackoverflow.com/questions/156360/get-all-items-from-thread-queue
             import subprocess
-            def _read_loop(the_pipe, safe_list):
-                while True:
-                    safe_list.append(ord(the_pipe.read(1)) if return_bytes else utf8_one_char(the_pipe.read))
-                #for line in iter(out.readline, b''): # Could readline be better or is it prone to getting stuck?
-                #    safe_list.append(line)
-                #out.close()
             terminal = 'cmd' if os.name=='nt' else 'bash' # Windows vs non-windows.
             posix_mode = 'posix' in sys.builtin_module_names
             if not proc_args:
@@ -104,6 +98,12 @@ class MessyPipe:
                 procX = ' '.join([k+' '+proc_args[k] for k in proc_args.keys()])
             else:
                 raise Exception('For the shell, the type of proc args must be str, list, or dict.')
+            def _read_loop(the_pipe, safe_list):
+                while True:
+                    safe_list.append(ord(the_pipe.read(1)) if return_bytes else utf8_one_char(the_pipe.read))
+                #for line in iter(out.readline, b''): # Could readline be better or is it prone to getting stuck?
+                #    safe_list.append(line)
+                #out.close()
             p = subprocess.Popen(procX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=posix_mode) #bufsize=1, shell=True
 
             def _send(x, include_newline=True):
@@ -112,14 +112,14 @@ class MessyPipe:
             self.send_f = _send
             stdout_store = ThreadSafeList()
             stderr_store = ThreadSafeList()
-            t = threading.Thread(target=read_loop, args=(p.stdout, stdout_store))
+            t = threading.Thread(target=_read_loop, args=(p.stdout, stdout_store))
             t.daemon = True # thread dies with the program
             t.start()
-            t = threading.Thread(target=read_loop, args=(p.stderr, stderr_store))
+            t = threading.Thread(target=_read_loop, args=(p.stderr, stderr_store))
             t.daemon = True # thread dies with the program
             t.start()
-            self.stdout_f = _read_loop(the_pipe, stdout_store)
-            self.stderr_f = _read_loop(the_pipe, stderr_store)
+            self.stdout_f = lambda: bytes(stdout_store.pop_all()) if return_bytes else ''.join(stdout_store.pop_all())
+            self.stderr_f = lambda: bytes(stderr_store.pop_all()) if return_bytes else ''.join(stderr_store.pop_all())
             self.close = p.kill
         elif proc_type == 'ssh':
             #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
@@ -207,7 +207,7 @@ class MessyPipe:
                 print('→'+txt+'←')
         self.send_f(txt, include_newline=include_newline)
 
-    def API(self, txt, f_polls=None, timeout=None, dt_min=0.001, dt_max=2.0):
+    def API(self, txt, f_polls=None, timeout=8.0, dt_min=0.001, dt_max=2.0):
         # Behaves like an API, returning out, err, and information about which polling fn suceeded.
         # Optional timeout if all polling fns fail.
         self.send(txt)
@@ -270,7 +270,7 @@ class MessyPipe:
             #https://stackoverflow.com/questions/35266753/paramiko-python-module-hangs-at-stdout-read
         #    ended_list = [False, False] # TODO: fix this.
         #    return len(list(filter(lambda x: x, ended_list)))==len(ended_list)
-        return False # TODO: mayve once in a while there are pipes that are provably closable.
+        return False # TODO: maybe once in a while there are pipes that are provably closable.
 
 def termstr(cmds, _out, _err):
     # Prints it in a format that is easier to read.
@@ -341,11 +341,13 @@ def basic_expect_fn(p, the_pattern, is_re=False, timeout=12, printouts=True):
         return re.search(the_pattern, txt) is not None if is_re else the_pattern in txt
     return with_timeout(p, f, timeout, 'searching for: '+str(the_pattern), printouts)
 
-def standard_is_done(p, timeout=8, printouts=True):
+def standard_is_done(p):
     # A default works-most-of-the-time pipe dryness detector.
     # Will undergo a lot of tweaks that try to extract the spatial information.
-    def f(p):
-        lines = _non_empty_lines(p.combined_contents)
-        return len(lines)>0 and looks_like_prompt(lines[-1])
+    if p.proc_type=='shell': #Sometimes they use empty lines!?
+        lines = p.combined_contents.replace('\r\n','\n').split('\n')
+        if len(p.combined_contents)>0 and len(lines[-1].strip()) == 0:
+            return True
 
-    return with_timeout(p, f, timeout, 'searching for end-of-line cmds', printouts)
+    lines = _non_empty_lines(p.combined_contents)
+    return len(lines)>0 and looks_like_prompt(lines[-1])

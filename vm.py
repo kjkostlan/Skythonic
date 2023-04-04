@@ -2,11 +2,10 @@
 # See: https://stackoverflow.com/questions/51026026/how-to-pass-private-key-as-text-to-ssh
 # Don't forget the chmod 600 on the keys!
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
-import paramiko
+import paramiko, time, os
 import file_io
 import AWS.AWS_format as AWS_format
 import eye_term, covert
-import time
 import eye_term
 import boto3
 ec2r = boto3.resource('ec2')
@@ -53,6 +52,7 @@ def ssh_pipe(instance_id, timeout=8, printouts=True):
 
 def patient_ssh_pipe(instance_id, printouts=True):
     # Ensures it is started and waites in a loop.
+    instance_id = AWS_format.obj2id(instance_id)
     ec2c.start_instances(InstanceIds=[instance_id])
     _err = lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e) # Not sure why the error.
     return eye_term.loop_try(lambda:ssh_pipe(instance_id, timeout=8, printouts=printouts),
@@ -73,18 +73,45 @@ def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_polls=None, printouts=True)
     # Pair each ssh_cmd with the cooresponding expect function.
 #    return ez_ssh_cmds(instance_id, [x[0] for x in cmd_pollfn_pairs], timeout=timeout, f_poll=[(x+[None])[1] for x in cmd_pollfn_pairs], printouts=printouts)
 
-def send_files(instance_id, file2contents):
+def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # None contents are deleted.
-    print(f'Specifying {len(file2contents)} files on a machine.')
+    # Both local or non-local paths allowed.
+    # Automatically creates folders.
+    instance_id = AWS_format.obj2id(instance_id)
+
+    #if printouts:
+    #    print(f'Specifying {len(file2contents)} files on a machine.')
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
     #scp file.txt username@to_host:/remote/directory/
     instance_id = AWS_format.obj2id(instance_id)
     public_ip = get_ip(instance_id)
-    out = ['ssh', '-i', covert.get_key(instance_id)[1], 'ubuntu@'+str(public_ip)]
-    # Step1: Open ssh client.
-    TODO
-    # Step2: Send?
+
+    tmp_dump = os.path.realpath('softwaredump/_vm_tmp_dump')
+    file_io.empty_folder(tmp_dump, ignore_permiss_error=False, keeplist=None)
+
+    # Enclosing folders that need to be made:
+    folders = set()
+    for k in file2contents.keys():
+        pieces = file2contents[k].replace('\\','/').split('/')
+        for j in range(len(pieces)-1):
+            folders.add('/'.join(pieces[0:j]))
+    folders = list(folders); folders.sort(key=lambda x:len(x.split('/')))
+
+    # Make, from shortest to longest:
+    for k in file2contents.keys():
+        file_io.fsave(tmp_dump+'/'+k, file2contents[k])
+
+    pem_fname = covert.get_key(instance_id)[1]
+    local_file = 'softwaredump/_vm_tmp.txt'
+    root1 = remote_root_folder.replace(" ","\\ ")
+    scp_cmd = f'scp -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
+
+    tubo = eye_term.MessyPipe('shell', printouts=printouts); tubo.API('echo sending_files_to_instance')
+    tubo.API(scp_cmd+'\necho sent', timeout=8) # SCP gives no output, but by adding another command we can get output.
+    tubo.API('echo finished_scp')
+    print('WARNING: TODO delete files as well!')
+    return # TODO: check if worked.
 
 ##########################Installation tools####################################
 
@@ -121,10 +148,18 @@ def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
             else:
                 txt(tubo); break
 
+def copy_Skythonic(instance_id, remote_root_folder, printouts=True):
+    file2contents = file_io.folder_load('.', allowed_extensions='.py')
+    for k in list(file2contents.keys()):
+        if 'softwaredump' in k:
+            del file2contents[k]
+    send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
+
 def install_aws(instance_id, user_name, region_name, printouts=True):
     # Installs and tests AWS on a machine, raising Exceptions if the process fails.
     # user_name is NOT the vm's user_name.
     # (installs python3, boto3, curl).
+    instance_id = AWS_format.obj2id(instance_id)
     user_id = covert.user_dangerkey(user_name)
     publicAWS_key, privateAWS_key = covert.get_key(user_id)
     pipes = []
