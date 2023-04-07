@@ -129,6 +129,7 @@ class MessyPipe:
             import paramiko
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
+            print('Connecting paramiko SSH with these arguments:', proc_args)
             client.connect(**proc_args) #password=passphrase) #proc_args['hostname'],
             use_keepalive=True
             if use_keepalive: #https://stackoverflow.com/questions/5402919/prevent-sftp-ssh-session-timeout-with-paramiko

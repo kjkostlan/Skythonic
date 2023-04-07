@@ -70,7 +70,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOA'
 
     return inst_id, cmd, pipes
 
-def setup_threetier(key_name='basic_keypair', jbox_vpcname='Hub', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
+def setup_threetier(key_name='basic_keypair', jbox_name='jumpbox_VM', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsHostnames={'Value': True})
@@ -84,7 +84,23 @@ def setup_threetier(key_name='basic_keypair', jbox_vpcname='Hub', new_vpc_name='
             raise Exception(f'Cannot find this name: {name}; make sure setup_jumpbox has been called.')
         return AWS_format.obj2id(x)
 
-    jbox_vpc_id = _nameget('vpc', jbox_vpcname)
+    jbox_id = _nameget('machine',jbox_name)
+    jbox_subnet_id = AWS_format.id2obj(jbox_id)['SubnetId']
+    jbox_vpc_id = AWS_format.id2obj(jbox_subnet_id)['VpcId']
+    rtables = AWS_query.get_resources('rtable')
+    matching_rtable_ids = []
+    for rt in rtables: # TODO: better connectivity querying.
+        for a in rt.get('Associations', []):
+            if a.get('SubnetId',None)==jbox_subnet_id:
+                matching_rtable_ids.append(AWS_format.obj2id(rt))
+    if len(matching_rtable_ids)==1:
+        jbox_rtable_id = matching_rtable_ids[0]
+    elif len(matching_rtable_ids)>1:
+        raise Exception('Too many routetables match the Jumbbox.')
+    elif len(matching_rtable_ids)==0:
+        raise Exception('Too few routetables match the Jumpbox')
+
+    print('Jumpbox machine ID:', jbox_id, jbox_subnet_id, jbox_vpc_id)
     routetable_id = AWS_core.create_once('rtable', 'Spoke1_rtable', True, VpcId=vpc_id)
 
     basenames = ['web', 'app', 'db']
@@ -99,9 +115,9 @@ def setup_threetier(key_name='basic_keypair', jbox_vpcname='Hub', new_vpc_name='
 
         # They have different security groups for different types of servers, so we will do so as well rather than use only one for all three:
         #https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html
-        securitygroup_id = AWS_core.create_once('securitygroup', basenames[i]+'_sGroup', True, GroupName='SSH-ONLY'+basenames[i], Description='only allow SSH traffic', VpcId=vpc_id)
+        securitygroup_id = AWS_core.create_once('securitygroup', basenames[i]+'_sGroup', True, GroupName='From Hub'+basenames[i], Description='Allow Hub Ip cidr', VpcId=vpc_id)
         try:
-            ec2c.authorize_security_group_ingress(GroupId=securitygroup_id, CidrIp='0.0.0.0/0', IpProtocol='tcp', FromPort=22, ToPort=22)
+            ec2c.authorize_security_group_ingress(GroupId=securitygroup_id, CidrIp='10.100.0.0/16', IpProtocol='-1', FromPort=22, ToPort=22)
         except Exception as e:
             if 'already exists' not in repr(e):
                 raise e
@@ -116,18 +132,14 @@ def setup_threetier(key_name='basic_keypair', jbox_vpcname='Hub', new_vpc_name='
     peering_id = AWS_core.create_once('vpcpeer', '3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #AWS_core.assoc(jbox_vpc_id, vpc_id)
     rtables = ec2c.describe_route_tables()['RouteTables']
 
-    old_rtable_id = None
-    for rt in rtables: #TODO: better query fns.
-        if jbox_vpc_id in str(rt):
-            old_rtable_id = AWS_format.obj2id(rt)
-    if old_rtable_id is None:
-        raise Exception("cant find VPC peering old route table.")
-
+    print("Creating route on hub rtable id:", jbox_rtable_id)
     try:
-        ec2c.create_route(RouteTableId=old_rtable_id, DestinationCidrBlock='10.101.0.0/16',GatewayId=peering_id)
+        ec2c.create_route(RouteTableId=jbox_rtable_id, DestinationCidrBlock='10.101.0.0/16',GatewayId=peering_id)
     except Exception as e:
         if 'already exists' not in repr(e):
             raise e
+
+    print("Creating route on Spoke1 rtable id:", routetable_id)
     try:
         ec2c.create_route(RouteTableId=routetable_id, DestinationCidrBlock='10.100.0.0/16',GatewayId=peering_id)
     except Exception as e:

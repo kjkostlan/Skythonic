@@ -43,6 +43,7 @@ def ssh_cmd(instance_id, join_arguments=False):
         return ' '.join(out)
     else:
         return out
+    # TODO: /home/cloudshell-user/.ssh/known_hosts
 
 def ssh_pipe(instance_id, timeout=8, printouts=True):
     # Returns a MessyPipe which can be interacted with. Don't forget to close() it.
@@ -185,7 +186,8 @@ def install_aws(instance_id, user_name, region_name, printouts=True):
                         'Get:42':'',
                         'Unpacking awscli':'',
                         'Setting up fontconfig':'',
-                        'Extracting templates from packages':''}
+                        'Extracting templates from packages':'',
+                        'Unpacking libaom3:amd64':''}
     line_endings = {'$','>'}
     #anti_massive_interaction ='sudo NEEDRESTART_MODE=a apt-get dist-upgrade --yes' #https://askubuntu.com/questions/1367139/apt-get-upgrade-auto-restart-services
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
