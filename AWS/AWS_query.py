@@ -41,7 +41,7 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
             return which_types.lower() in kys
         return which_types is None or len(set(which_types).intersection(kys))>0
 
-    if _hit({'vpc'}): # Python only intruduced the switch statement in 3.10
+    if _hit({'vpc'}): # Python only introduced the switch statement in 3.10
         out['vpcs'] = ec2c.describe_vpcs()['Vpcs']
     if _hit({'webgate','internetgateway'}):
         out['webgates'] = ec2c.describe_internet_gateways()['InternetGateways']

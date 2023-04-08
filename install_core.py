@@ -142,7 +142,7 @@ def joinlines(lines, windows=False):
     return out
 
 def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True, github_txt=False):
-    lines = ['python3=3','python3','python=3','python'] # In or out of python shell.
+    lines = ['mkdir Skythonic', 'cd Skythonic', 'python3=3','python3','python=3','python'] # In or out of python shell.
     quote3 = "''"+"'" # Can't appear in file.
 
     if pyboot_txt: # Diff will only change the differences.
@@ -170,6 +170,8 @@ def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True, github_tx
 
 def gitHub_bootstrap_txt(windows=False):
     txt = """
+mkdir Skythonic
+cd Skythonic
 python3=3 # Python vs Python3.
 python3
 python=3

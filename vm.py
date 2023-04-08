@@ -27,6 +27,27 @@ def update_vms_skythonic(diff):
     # Diff can be a partial or full update.
     print('Warning: TODO: implement VM updates.')
 
+
+try: # Precompute.
+    _imgs
+except:
+    _imgs = [None]
+def ubuntu_aim_image():
+    # Attemts to return the latest "stable" minimal AIM Ubuntu image.
+    if _imgs[0] is None:
+        filters = [{'Name':'name','Values':['*ubuntu*']}, {'Name': 'state', 'Values': ['available']}]
+        filters.append({'Name':'architecture','Values':['x86_64']})
+        imgs0 = ec2c.describe_images(Filters=filters, Owners=['amazon'])['Images']
+        filter_fn = lambda d:d.get('Public',False) and d.get('ImageType',None)=='machine' and 'pro' not in d.get('Name',None) and 'minimal' in d.get('Name',None)
+        imgs = list(filter(filter_fn, imgs0))
+        _imgs[0] = {'Ubuntu':imgs}
+    imgs = _imgs[0]['Ubuntu']
+
+    if len(imgs)==0:
+        raise Exception('No matching images to this body of filters.')
+    imgs_sort = list(sorted(imgs,key=lambda d:d.get('CreationDate', '')))
+    return imgs_sort[-1]['ImageId']
+
 ###############################Command line#####################################
 
 def ssh_cmd(instance_id, join_arguments=False):
@@ -109,12 +130,22 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     scp_cmd = f'scp -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
 
     tubo = eye_term.MessyPipe('shell', printouts=printouts); tubo.API('echo sending_files_to_instance')
-    tubo.API(scp_cmd+'\necho sent', timeout=8) # SCP gives no output, but by adding another command we can get output.
+    tubo.API(scp_cmd+'\necho sent', timeout=8) # SCP gives no output, but by adding another command we can find when it is done
     tubo.API('echo finished_scp')
-    print('WARNING: TODO delete files as well!')
-    return # TODO: check if worked.
+    print('WARNING: TODO fix this code to enforce deletions and check fi the files really were transfered.')
+    return tubo, []
 
 ##########################Installation tools####################################
+
+class Ireport: # Installation report.
+    def __init__(pipes, errors):
+        self.pipes = pipes
+        self.errors = errors
+    def append(self, append_this):
+        self.pipes = self.pipes+append_this.pipes
+        self.errors = self.errors+append_this.errors
+    def error_free(self):
+        return len(self.errors)==0
 
 def _super_advanced_linux_shell(tubo):
     # It breaks automation scripts. But why should it?
@@ -149,17 +180,48 @@ def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
             else:
                 txt(tubo); break
 
-def copy_Skythonic(instance_id, remote_root_folder, printouts=True):
+def _default_prompts():
+    # Default line end prompts and the needed input (str or function of the pipe).
+    return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
+     'Which services should be restarted?':_super_advanced_linux_shell, # Newfangled menu.
+     'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+      'region name':region_name, 'output format':'json'}
+
+def update_Apt(instance_id, printouts=True):
+    # Update the apt, which can help.
+    #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
+    cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo foo', 'echo bar', 'echo baz']#, 'sudo dpkg --configure -a']#, anti_massive_interaction]
+    tubo0 = patient_ssh_pipe(instance_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:64.0)
+    tubo0.close()
+    full_restart_here = True #Inconsistent where errors sometimes happen.
+    if full_restart_here:
+        if printouts:
+            print(f'Rebooting {instance_id} as part of the "apt update" process')
+        ec2c.reboot_instances(InstanceIds=[instance_id])
+    tubo1 = patient_ssh_pipe(instance_id, printouts=printouts)
+
+    return Ireport([tubo, tubo1],[]) # TODO: error reporting here instead of empty list.
+
+def install_Ping(instance_id, printouts=True):
+    # Ping is not installed with the minimal linux.
+    cmds = ['sudo apt-get install ping']
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install awscli'], _default_prompts(), lambda cmd:32.0)
+
+    return Ireport([tubo],[]) # TODO: error reporting here instead of empty list.
+
+def install_Skythonic(instance_id, remote_root_folder, printouts=True):
     file2contents = file_io.folder_load('.', allowed_extensions='.py')
     for k in list(file2contents.keys()):
         if 'softwaredump' in k:
             del file2contents[k]
-    send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
+    tubo, errs = send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
+    return Ireport([tubo], errs)
 
-def install_aws(instance_id, user_name, region_name, printouts=True):
-    # Installs and tests AWS on a machine, raising Exceptions if the process fails.
+def install_AWS(instance_id, user_name, region_name, printouts=True):
+    # Installs and tests AWS+boto3 on a machine, raising Exceptions if the process fails.
     # user_name is NOT the vm's user_name.
-    # (installs python3, boto3, curl).
     instance_id = AWS_format.obj2id(instance_id)
     user_id = covert.user_dangerkey(user_name)
     publicAWS_key, privateAWS_key = covert.get_key(user_id)
@@ -178,27 +240,14 @@ def install_aws(instance_id, user_name, region_name, printouts=True):
 
     tubo = patient_ssh_pipe(instance_id, printouts=printouts);
 
-    line_end_prompts = {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
-                        'Which services should be restarted?':_super_advanced_linux_shell, # Try to work through this newfangled menu.
-                        'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
-                        'region name':region_name, 'output format':'json',
-                        # Null prompts may protect us from connection reset:
-                        'Get:42':'',
-                        'Unpacking awscli':'',
-                        'Setting up fontconfig':'',
-                        'Extracting templates from packages':'',
-                        'Unpacking libaom3:amd64':''}
-    line_endings = {'$','>'}
-    #anti_massive_interaction ='sudo NEEDRESTART_MODE=a apt-get dist-upgrade --yes' #https://askubuntu.com/questions/1367139/apt-get-upgrade-auto-restart-services
-    #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
-    cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo foo', 'echo bar', 'echo baz']#, 'sudo dpkg --configure -a']#, anti_massive_interaction]
-    _cmd_list_fixed_prompt(tubo, cmds, line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
-    full_restart_here = True #Inconsistent where errors sometimes happen.
-    tubo = _reset(tubo, full_restart=full_restart_here)
+    null_prompts = {'Get:42':'', 'Unpacking awscli':'',
+                    'Setting up fontconfig':'', 'Extracting templates from packages':'',
+                    'Unpacking libaom3:amd64':''}
+    line_end_prompts = {**_default_prompts(), **null_prompts}
 
-    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install awscli'], line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
-    if "sudo dpkg --configure -a" in str(tubo.history_contents):
-        _cmd_list_fixed_prompt(tubo, ['sudo dpkg --configure -a', 'sudo apt-get install awscli'], line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
+    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install awscli'], _default_prompts(), lambda cmd:64 if 'install' in cmd else 12.0)
+    if "sudo dpkg --configure -a" in str(tubo.history_contents): # Error condition and one-time fix.
+        _cmd_list_fixed_prompt(tubo, ['sudo dpkg --configure -a', 'sudo apt-get install awscli'], _default_prompts(), lambda cmd:64 if 'install' in cmd else 12.0)
 
     tubo = _reset(tubo, full_restart=False)
 
@@ -217,13 +266,16 @@ def install_aws(instance_id, user_name, region_name, printouts=True):
                     ['python3'], ['import boto3'], ["boto3.client('ec2').describe_vpcs()", "'Vpcs': [{'CidrBlock'"],
                     ['quit()']]
 
+    errs = []
     for pair in test_cmd_fns:
         _out, _err, _ = tubo.API(pair[0], f_polls=None, dt_min=0.01, dt_max=1)
         if len(pair)>1:
             if pair[1] not in _out:
-                raise Exception(f'Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.')
+                warn_txt = f'WARNING: Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.'
+                print(warn_txt) if printouts else ''
+                errs.append(warn_txt)
     tubo.close(); pipes.append(tubo)
     if printouts:
         t1 = time.time(); print('Elapsed time on installation (s):',t1-t0)
         print('Check the above test to ensure it works.')
-    return pipes
+    return Ireport(pipes, errs)
