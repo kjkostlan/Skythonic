@@ -1,12 +1,13 @@
-# Handles machine and user keys, which are saved in softwaredump.
+# Handles machine and user keys, which are saved in a dump folder.
 # TODO: option to encrypt with a password.
 import os, pickle
 import boto3
 from AWS import AWS_core, AWS_format
 import file_io
 
+dump_folder = './softwareDump'
 iam = boto3.client('iam')
-pickle_fname = './softwareDump/vm_info.pypickle'
+pickle_fname = f'{dump_folder}/vm_info.pypickle'
 
 def _fillkeys(x):
     kys = ['instance_id2key_name', 'key_name2key_material', 'username2AWS_key']
@@ -21,8 +22,8 @@ def _pickleload():
             return _fillkeys(pickle.load(f))
     return _fillkeys({})
 def _picklesave(x):
-    if not os.path.exists('./softwareDump/'):
-        os.makedirs('./softwareDump/')
+    if not os.path.exists(dump_folder):
+        os.makedirs(dump_folder)
     with open(pickle_fname,'wb') as f:
         return pickle.dump(x, f)
 
@@ -40,7 +41,7 @@ def vm_dangerkey(vm_name, vm_params):
     key_name = vm_params['KeyName']
     x = _pickleload()
     key_mat = None
-    fname = './softwareDump/'+key_name+'.pem'
+    fname = dump_folder+'/'+key_name+'.pem'
     try: # Cant use create_once because of the ephemeral key_material.
         key_pair = AWS_core.create('keypair', key_name, raw_object=True) # Don't use create once b/c we need to know if the user already exists.
         key_mat = key_pair.key_material
@@ -87,8 +88,8 @@ def get_key(id_or_desc):
     x = _pickleload() # At very large scales this query can be some sort of SQL, etc.
     if id.startswith('i-'):
         key_name = x['instance_id2key_name'][id]
-        fname = './softwareDump/'+key_name+'.pem'
-        return None, fname
+        fname = dump_folder+'/'+key_name+'.pem'
+        return None, os.path.realpath(fname)
     elif id.startswith('AID'):
         desc = AWS_format.id2obj(id); uname = desc['UserName']
         if uname not in x['username2AWS_key'] and len(iam.list_access_keys(UserName=uname)['AccessKeyMetadata'])>0:

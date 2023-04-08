@@ -107,3 +107,14 @@ if __name__ == '__main__': # For running on your local machine.
         else:
             print(f'Your clipboard is ready with: {n} pickled files; {list(pickle_these.keys())}; press enter once pasted in or c to cancel')
         install_core.update_src_cache() # Not sure if necessary.
+
+'''
+git clone -b main https://github.com/kjkostlan/Skythonic.git Skythonic
+
+cd Skythonic
+python3
+from AWS import AWS_setup
+report = AWS_setup.setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC')
+
+
+'''

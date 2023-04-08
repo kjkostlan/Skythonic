@@ -33,7 +33,7 @@ def wait_and_attach_address(machine_id, address_id):
     msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
     eye_term.loop_try(f_try, f_catch, msg, delay=4)
 
-def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOA'): # The jumpbox is much more configurable than the cloud shell.
+def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
     vpc_id = AWS_core.create_once('VPC', 'Hub', True, CidrBlock='10.100.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
@@ -57,9 +57,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOA'
     addr = AWS_core.create_once('address', basename+'_address', True, Domain='vpc')
     wait_and_attach_address(inst_id, addr)
 
-    cmd = vm.ssh_cmd(inst_id, True)
-    print('Use this to ssh:', cmd)
-    print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
+    ssh_cmd = vm.ssh_cmd(inst_id, True)
 
     print('---Setting up AWS on the jump box (WARNING: long term AWS credentials posted to VM)---')
     region_name = subnet_zone
@@ -68,7 +66,10 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOA'
 
     pipes = vm.install_aws(inst_id, user_name, region_name, printouts=True)
 
-    return inst_id, cmd, pipes
+    print('Use this to ssh:', ssh_cmd)
+    print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
+
+    return inst_id, ssh_cmd, pipes
 
 def setup_threetier(key_name='basic_keypair', jbox_name='jumpbox_VM', new_vpc_name='Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')
