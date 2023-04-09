@@ -50,6 +50,35 @@ def ubuntu_aim_image():
 
 ###############################Command line#####################################
 
+def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
+    def check_line(_tubo, txt):
+        lline = eye_term.last_line(_tubo)
+        if len(txt)<6: # Heuristic.
+            return lline.strip().endswith(txt)
+        else:
+            return txt in lline
+    line_end_poll = lambda _tubo: check_line(_tubo, '$') or check_line(_tubo, '>')
+    f_polls = {'_vanilla':line_end_poll}
+
+    for k in response_map.keys():
+        f_polls[k] = lambda _tubo, txt=k: check_line(_tubo, txt)
+    for cmd in cmds:
+        _out, _err, poll_info = tubo.API(cmd, f_polls, timeout=timeout_f(cmd))
+        if 'awscli not found' in str(_err): # TODO: handle this error.
+            raise Exception('AWS CLI not found error can randomally appear. Try running the setup script again.')
+        while poll_info and poll_info != '_vanilla':
+            txt = response_map[poll_info]
+            if type(txt) is str:
+                _,_, poll_info = tubo.API(txt, f_polls, timeout=timeout_f(cmd))
+            else:
+                txt(tubo); break
+
+def _default_prompts():
+    # Default line end prompts and the needed input (str or function of the pipe).
+    return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
+            'continue connecting (yes/no)?':'Y',
+            'Which services should be restarted?':_super_advanced_linux_shell} # Newfangled menu.
+
 def ssh_cmd(instance_id, join_arguments=False):
     # Get the ssh cmd to use the key to enter instance_id.
     # Will get a warning: The authenticity can't be established; this warning is normal and is safe to yes if it is a VM you create in your account.
@@ -91,18 +120,11 @@ def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_polls=None, printouts=True)
     tubo.close()
     return _out, _err, tubo
 
-#def paired_ssh_cmds(instance_id, cmd_pollfn_pairs, timeout=8, printouts=True):
-    # Pair each ssh_cmd with the cooresponding expect function.
-#    return ez_ssh_cmds(instance_id, [x[0] for x in cmd_pollfn_pairs], timeout=timeout, f_poll=[(x+[None])[1] for x in cmd_pollfn_pairs], printouts=printouts)
-
 def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # None contents are deleted.
     # Both local or non-local paths allowed.
     # Automatically creates folders.
     instance_id = AWS_format.obj2id(instance_id)
-
-    #if printouts:
-    #    print(f'Specifying {len(file2contents)} files on a machine.')
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
     #scp file.txt username@to_host:/remote/directory/
@@ -127,18 +149,27 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     pem_fname = covert.get_key(instance_id)[1]
     local_file = 'softwaredump/_vm_tmp.txt'
     root1 = remote_root_folder.replace(" ","\\ ")
-    scp_cmd = f'scp -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
+    #https://serverfault.com/questions/330503/scp-without-known-hosts-check
+    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
 
-    tubo = eye_term.MessyPipe('shell', printouts=printouts); tubo.API('echo sending_files_to_instance')
-    tubo.API(scp_cmd+'\necho sent', timeout=8) # SCP gives no output, but by adding another command we can find when it is done
-    tubo.API('echo finished_scp')
-    print('WARNING: TODO fix this code to enforce deletions and check fi the files really were transfered.')
+    tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
+
+    # Getting the output from the scp command is ... tricky. Use echos instead:
+    for i in range(24): # TODO: set the timeout based on the number/size of files.
+        tubo.send('echo foo{bar,baz}')
+        time.sleep(1); tubo.update()
+        if 'foobar foobaz' in tubo.blit(True):
+            break
+        if i==23 and printouts:
+            print(f'WARNING: timeout on scp instance {instance_id}')
+
+    print('WARNING: TODO fix this code to allow deletions and check fi the files really were transfered.')
     return tubo, []
 
 ##########################Installation tools####################################
 
 class Ireport: # Installation report.
-    def __init__(pipes, errors):
+    def __init__(self, pipes, errors):
         self.pipes = pipes
         self.errors = errors
     def append(self, append_this):
@@ -157,59 +188,33 @@ def _super_advanced_linux_shell(tubo):
         tubo.update()
     return tubo.API('random_bashing_done')
 
-def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
-    def check_line(_tubo, txt):
-        lline = eye_term.last_line(_tubo)
-        if len(txt)<6: # Heuristic.
-            return lline.strip().endswith(txt)
-        else:
-            return txt in lline
-    line_end_poll = lambda _tubo: check_line(_tubo, '$') or check_line(_tubo, '>')
-    f_polls = {'_vanilla':line_end_poll}
-
-    for k in response_map.keys():
-        f_polls[k] = lambda _tubo, txt=k: check_line(_tubo, txt)
-    for cmd in cmds:
-        _out, _err, poll_info = tubo.API(cmd, f_polls, timeout=timeout_f(cmd))
-        if 'awscli not found' in str(_err): # TODO: handle this error.
-            raise Exception('AWS CLI not found error can randomally appear. Try running the setup script again.')
-        while poll_info and poll_info != '_vanilla':
-            txt = response_map[poll_info]
-            if type(txt) is str:
-                _,_, poll_info = tubo.API(txt, f_polls, timeout=timeout_f(cmd))
-            else:
-                txt(tubo); break
-
-def _default_prompts():
-    # Default line end prompts and the needed input (str or function of the pipe).
-    return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
-     'Which services should be restarted?':_super_advanced_linux_shell, # Newfangled menu.
-     'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
-      'region name':region_name, 'output format':'json'}
-
 def update_Apt(instance_id, printouts=True):
     # Update the apt, which can help.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo foo', 'echo bar', 'echo baz']#, 'sudo dpkg --configure -a']#, anti_massive_interaction]
-    tubo0 = patient_ssh_pipe(instance_id, printouts=printouts)
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
     _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:64.0)
-    tubo0.close()
+    tubo.close()
     full_restart_here = True #Inconsistent where errors sometimes happen.
     if full_restart_here:
         if printouts:
             print(f'Rebooting {instance_id} as part of the "apt update" process')
         ec2c.reboot_instances(InstanceIds=[instance_id])
-    tubo1 = patient_ssh_pipe(instance_id, printouts=printouts)
 
-    return Ireport([tubo, tubo1],[]) # TODO: error reporting here instead of empty list.
+    return Ireport([tubo],[]) # TODO: error reporting here instead of empty list.
 
 def install_Ping(instance_id, printouts=True):
     # Ping is not installed with the minimal linux.
-    cmds = ['sudo apt-get install ping']
+    #https://www.atlantic.net/vps-hosting/how-to-install-and-use-the-ping-command-in-linux/
+    cmds = ['sudo apt-get install iputils-ping', 'ping', 'echo done']
     tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install awscli'], _default_prompts(), lambda cmd:32.0)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
 
-    return Ireport([tubo],[]) # TODO: error reporting here instead of empty list.
+    errs = []
+    if 'not found' in str(tubo.history_contents):
+        errs.append('Ping produces a not found eror.')
+
+    return Ireport([tubo], errs)
 
 def install_Skythonic(instance_id, remote_root_folder, printouts=True):
     file2contents = file_io.folder_load('.', allowed_extensions='.py')
@@ -243,7 +248,9 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
     null_prompts = {'Get:42':'', 'Unpacking awscli':'',
                     'Setting up fontconfig':'', 'Extracting templates from packages':'',
                     'Unpacking libaom3:amd64':''}
-    line_end_prompts = {**_default_prompts(), **null_prompts}
+    aws_prompts = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+                   'region name':region_name, 'output format':'json'}
+    line_end_prompts = {**_default_prompts(), **null_prompts, **aws_prompts}
 
     _cmd_list_fixed_prompt(tubo, ['sudo apt-get install awscli'], _default_prompts(), lambda cmd:64 if 'install' in cmd else 12.0)
     if "sudo dpkg --configure -a" in str(tubo.history_contents): # Error condition and one-time fix.

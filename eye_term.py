@@ -23,6 +23,15 @@ def loop_try(f, f_catch, msg, delay=4):
                 raise e
         time.sleep(delay)
 
+def remove_control_chars(txt, label=True):
+    for cix in list(range(32))+[127]:
+        if cix not in [9, 10]:
+            if label:
+                txt = txt.replace(chr(cix),'֍'+hex(cix)+'֍')
+            else:
+                txt = txt.replace(chr(cix),'')
+    return txt
+
 def utf8_one_char(read_bytes_fn):
     # One unicode char may be multible bytes, but if so the first n-1 bytes are not valid single byte chars.
     # See: https://en.wikipedia.org/wiki/UTF-8.
@@ -69,7 +78,7 @@ class MessyPipe:
         self.stderr_f = None
         self._streams = None # Mainly used for debugging.
         self.color = 'linux'
-        self.remove_control_chars = True # **Only on printing** Messier but should prevent terminal upsets.
+        self.remove_control_chars = False # **Only on printing** Messier but should prevent terminal upsets.
         self.printouts = printouts # True when debugging.
         self.t0 = time.time() # Time since last clear.
         self.t1 = time.time() # Time of last sucessful read.
@@ -129,7 +138,7 @@ class MessyPipe:
             import paramiko
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
-            print('Connecting paramiko SSH with these arguments:', proc_args)
+            #print('Connecting paramiko SSH with these arguments:', proc_args)
             client.connect(**proc_args) #password=passphrase) #proc_args['hostname'],
             use_keepalive=True
             if use_keepalive: #https://stackoverflow.com/questions/5402919/prevent-sftp-ssh-session-timeout-with-paramiko
@@ -161,15 +170,20 @@ class MessyPipe:
         else: # TODO: more kinds of pipes.
             raise Exception('proc_type must be "shell" or "ssh"')
 
+    def blit(self, include_history=True):
+        # Mash the output and error togetehr.
+        out = ''
+        if include_history:
+            out = ''.join(self.history_contents)
+        out = out + ''.join(self.contents)
+        return out
+
     def update(self):
         _out = None; _err = None
         def _boring_txt(txt):
+            txt = txt.replace('\r\n','\n')
             if self.remove_control_chars:
-                txt = txt.replace('\r\n','\n')
-                for cix in list(range(32))+[127]:
-                    if cix not in [9, 10]:
-                        txt = txt.replace(chr(cix),'֍'+hex(cix)+'֍')
-                return txt
+                remove_control_chars(txt, True)
             return txt
         _out = self.stdout_f()
         _err = self.stderr_f()
