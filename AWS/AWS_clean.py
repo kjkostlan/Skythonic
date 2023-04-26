@@ -61,19 +61,25 @@ def _nuclear_clean(only_skythonic_stuff=True): # DELETE EVERYTHING DANGER!
     resc = AWS_query.custom_resources()
     deps = AWS_query.what_needs_these(custom_only=False, include_empty=True)
     n_delete=0
+    this_machine = AWS_core.our_vm_id()
+    machine_depends_on = set([this_machine]) # Cannot be deleted from said machine.
     for k in ['users', 'peerings','addresses', 'machines', 'subnets', 'rtables','webgates','sgroups','vpcs','kpairs']: # Can the right order avoid needing deps?
         if k not in resc:
             continue
         for x in resc[k]:
             xid = AWS_format.obj2id(x)
+            if k == 'machines' and xid == this_machine:
+                print(f'We are on {xid} and and so wont delete it')
+                continue
+            for what_depends_on_xid in deps[xid]:
+                if what_depends_on_xid in machine_depends_on:
+                    machine_depends_on.add(xid) # The machine depends on something which depends on xid.
+                    break
+            if xid in deps_of_this_machine:
+                print(f'We are on {this_machine} which can only exist if {xid} also exists, skipping deletion.')
+                continue
             if only_skythonic_stuff and not AWS_format.tag_dict(x).get('__Skythonic__', False):
                 continue # Only delete items created by Skythonic.
-            # Can't remove instance from subnet?
-            #if k=='subnets' and xid.startswith('subnet-'): # Try to dissoc addresses from VMS to speed up deletion. (more to come later)
-            #    for dep_id in deps[xid]:
-            #        if dep_id.startswith('i-'):
-            #            print('Dissoc to speed up deletion:', xid, dep_id)
-            #            TODO
             n_delete += dep_check_delete(x, deps[xid])
     print('Deleted (for the first time):', n_delete, 'resources.')
 

@@ -69,12 +69,13 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     report.append(vm.install_AWS(inst_id, user_name, region_name, printouts=True))
     report.append(vm.install_Ping(inst_id, printouts=True))
     report.append(vm.install_Skythonic(inst_id, '~/Skythonic', printouts=True))
+    covert.danger_copy_keys_to_vm(inst_id)
 
     print('Use this to ssh:', ssh_cmd)
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
     if len(report.errors)>0:
         print('Possible errors:', report.errors)
-    return inst_id, ssh_cmd, report
+    return ssh_cmd, inst_id, report
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')

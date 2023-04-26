@@ -97,3 +97,7 @@ def get_key(id_or_desc):
         return x['username2AWS_key'][uname]
     else:
         raise Exception('No key associated with this kind of resource id: '+id)
+
+def danger_copy_keys_to_vm(id):
+    id = AWS_format.obj2id(id_or_desc)
+    TODO

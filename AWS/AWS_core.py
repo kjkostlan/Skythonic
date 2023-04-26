@@ -184,3 +184,8 @@ def disassoc(A, B, _swapped=False):
     # Opposite of assoc and Idempotent.
     TODO
 dissoc = disassoc # For those familiar with Clojure...
+
+def our_vm_id():
+    # The instance_id of our machine.
+    # Returns None if in the cloud shell.
+    TODO

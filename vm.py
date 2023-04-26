@@ -27,7 +27,6 @@ def update_vms_skythonic(diff):
     # Diff can be a partial or full update.
     print('Warning: TODO: implement VM updates.')
 
-
 try: # Precompute.
     _imgs
 except:
