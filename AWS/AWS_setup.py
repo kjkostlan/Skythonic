@@ -69,7 +69,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     report.append(vm.install_AWS(inst_id, user_name, region_name, printouts=True))
     report.append(vm.install_Ping(inst_id, printouts=True))
     report.append(vm.install_Skythonic(inst_id, '~/Skythonic', printouts=True))
-    covert.danger_copy_keys_to_vm(inst_id)
+    covert.danger_copy_keys_to_vm(inst_id, '~/Skythonic')
 
     print('Use this to ssh:', ssh_cmd)
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')

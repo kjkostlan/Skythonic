@@ -14,21 +14,35 @@ def rel_path(fname): # Will default to abs_path if not inside this folders (less
     else:
         return a
 
-def fsave(fname, txt): # Txt files only!
+def fsave(fname, txt, bin_mode=False): # Txt files only!
     os.makedirs(abs_path(os.path.dirname(fname)), exist_ok=True)
-    with open(fname, mode='w', encoding="utf-8") as file_obj:
-        file_obj.write(txt.replace('\r\n','\n'))
+    if type(txt) is str:
+        with open(fname, mode='w', encoding="utf-8") as file_obj:
+            file_obj.write(txt.replace('\r\n','\n'))
+    elif type(txt) is bytes:
+        with open(fname, mode='wb') as file_obj:
+            file_obj.write(txt)
+    else:
+        raise Exception('Can only save strings and bytes.')
 
-def fload(fname): # Code adapted from Termpylus
+def fload(fname, bin_mode=False): # Code adapted from Termpylus
     if not os.path.isfile(fname):
         return None
-    with io.open(fname, mode="r", encoding="utf-8") as file_obj:
-        try:
-            x = file_obj.read()
-        except UnicodeDecodeError:
-            raise Exception('No UTF-8 for:', fname)
-        out = x.replace('\r\n','\n')
-        return out
+    if bin_mode:
+        with io.open(fname, mode="rb") as file_obj:
+            return file_obj.read()
+    else:
+        with io.open(fname, mode="r", encoding="utf-8") as file_obj:
+            try:
+                x = file_obj.read()
+            except UnicodeDecodeError:
+                raise Exception('No UTF-8 for:', fname)
+            out = x.replace('\r\n','\n')
+            return out
+
+def fdelete():
+    if os.path.exists(fname):
+        os.path.unlink(fname)
 
 def folder_load(folder_path, initial_path=None, allowed_extensions=None, acc=None):
     # filename => values.

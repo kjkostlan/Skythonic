@@ -146,7 +146,6 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
         file_io.fsave(tmp_dump+'/'+k, file2contents[k])
 
     pem_fname = covert.get_key(instance_id)[1]
-    local_file = 'softwaredump/_vm_tmp.txt'
     root1 = remote_root_folder.replace(" ","\\ ")
     #https://serverfault.com/questions/330503/scp-without-known-hosts-check
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
@@ -164,6 +163,12 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
 
     print('WARNING: TODO fix this code to allow deletions and check fi the files really were transfered.')
     return tubo, []
+
+def download_remote_file(instance_id, remote_path, local_dest=None):
+    # Returns the contents if the local_dest is None.
+    if local_folder is None:
+        local_tmp_file = os.path.realpath('softwaredump/_vm_tmp_dump')
+    TODO
 
 ##########################Installation tools####################################
 

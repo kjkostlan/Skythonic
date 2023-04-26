@@ -16,12 +16,12 @@ def _fillkeys(x):
             x[k] = {}
     return x
 
-def _pickleload():
+def _pickleload(pickle_fname=pickle_fname):
     if os.path.exists(pickle_fname) and os.path.getsize(pickle_fname) > 0:
         with open(pickle_fname,'rb') as f:
             return _fillkeys(pickle.load(f))
     return _fillkeys({})
-def _picklesave(x):
+def _picklesave(x, pickle_fname=pickle_fname):
     if not os.path.exists(dump_folder):
         os.makedirs(dump_folder)
     with open(pickle_fname,'wb') as f:
@@ -98,6 +98,23 @@ def get_key(id_or_desc):
     else:
         raise Exception('No key associated with this kind of resource id: '+id)
 
-def danger_copy_keys_to_vm(id):
+def danger_copy_keys_to_vm(id_or_desc, remote_root_folder, pickle_fname=pickle_fname, printouts=True):
+    # Copies the keys and the Pickle.
     id = AWS_format.obj2id(id_or_desc)
-    TODO
+    x = _pickleload()
+    file2contents = {}
+    for v in x['instance_id2key_name'].values():
+        fname = dump_folder+'/'+key_name+'.pem'
+        file2contents[fname] = file_io.fload(fname)
+    vm.send_files(id, file2contents, remote_root_folder, printouts=printouts)
+
+    # Add to whatever is held remotely:
+    fname_tmp = dump_folder+'/_covert_tmp.pypickle'
+    vm.download_remote_file(instance_id, fname_tmp)
+    x_remote = _pickleload(pickle_fname=fname_tmp)
+    for k in x_remote.keys():
+        x[k] = {**x_remote[k], **x[k]}
+    _picklesave(x, pickle_fname=fname_tmp) # Save the combined file.
+
+    vm.send_files(id, {pickle_fname:file_io.fload(fname_tmp, bin_mode=True)}, remote_root_folder, printouts=printouts)
+    file_io.fdelete(fname_tmp) #Security: delete the file in case of sensitive information on it.

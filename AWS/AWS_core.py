@@ -1,5 +1,5 @@
 # Lower level AWS functions. Simplifies some aspects of the API, but not designed to cover every last case.
-import time
+import time, requests
 import boto3
 import AWS.AWS_format as AWS_format
 import AWS.AWS_query as AWS_query
@@ -188,4 +188,9 @@ dissoc = disassoc # For those familiar with Clojure...
 def our_vm_id():
     # The instance_id of our machine.
     # Returns None if in the cloud shell.
-    TODO
+    #https://www.educba.com/python-curl/
+    #https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#instance-metadata-ex-2
+    x = str(requests.get('http://169.254.169.254/latest/meta-data/ami-id').content)
+    if not x.startswith('i-'):
+        raise Exception('Error in our_vm_id() fn.')
+    return x
