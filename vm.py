@@ -78,6 +78,17 @@ def _default_prompts():
             'continue connecting (yes/no)?':'Y',
             'Which services should be restarted?':_super_advanced_linux_shell} # Newfangled menu.
 
+def _laconic_wait(tubo, proc_name, seconds=24):
+    # For cmds that don't return much.
+    seconds = int(seconds)
+    for i in range(seconds): # TODO: set the timeout based on the number/size of files.
+        tubo.send('echo foo{bar,baz}')
+        time.sleep(1); tubo.update()
+        if 'foobar foobaz' in tubo.blit(True):
+            break
+        if i==seconds-1 and printouts:
+            print(f'WARNING: timeout on {proc_name}')
+
 def ssh_cmd(instance_id, join_arguments=False):
     # Get the ssh cmd to use the key to enter instance_id.
     # Will get a warning: The authenticity can't be established; this warning is normal and is safe to yes if it is a VM you create in your account.
@@ -151,24 +162,31 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
 
     tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
+    tubo.send(scp_cmd)
 
     # Getting the output from the scp command is ... tricky. Use echos instead:
-    for i in range(24): # TODO: set the timeout based on the number/size of files.
-        tubo.send('echo foo{bar,baz}')
-        time.sleep(1); tubo.update()
-        if 'foobar foobaz' in tubo.blit(True):
-            break
-        if i==23 and printouts:
-            print(f'WARNING: timeout on scp instance {instance_id}')
+    _laconic_wait(tubo, 'scp upload '+instance_id, seconds=24)
 
-    print('WARNING: TODO fix this code to allow deletions and check fi the files really were transfered.')
+    print('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
     return tubo, []
 
-def download_remote_file(instance_id, remote_path, local_dest=None):
+def download_remote_file(instance_id, remote_path, local_dest=None, printouts=True, bin_mode=False):
     # Returns the contents if the local_dest is None.
-    if local_folder is None:
-        local_tmp_file = os.path.realpath('softwaredump/_vm_tmp_dump')
-    TODO
+    save_here = os.path.realpath('softwaredump/_vm_tmp_dump') if local_dest is None else local_dest
+
+    tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
+    #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
+    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" ubuntu@{public_ip}:"{remote_path}" "{tmp_dump}"'
+
+    tubo.send(scp_cmd)
+    _laconic_wait(tubo, 'scp download '+instance_id, seconds=24)
+    out = file_io.fload(save_here, local_dest)
+
+    if local_dest is None:
+        file_io.fdelete(local_dest)
+
+    return out, tubo
+
 
 ##########################Installation tools####################################
 
