@@ -1,6 +1,12 @@
 # File IO functions.
 import os, io, pickle, codecs, shutil
 
+def linux_if_str(txt):
+    if type(txt) is str:
+        return txt.replace('\r\n','\n')
+    else:
+        return txt
+
 def abs_path(fname): # Code from Termpylus
     return os.path.abspath(fname).replace('\\','/')
 
@@ -18,7 +24,7 @@ def fsave(fname, txt, bin_mode=False): # Txt files only!
     os.makedirs(abs_path(os.path.dirname(fname)), exist_ok=True)
     if type(txt) is str:
         with open(fname, mode='w', encoding="utf-8") as file_obj:
-            file_obj.write(txt.replace('\r\n','\n'))
+            file_obj.write(linux_if_str(txt))
     elif type(txt) is bytes:
         with open(fname, mode='wb') as file_obj:
             file_obj.write(txt)
@@ -37,12 +43,12 @@ def fload(fname, bin_mode=False): # Code adapted from Termpylus
                 x = file_obj.read()
             except UnicodeDecodeError:
                 raise Exception('No UTF-8 for:', fname)
-            out = x.replace('\r\n','\n')
+            out = linux_if_str(x)
             return out
 
-def fdelete():
+def fdelete(fname):
     if os.path.exists(fname):
-        os.path.unlink(fname)
+        os.unlink(fname)
 
 def folder_load(folder_path, initial_path=None, allowed_extensions=None, acc=None):
     # filename => values.

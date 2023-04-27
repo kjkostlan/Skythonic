@@ -147,7 +147,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # Enclosing folders that need to be made:
     folders = set()
     for k in file2contents.keys():
-        pieces = file2contents[k].replace('\\','/').split('/')
+        pieces = k.replace('\\','/').split('/')
         for j in range(len(pieces)-1):
             folders.add('/'.join(pieces[0:j]))
     folders = list(folders); folders.sort(key=lambda x:len(x.split('/')))
@@ -157,7 +157,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
         file_io.fsave(tmp_dump+'/'+k, file2contents[k])
 
     pem_fname = covert.get_key(instance_id)[1]
-    root1 = remote_root_folder.replace(" ","\\ ")
+    root1 = remote_root_folder.replace(" ","\\ ") # Escape spaces.
     #https://serverfault.com/questions/330503/scp-without-known-hosts-check
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
 
@@ -171,19 +171,23 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     return tubo, []
 
 def download_remote_file(instance_id, remote_path, local_dest=None, printouts=True, bin_mode=False):
-    # Returns the contents if the local_dest is None.
-    save_here = os.path.realpath('softwaredump/_vm_tmp_dump') if local_dest is None else local_dest
+    # Downalods to a local path or simply returns the file contents.
+    save_here = os.path.realpath('softwaredump/_vm_tmp_dump.unknown') if local_dest is None else local_dest
+    file_io.fdelete(save_here)
 
+    print('REMOTE PATH downlaod DEBUG:', remote_path)
+
+    public_ip = get_ip(instance_id); pem_fname = covert.get_key(instance_id)[1]
     tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
-    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" ubuntu@{public_ip}:"{remote_path}" "{tmp_dump}"'
+    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" ubuntu@{public_ip}:"{remote_path}" "{save_here}"'
 
     tubo.send(scp_cmd)
     _laconic_wait(tubo, 'scp download '+instance_id, seconds=24)
-    out = file_io.fload(save_here, local_dest)
+    out = file_io.fload(save_here, bin_mode=bin_mode)
 
     if local_dest is None:
-        file_io.fdelete(local_dest)
+        file_io.fdelete(save_here)
 
     return out, tubo
 

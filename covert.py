@@ -3,7 +3,7 @@
 import os, pickle
 import boto3
 from AWS import AWS_core, AWS_format
-import file_io
+import file_io, vm
 
 dump_folder = './softwareDump'
 iam = boto3.client('iam')
@@ -31,6 +31,9 @@ def remove_pickle(): # Removes all files. Only use on nuclear cleaning.
     #TODO: remove the pickle.
     _picklesave({})
 
+def _pem(key_name):
+    return dump_folder+'/'+key_name+'.pem'
+
 #### Dangerkey functions are create_once functions that return the public and private key ####
 
 def _save_ky1(fname, key_material):
@@ -41,7 +44,7 @@ def vm_dangerkey(vm_name, vm_params):
     key_name = vm_params['KeyName']
     x = _pickleload()
     key_mat = None
-    fname = dump_folder+'/'+key_name+'.pem'
+    fname = _pem(key_name)
     try: # Cant use create_once because of the ephemeral key_material.
         key_pair = AWS_core.create('keypair', key_name, raw_object=True) # Don't use create once b/c we need to know if the user already exists.
         key_mat = key_pair.key_material
@@ -88,7 +91,7 @@ def get_key(id_or_desc):
     x = _pickleload() # At very large scales this query can be some sort of SQL, etc.
     if id.startswith('i-'):
         key_name = x['instance_id2key_name'][id]
-        fname = dump_folder+'/'+key_name+'.pem'
+        fname = _pem(key_name)
         return None, os.path.realpath(fname)
     elif id.startswith('AID'):
         desc = AWS_format.id2obj(id); uname = desc['UserName']
@@ -104,13 +107,13 @@ def danger_copy_keys_to_vm(id_or_desc, remote_root_folder, pickle_fname=pickle_f
     x = _pickleload()
     file2contents = {}
     for v in x['instance_id2key_name'].values():
-        fname = dump_folder+'/'+key_name+'.pem'
+        fname = _pem(v)
         file2contents[fname] = file_io.fload(fname)
     vm.send_files(id, file2contents, remote_root_folder, printouts=printouts)
 
     # Add to whatever is held remotely:
     fname_tmp = dump_folder+'/_covert_tmp.pypickle'
-    vm.download_remote_file(instance_id, fname_tmp)
+    vm.download_remote_file(id, fname_tmp)
     x_remote = _pickleload(pickle_fname=fname_tmp)
     for k in x_remote.keys():
         x[k] = {**x_remote[k], **x[k]}
