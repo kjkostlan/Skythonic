@@ -90,14 +90,19 @@ def get_key(id_or_desc):
         pass
     x = _pickleload() # At very large scales this query can be some sort of SQL, etc.
     if id.startswith('i-'):
-        key_name = x['instance_id2key_name'][id]
+        key_name = x['instance_id2key_name'].get(id,None)
+        if key_name is None:
+            raise Exception(f'No saved vm key found for {id}')
         fname = _pem(key_name)
         return None, os.path.realpath(fname)
     elif id.startswith('AID'):
         desc = AWS_format.id2obj(id); uname = desc['UserName']
         if uname not in x['username2AWS_key'] and len(iam.list_access_keys(UserName=uname)['AccessKeyMetadata'])>0:
             raise Exception(f'The keys exist for {uname} but they are not in this keychain and are thus lost. They need to be replaced.')
-        return x['username2AWS_key'][uname]
+        key_name = x['username2AWS_key'].get(uname, None)
+        if key_name is None:
+            raise Exception(f'No saved user key found for {uname}')
+        return key_name
     else:
         raise Exception('No key associated with this kind of resource id: '+id)
 

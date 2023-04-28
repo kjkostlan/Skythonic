@@ -71,13 +71,14 @@ def _nuclear_clean(only_skythonic_stuff=True): # DELETE EVERYTHING DANGER!
             if k == 'machines' and xid == this_machine:
                 print(f'We are on {xid} and and so wont delete it')
                 continue
-            for what_depends_on_xid in deps[xid]:
-                if what_depends_on_xid in machine_depends_on:
-                    machine_depends_on.add(xid) # The machine depends on something which depends on xid.
-                    break
-            if xid in deps_of_this_machine:
-                print(f'We are on {this_machine} which can only exist if {xid} also exists, skipping deletion.')
-                continue
+            if this_machine is not None:
+                for what_depends_on_xid in deps[xid]:
+                    if what_depends_on_xid in machine_depends_on:
+                        machine_depends_on.add(xid) # The machine depends on something which depends on xid.
+                        break
+                if xid in machine_depends_on:
+                    print(f'We are on {this_machine} which can only exist if {xid} also exists, skipping deletion.')
+                    continue
             if only_skythonic_stuff and not AWS_format.tag_dict(x).get('__Skythonic__', False):
                 continue # Only delete items created by Skythonic.
             n_delete += dep_check_delete(x, deps[xid])

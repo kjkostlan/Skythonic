@@ -190,7 +190,9 @@ def our_vm_id():
     # Returns None if in the cloud shell.
     #https://www.educba.com/python-curl/
     #https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#instance-metadata-ex-2
-    x = str(requests.get('http://169.254.169.254/latest/meta-data/ami-id').content)
+    x = requests.get('http://169.254.169.254/latest/meta-data/ami-id').content.decode()
+    if 'Resource not found' in x:
+        return None
     if not x.startswith('i-'):
         raise Exception('Error in our_vm_id() fn.')
     return x

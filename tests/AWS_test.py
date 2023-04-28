@@ -19,6 +19,8 @@ def test_ssh_jumpbox():
     _cmd_test('aws TODO', look_for, vm_desc)
     _cmd_test(cmd, look_for, vm_desc)
 
+    #TODO our_vm_id
+
     print(vm_desc)
     return False
 

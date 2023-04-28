@@ -86,7 +86,7 @@ def laconic_wait(tubo, proc_name, timeout_seconds=24):
         time.sleep(1); tubo.update()
         if 'foobar foobaz' in tubo.blit(True):
             break
-        if i==seconds-1 and printouts:
+        if i==timeout_seconds-1 and printouts:
             print(f'WARNING: timeout on {proc_name}')
 
 def ssh_cmd(instance_id, join_arguments=False):
@@ -165,7 +165,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     tubo.send(scp_cmd)
 
     # Getting the output from the scp command is ... tricky. Use echos instead:
-    laconic_wait(tubo, 'scp upload '+instance_id, seconds=24)
+    laconic_wait(tubo, 'scp upload '+instance_id, timeout_seconds=24)
 
     print('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
     return tubo, []
@@ -183,7 +183,7 @@ def download_remote_file(instance_id, remote_path, local_dest=None, printouts=Tr
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" ubuntu@{public_ip}:"{remote_path}" "{save_here}"'
 
     tubo.send(scp_cmd)
-    laconic_wait(tubo, 'scp download '+instance_id, seconds=24)
+    laconic_wait(tubo, 'scp download '+instance_id, timeout_seconds=24)
     out = file_io.fload(save_here, bin_mode=bin_mode)
 
     if local_dest is None:
@@ -289,9 +289,10 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
 
     _cmd_list_fixed_prompt(tubo, ['aws configure'], line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
 
-    pip_cmd = 'pip3 install boto3'
-    pip_cmd = 'python3 -m pip install boto3' # Is this any better? https://stackoverflow.com/questions/59997065/pip-python-normal-site-packages-is-not-writeable
-    _cmd_list_fixed_prompt(tubo, [pip_cmd], line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
+    # Discussion on vs 'pip3 install boto3' vs 'python3 -m pip install boto3':
+        #https://stackoverflow.com/questions/59997065/pip-python-normal-site-packages-is-not-writeable
+    pip_cmds = ['python3 -m pip install boto3', 'pip install --upgrade awscli', 'pip install --upgrade botocore'] # Upgrades may avoid errors.
+    _cmd_list_fixed_prompt(tubo, pip_cmds, line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
     tubo = _reset(tubo, full_restart=False)
 
     test_cmd_fns = [['echo bash_test'],
