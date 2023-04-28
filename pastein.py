@@ -110,12 +110,11 @@ if __name__ == '__main__': # For running on your local machine.
         install_core.update_src_cache() # Not sure if necessary.
 
 '''
+# Installation script (Bash):
 git clone -b main https://github.com/kjkostlan/Skythonic.git Skythonic
 
-cd Skythonic
+cd ~/Skythonic
 python3
 from AWS import AWS_setup
 report = AWS_setup.setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC')
-
-
 '''
