@@ -170,8 +170,9 @@ def bootstrap_txt(windows, pickle64, pyboot_txt=True, import_txt=True, github_tx
 
 def gitHub_bootstrap_txt(windows=False):
     txt = """
+cd ~
 mkdir Skythonic
-cd Skythonic
+cd ~/Skythonic
 python3=3 # Python vs Python3.
 python3
 python=3
