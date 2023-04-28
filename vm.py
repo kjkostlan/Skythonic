@@ -78,10 +78,10 @@ def _default_prompts():
             'continue connecting (yes/no)?':'Y',
             'Which services should be restarted?':_super_advanced_linux_shell} # Newfangled menu.
 
-def _laconic_wait(tubo, proc_name, seconds=24):
-    # For cmds that don't return much.
-    seconds = int(seconds)
-    for i in range(seconds): # TODO: set the timeout based on the number/size of files.
+def laconic_wait(tubo, proc_name, timeout_seconds=24):
+    # For cmds that don't return much. TODO: get working on windows.
+    timeout_seconds = int(timeout_seconds)
+    for i in range(timeout_seconds): # TODO: set the timeout based on the number/size of files.
         tubo.send('echo foo{bar,baz}')
         time.sleep(1); tubo.update()
         if 'foobar foobaz' in tubo.blit(True):
@@ -165,7 +165,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     tubo.send(scp_cmd)
 
     # Getting the output from the scp command is ... tricky. Use echos instead:
-    _laconic_wait(tubo, 'scp upload '+instance_id, seconds=24)
+    laconic_wait(tubo, 'scp upload '+instance_id, seconds=24)
 
     print('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
     return tubo, []
@@ -183,7 +183,7 @@ def download_remote_file(instance_id, remote_path, local_dest=None, printouts=Tr
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" ubuntu@{public_ip}:"{remote_path}" "{save_here}"'
 
     tubo.send(scp_cmd)
-    _laconic_wait(tubo, 'scp download '+instance_id, seconds=24)
+    laconic_wait(tubo, 'scp download '+instance_id, seconds=24)
     out = file_io.fload(save_here, bin_mode=bin_mode)
 
     if local_dest is None:

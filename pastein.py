@@ -8,7 +8,7 @@ def _importcode(mnames):
 def awsP(windows=False):
     imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean',\
                'AWS.AWS_setup as AWS_setup','AWS.AWS_query as AWS_query',\
-               'AWS.AWS_format as AWS_format', 'AWS.AWS_test as AWS_test', \
+               'AWS.AWS_format as AWS_format', 'test.AWS_test as AWS_test', \
                'boto3', 'vm']
     lines = _importcode(imports)
     lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", "iam = boto3.client('iam')", 'who = AWS_query.get_resources']
