@@ -5,9 +5,8 @@ import boto3
 from AWS import AWS_core, AWS_format
 import file_io, vm
 
-dump_folder = './softwareDump'
 iam = boto3.client('iam')
-pickle_fname = f'{dump_folder}/vm_info.pypickle'
+pickle_fname = f'{file_io.dump_folder}/vm_secrets.pypickle'
 
 def _fillkeys(x):
     kys = ['instance_id2key_name', 'key_name2key_material', 'username2AWS_key']
@@ -22,8 +21,8 @@ def _pickleload(pickle_fname=pickle_fname):
             return _fillkeys(pickle.load(f))
     return _fillkeys({})
 def _picklesave(x, pickle_fname=pickle_fname):
-    if not os.path.exists(dump_folder):
-        os.makedirs(dump_folder)
+    if not os.path.exists(file_io.dump_folder):
+        os.makedirs(file_io.dump_folder)
     with open(pickle_fname,'wb') as f:
         return pickle.dump(x, f)
 
@@ -32,7 +31,7 @@ def remove_pickle(): # Removes all files. Only use on nuclear cleaning.
     _picklesave({})
 
 def _pem(key_name):
-    return dump_folder+'/'+key_name+'.pem'
+    return file_io.dump_folder+'/'+key_name+'.pem'
 
 #### Dangerkey functions are create_once functions that return the public and private key ####
 
@@ -106,23 +105,24 @@ def get_key(id_or_desc):
     else:
         raise Exception('No key associated with this kind of resource id: '+id)
 
-def danger_copy_keys_to_vm(id_or_desc, remote_root_folder, pickle_fname=pickle_fname, printouts=True):
+def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickle_fname, printouts=True):
     # Copies the keys and the Pickle.
+    dest_folder = skythonic_root_folder+'/'+file_io.dump_folder
     id = AWS_format.obj2id(id_or_desc)
     x = _pickleload()
     file2contents = {}
     for v in x['instance_id2key_name'].values():
         fname = _pem(v)
         file2contents[fname] = file_io.fload(fname)
-    vm.send_files(id, file2contents, remote_root_folder, printouts=printouts)
+    vm.send_files(id, file2contents, dest_folder, printouts=printouts)
 
     # Add to whatever is held remotely:
-    fname_tmp = dump_folder+'/_covert_tmp.pypickle'
+    fname_tmp = file_io.dump_folder+'/_covert_tmp.pypickle'
     vm.download_remote_file(id, fname_tmp)
     x_remote = _pickleload(pickle_fname=fname_tmp)
     for k in x_remote.keys():
         x[k] = {**x_remote[k], **x[k]}
     _picklesave(x, pickle_fname=fname_tmp) # Save the combined file.
 
-    vm.send_files(id, {pickle_fname:file_io.fload(fname_tmp, bin_mode=True)}, remote_root_folder, printouts=printouts)
+    vm.send_files(id, {pickle_fname:file_io.fload(fname_tmp, bin_mode=True)}, dest_folder, printouts=printouts)
     file_io.fdelete(fname_tmp) #Security: delete the file in case of sensitive information on it.

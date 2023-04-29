@@ -1,6 +1,8 @@
 # File IO functions.
 import os, io, pickle, codecs, shutil
 
+dump_folder = './softwareDump'
+
 def linux_if_str(txt):
     if type(txt) is str:
         return txt.replace('\r\n','\n')

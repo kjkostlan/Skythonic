@@ -141,7 +141,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     instance_id = AWS_format.obj2id(instance_id)
     public_ip = get_ip(instance_id)
 
-    tmp_dump = os.path.realpath('softwaredump/_vm_tmp_dump')
+    tmp_dump = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump')
     file_io.empty_folder(tmp_dump, ignore_permiss_error=False, keeplist=None)
 
     # Enclosing folders that need to be made:
@@ -172,7 +172,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
 
 def download_remote_file(instance_id, remote_path, local_dest=None, printouts=True, bin_mode=False):
     # Downalods to a local path or simply returns the file contents.
-    save_here = os.path.realpath('softwaredump/_vm_tmp_dump.unknown') if local_dest is None else local_dest
+    save_here = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump.unknown') if local_dest is None else local_dest
     file_io.fdelete(save_here)
 
     print('REMOTE PATH downlaod DEBUG:', remote_path)
@@ -245,7 +245,7 @@ def install_Ping(instance_id, printouts=True):
 def install_Skythonic(instance_id, remote_root_folder, printouts=True):
     file2contents = file_io.folder_load('.', allowed_extensions='.py')
     for k in list(file2contents.keys()):
-        if 'softwaredump' in k:
+        if file_io.dump_folder.split('/')[-1] in k:
             del file2contents[k]
     tubo, errs = send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
     return Ireport([tubo], errs)
