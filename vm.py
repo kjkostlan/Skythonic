@@ -128,17 +128,21 @@ def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_polls=None, printouts=True)
     tubo = ssh_pipe(instance_id, timeout=timeout, printouts=printouts)
     _out, _err, _ = tubo.multi_API(bash_cmds, f_polls=f_polls)
     tubo.close()
+    if printouts:
+        print('\nWe closed the SSH\n')
     return _out, _err, tubo
 
 def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # None contents are deleted.
     # Both local or non-local paths allowed.
     # Automatically creates folders.
+    if printouts:
+        print(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
     instance_id = AWS_format.obj2id(instance_id)
+    ez_ssh_cmds(instance_id,[f'mkdir -p {eye_term.quoteless(remote_root_folder)}'], printouts=printouts)
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
     #scp file.txt username@to_host:/remote/directory/
-    instance_id = AWS_format.obj2id(instance_id)
     public_ip = get_ip(instance_id)
 
     tmp_dump = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump')
@@ -157,9 +161,9 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
         file_io.fsave(tmp_dump+'/'+k, file2contents[k])
 
     pem_fname = covert.get_key(instance_id)[1]
-    root1 = remote_root_folder.replace(" ","\\ ") # Escape spaces.
     #https://serverfault.com/questions/330503/scp-without-known-hosts-check
-    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" "{tmp_dump}" ubuntu@{public_ip}:{root1}'
+    tmp_dump1 = tmp_dump+'/*'
+    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} {eye_term.quoteless(tmp_dump1)} ubuntu@{public_ip}:{eye_term.quoteless(remote_root_folder)}'
 
     tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
     tubo.send(scp_cmd)
@@ -167,27 +171,27 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # Getting the output from the scp command is ... tricky. Use echos instead:
     laconic_wait(tubo, 'scp upload '+instance_id, timeout_seconds=24)
 
+    file_io.power_delete(tmp_dump)
     print('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
     return tubo, []
 
-def download_remote_file(instance_id, remote_path, local_dest=None, printouts=True, bin_mode=False):
+def download_remote_file(instance_id, remote_path, local_dest_folder=None, printouts=True, bin_mode=False):
     # Downalods to a local path or simply returns the file contents.
-    save_here = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump.unknown') if local_dest is None else local_dest
-    file_io.fdelete(save_here)
-
-    print('REMOTE PATH downlaod DEBUG:', remote_path)
+    save_here = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump/') if local_dest_folder is None else local_dest_folder
+    file_io.power_delete(save_here)
+    file_io.make_folder(save_here)
 
     public_ip = get_ip(instance_id); pem_fname = covert.get_key(instance_id)[1]
     tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
-    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i "{pem_fname}" ubuntu@{public_ip}:"{remote_path}" "{save_here}"'
+    scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
     tubo.send(scp_cmd)
     laconic_wait(tubo, 'scp download '+instance_id, timeout_seconds=24)
-    out = file_io.fload(save_here, bin_mode=bin_mode)
+    out = file_io.fload(save_here+remote_path.replace('\\','/').split('/')[-1], bin_mode=bin_mode)
 
-    if local_dest is None:
-        file_io.fdelete(save_here)
+    if local_dest_folder is None:
+        file_io.power_delete(save_here)
 
     return out, tubo
 

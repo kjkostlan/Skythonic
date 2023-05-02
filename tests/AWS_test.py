@@ -1,5 +1,6 @@
+import time
 import AWS.AWS_query as AWS_query
-import vm
+import vm, covert
 
 class test_results:
     def __init__(self, name=None):
@@ -35,7 +36,7 @@ class test_results:
         lines = []
         for i in range(len(self.results)):
             if not self.results[i]:
-                lines.append(self.names[i]+(': '+str(self.details[i]).replace('\r\n','\n') if verbose else ''))
+                lines.append('FAILED TEST: '+self.names[i]+(': '+str(self.details[i]).replace('\r\n','\n') if verbose else ''))
         return '\n'.join(lines)
 
 def _cmd_test(results, the_cmd, look_for, vm_id, test_name):
@@ -51,6 +52,7 @@ def _cmd_test(results, the_cmd, look_for, vm_id, test_name):
     out, err, _ = tubo.API('echo AWS_test')
     tubo.empty(True)
     tubo.send(the_cmd)
+    time.sleep(0.25) # Useful if we don't really need laconic_wait.
     vm.laconic_wait(tubo, 'testing', timeout_seconds=24)
     pipe_dump = tubo.blit()
     tubo.close()
@@ -69,8 +71,15 @@ def test_ssh_jumpbox():
     _cmd_test(out, 'aws ec2 describe-subnets', 'BYOC_jumpbox_subnet', vm_desc, 'Test_AWS_descsubnets')
 
     _cmd_test(out, 'cd ~/Skythonic\n ls -a', 'eye_term.py', vm_desc, 'test files skythonic')
-    _cmd_test(out, 'cd ~/Skythonic/softwareDump\n ls -a', 'QWERTY', vm_desc, 'test files to softwareDump')
-    #_cmd_test(out, cmd, look_for, vm_desc)
+
+    # Delete and re-install Skythonic:
+    _cmd_test(out, 'rm -rf ~/Skythonic \n echo deleted', 'deleted', vm_desc, 'delete and re-download Skythonic')
+    #print('<<Re-Installing Skythonic>>')
+    vm.install_Skythonic(vm_desc, '~/Skythonic', printouts=False)
+    #print('<<DONE Re-Installing Skythonic>>')
+    covert.danger_copy_keys_to_vm(vm_desc, '~/Skythonic', printouts=False)
+
+    _cmd_test(out, 'cd ~/Skythonic/softwareDump\n ls -a', 'QWERs', vm_desc, 'test softwareDump')
 
     return out
 

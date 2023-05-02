@@ -1,12 +1,13 @@
 # Handles machine and user keys, which are saved in a dump folder.
 # TODO: option to encrypt with a password.
-import os, pickle
+import os, pickle, shutil
 import boto3
 from AWS import AWS_core, AWS_format
 import file_io, vm
 
 iam = boto3.client('iam')
-pickle_fname = f'{file_io.dump_folder}/vm_secrets.pypickle'
+pickle_leaf = 'vm_secrets.pypickle'
+pickle_fname = f'{file_io.dump_folder}/{pickle_leaf}'
 
 def _fillkeys(x):
     kys = ['instance_id2key_name', 'key_name2key_material', 'username2AWS_key']
@@ -113,16 +114,27 @@ def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickl
     file2contents = {}
     for v in x['instance_id2key_name'].values():
         fname = _pem(v)
-        file2contents[fname] = file_io.fload(fname)
+        file2contents[fname.replace(file_io.dump_folder,'')] = file_io.fload(fname)
+    if printouts:
+        print(f'Copying secrets to {id}; list is {file2contents.keys()}; vm dest is {dest_folder}')
     vm.send_files(id, file2contents, dest_folder, printouts=printouts)
 
-    # Add to whatever is held remotely:
-    fname_tmp = file_io.dump_folder+'/_covert_tmp.pypickle'
-    vm.download_remote_file(id, fname_tmp)
-    x_remote = _pickleload(pickle_fname=fname_tmp)
-    for k in x_remote.keys():
-        x[k] = {**x_remote[k], **x[k]}
-    _picklesave(x, pickle_fname=fname_tmp) # Save the combined file.
+    # Add to any keys held remotely is held remotely:
+    tmp_local_folder = file_io.dump_folder+'/_covert_tmp/'
+    file_io.make_folder(tmp_local_folder)
 
-    vm.send_files(id, {pickle_fname:file_io.fload(fname_tmp, bin_mode=True)}, dest_folder, printouts=printouts)
-    file_io.fdelete(fname_tmp) #Security: delete the file in case of sensitive information on it.
+    vm.download_remote_file(id, tmp_local_folder, printouts=printouts)
+    tmp_pkl_file = tmp_local_folder+'/'+pickle_leaf
+    if os.path.exists(tmp_pkl_file):
+        x_remote = _pickleload(pickle_fname=tmp_pkl_file)
+        for k in x_remote.keys():
+            x[k] = {**x_remote[k], **x[k]}
+        if printouts:
+            print('Adding to the remote file.')
+        _picklesave(x, pickle_fname=tmp_pkl_file) # Save the combined file.
+    else:
+        if printouts:
+            print('No remote file to add to, using the local file only.')
+        shutil.copyfile(pickle_fname, tmp_pkl_file)
+    vm.send_files(id, {pickle_leaf:file_io.fload(tmp_pkl_file, bin_mode=True)}, dest_folder, printouts=printouts)
+    file_io.power_delete(tmp_local_folder) #Security: delete the file in case of sensitive information on it.

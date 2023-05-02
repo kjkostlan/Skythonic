@@ -52,6 +52,9 @@ def fdelete(fname):
     if os.path.exists(fname):
         os.unlink(fname)
 
+def make_folder(foldername):
+    os.makedirs(foldername, exist_ok=True)
+
 def folder_load(folder_path, initial_path=None, allowed_extensions=None, acc=None):
     # filename => values.
     if acc is None:

@@ -1,4 +1,5 @@
-# Core installation and realtime updating features.
+# Core installation of Skythonic to this machine and realtime updating features.
+#  (Installation of packages to other machines is covered in vm)
 # Some code is copied from kjkostlan/Termpylus with slight adaptions.
 import io, sys, os, importlib, shutil
 import file_io

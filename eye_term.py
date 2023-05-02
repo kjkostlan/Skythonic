@@ -7,6 +7,11 @@
 #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
 import time, re, os, sys, threading
 
+def quoteless(the_path):
+    # Quotes prevent the nice convienent ~ and * syntax of directories.
+    # So escaping spaces helps.
+    return the_path.replace('\\','/').replace(' ',' \\')
+
 def loop_try(f, f_catch, msg, delay=4):
     # Waiting for something? Keep looping untill it succedes!
     # Useful for some shell/concurrency operations.
@@ -274,7 +279,7 @@ class MessyPipe:
         outputs = []; errs = []; polls_info = []
         self.empty()
         for i in range(len(cmds)):
-            out, err, poll_info = self.API(cmds[i], f_poll=f_polls, dt_min=dt_min, dt_max=dt_max)
+            out, err, poll_info = self.API(cmds[i], f_polls=f_polls, dt_min=dt_min, dt_max=dt_max)
             outputs.append(out)
             errs.append(err)
             polls_info.append(poll_info)
