@@ -18,9 +18,11 @@ def has_been_deleted(id):
     tags = AWS_format.tag_dict(desc)
     return tags.get('__deleted__', False)
 
-def dep_check_delete(id_or_obj, xdeps):
+def dep_check_delete(id_or_obj, xdeps=None):
     # Deletes x with a dep check for instances (and anything else that "lingers").
     # Retruns True if it deleted an object for the first time and that exists.
+    if xdeps is None:
+        xdeps = AWS_query.what_needs_these(custom_only=False, include_empty=True)
     desc = AWS_format.id2obj(id_or_obj); id = AWS_format.obj2id(id_or_obj)
     redo_deletes = True # False may save time but risks skipping over stuff.
     print_redo_deletes = True
@@ -30,16 +32,6 @@ def dep_check_delete(id_or_obj, xdeps):
             return 0 # Already deleted, but still hanging out.
         if print_redo_deletes:
             print('Deleting this object (again):', id)
-    else:
-        print('Deleting this object:', id)
-    try:
-        AWS_core.add_tags(id_or_obj, {'__deleted__':True})
-    except Exception as e:
-        if 'does not exist' in repr(e):
-            print(f'Tried to delete {id} but object doesnt exist; no need to delete.')
-            return 0
-        else:
-            raise e
 
     lingers = lambda: list(filter(has_been_deleted, xdeps))
     f_try = lambda: AWS_core.delete(id)

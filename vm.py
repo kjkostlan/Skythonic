@@ -114,6 +114,9 @@ def ssh_pipe(instance_id, timeout=8, printouts=True):
 def patient_ssh_pipe(instance_id, printouts=True):
     # Ensures it is started and waites in a loop.
     instance_id = AWS_format.obj2id(instance_id)
+    in_state = AWS_format.id2obj(instance_id)['State']['Name']
+    if in_state == 'terminated':
+        raise Exception(f'The instance {instance_id} has been terminated and can never ever be used again.')
     ec2c.start_instances(InstanceIds=[instance_id])
     _err = lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e) # Not sure why the error.
     return eye_term.loop_try(lambda:ssh_pipe(instance_id, timeout=8, printouts=printouts),
@@ -247,6 +250,7 @@ def install_Ping(instance_id, printouts=True):
     return Ireport([tubo], errs)
 
 def install_Skythonic(instance_id, remote_root_folder, printouts=True):
+    # Installs the *local* copy of Skythonic to the instance_id.
     file2contents = file_io.folder_load('.', allowed_extensions='.py')
     for k in list(file2contents.keys()):
         if file_io.dump_folder.split('/')[-1] in k:

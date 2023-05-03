@@ -210,7 +210,7 @@ class MessyPipe:
         self.contents = ['' for _ in self.contents]
         self.combined_contents = ''
         if remove_history:
-            self.history_contents = []; self.cmd_history = []; self.poll_log = []
+            self.history_contents = ['' for _ in self.history_contents]; self.cmd_history = []; self.poll_log = []
 
     def drought_len(self):
         return time.time() - self.t1

@@ -27,6 +27,8 @@ def lingers(desc_or_id):
     #desc = AWS_format.id2obj(desc_or_id)
     #instance 'terminated' in str(m.get('State',None)) # Alternative way for machines.
     #peering ['Status']['Code']=='deleted'. #Alternate for deleted.
+    if desc_or_id is None:
+        return False
     return AWS_format.tag_dict(desc_or_id).get('__deleted__',False)
 
 def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
