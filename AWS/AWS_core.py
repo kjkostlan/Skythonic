@@ -32,42 +32,42 @@ def add_tags(desc_or_id, d):
         else:
             desc_or_id.create_tags(Tags=tags)
 
-def create(rtype, name, **kwargs):
+def create(rtype0, name, **kwargs):
     # Returns the ID, which is commonly introduced into other objects.
     raw = False # needed for keypairs.
     if kwargs.get('raw_object', False): # Generally discouraged to work with.
         raw = True
     if 'raw_object' in kwargs:
         del kwargs['raw_object']
-    rtype = rtype.lower()
-    if rtype in {'vpc'}: # Python introduced "switch" in 3.10 but AWS shell is 3.7
+    rtype = AWS_format.enumr(rtype0)
+    if rtype == 'vpc': # Python introduced "switch" in 3.10 but AWS shell is 3.7
         x = ec2r.create_vpc(**kwargs)
         x.wait_until_available()
-    elif rtype in {'webgate','internetgateway'}:
+    elif rtype == 'webgate':
         x = ec2r.create_internet_gateway(**kwargs)
-    elif rtype in {'rtable','routetable'}:
+    elif rtype == 'rtable':
         x = ec2r.create_route_table(**kwargs)
-    elif rtype in {'subnet'}:
+    elif rtype == 'subnet':
         x = ec2r.create_subnet(**kwargs)
-    elif rtype in {'route'}:
+    elif rtype == 'route':
         x = ec2r.create_route(**kwargs)
-    elif rtype in {'securitygroup', 'sgroup'}:
+    elif rtype =='sgroup':
         x = ec2r.create_security_group(**kwargs)
-    elif rtype in {'keypair'}:
+    elif rtype == 'kpair':
         kwargs['KeyName'] = name # one of those irregularities in their API.
         x = ec2r.create_key_pair(**kwargs)
-    elif rtype in {'instance', 'instances', 'machine', 'machines'}:
+    elif rtype =='machine':
         x = ec2r.create_instances(**kwargs)[0]
-    elif rtype in {'address'}:
+    elif rtype == 'address':
         x = ec2c.allocate_address(**kwargs)
-    elif rtype in {'user', 'users'}:
+    elif rtype == 'user':
         kwargs['UserName'] = name
         x = iam.create_user(**kwargs)['User']
-    elif rtype in {'vpcpeer','vpcpeering'}:
+    elif rtype == 'peering':
         x = ec2c.create_vpc_peering_connection(**kwargs)['VpcPeeringConnection']
         ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=x['VpcPeeringConnectionId'])
     else:
-        raise Exception('Create ob type unrecognized: '+rtype)
+        raise Exception('Create ob type unrecognized: '+rtype0)
 
     f = lambda: add_tags(x, {'Name':name, '__Skythonic__':True})
     f_catch = lambda e: 'does not exist' in repr(e).lower()
@@ -92,7 +92,7 @@ def create_once(rtype, name, printouts, **kwargs):
     if r0 is not None:
         if do_print:
             print(str(printouts)+'already exists:', rtype, name)
-        if rtype in {'instance', 'instances', 'machine', 'machines'}:
+        if AWS_format.enumr(rtype) == 'machine':
             ec2c.start_instances(InstanceIds=[AWS_format.obj2id(r0)])
         return AWS_format.obj2id(r0)
     else:
@@ -180,9 +180,9 @@ def assoc(A, B, _swapped=False):
         ec2c.associate_route_table(SubnetId=A, RouteTableId=B)
     elif A.startswith('eipalloc-') and B.startswith('i-'):
         ec2c.associate_address(AllocationId=A,InstanceId=B)
-    #elif A.startswith('vpc-') and B.startswith('vpc-'): # This is more like creating a new resource
-    #    peering = ec2c.create_vpc_peering_connection(VpcId=A, PeerVpcId=B)
-    #    ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=peering['VpcPeeringConnection']['VpcPeeringConnectionId'])
+    elif A.startswith('vpc-') and B.startswith('vpc-'): # Peering can be thought of as an association.
+        peering = ec2c.create_vpc_peering_connection(VpcId=A, PeerVpcId=B)
+        ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=peering['VpcPeeringConnection']['VpcPeeringConnectionId'])
     elif _swapped:
         raise Exception(f"Don't know how to attach {A} to {B}; this may require updating this function.")
     else:

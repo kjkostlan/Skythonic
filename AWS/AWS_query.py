@@ -33,42 +33,37 @@ def lingers(desc_or_id):
 
 def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
+    # Will not find routes directly, but does find rtables.
+    # Will not find tags directly; use get_by_tag.
     out = {}
-
+    splice = type(which_types) is str
     if which_types is not None and type(which_types) is not str:
-        which_types = set([wc.lower() for wc in which_types])
+        which_types = [wc.lower() for wc in which_types]
+    which_types = set([AWS_format.enumr(ty) for ty in which_types])
 
-    def _hit(kys):
-        if type(which_types) is str:
-            return which_types.lower() in kys
-        return which_types is None or len(set(which_types).intersection(kys))>0
-
-    if _hit({'vpc'}): # Python only introduced the switch statement in 3.10
+    if 'vpc' in which_types: # Python only introduced the switch statement in 3.10
         out['vpcs'] = ec2c.describe_vpcs()['Vpcs']
-    if _hit({'webgate','internetgateway'}):
+    if 'webgate' in which_types:
         out['webgates'] = ec2c.describe_internet_gateways()['InternetGateways']
-    if _hit({'rtable','routetable'}):
+    if 'rtable' in which_types:
         out['rtables'] = ec2c.describe_route_tables()['RouteTables']
-    if _hit({'subnet'}):
+    if 'subnet' in which_types:
         out['subnets'] = ec2c.describe_subnets()['Subnets']
-    #if _hit({'route'}): # Routes are part of route tables, not so much standalones.
-    #    x = ec2r.create_route(**kwargs)
-    if _hit({'securitygroup', 'sgroup'}):
+    if 'sgroup' in which_types:
         out['sgroups'] = ec2c.describe_security_groups()['SecurityGroups']
-    if _hit({'keypair'}):
+    if 'keypair' in which_types:
         out['kpairs'] = ec2c.describe_key_pairs()['KeyPairs']
-    if _hit({'instance', 'instances', 'machine', 'machines'}):
+    if 'machine' in which_types:
         machines = []
         for pack in ec2c.describe_instances()['Reservations']:
             machines = machines+pack['Instances']
         out['machines'] = machines
-    if _hit({'address'}):
+    if 'address' in which_types:
         out['addresses'] = ec2c.describe_addresses()['Addresses']
-    if _hit({'vpcpeer','vpcpeering'}):
+    if 'peering' in which_types:
         out['peerings'] = ec2c.describe_vpc_peering_connections()['VpcPeeringConnections']
-    if _hit({'user','users'}):
+    if 'user' in which_types':
         out['users'] = iam.list_users()['Users']
-    #out['tags'] = ec2c.describe_tags()['Tags'] # Contains other stuff we can query that instead (I think).
 
     if ids:
         for k, v in out.items():
@@ -78,7 +73,7 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
         for k in out.keys():
             out[k] = list(filter(lambda x: not lingers(x), out[k]))
 
-    if type(which_types) is str: # SPlice for a str, which is different than a one element set.
+    if splice: # Splice for a str, which is different than a one element collection.
         out = out[list(out.keys())[0]]
 
     return out
@@ -170,3 +165,10 @@ def what_needs_these(custom_only=False, include_empty=False): # What Ids depend 
                         #_add(asc['SubnetId'], id)
                         _add(id, asc['SubnetId'])
     return out
+
+def assocs(desc_or_id, with_which_type):
+    #Gets associations of desc_or_id with_which_type.
+    ty = AWS_core.enumr(with_which_type)
+    
+    TODO
+    TODO
