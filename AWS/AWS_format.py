@@ -6,12 +6,12 @@ iam = boto3.client('iam')
 
 def enumr(txt0):
     # Resource enum.
-    txt = txt0.strip().lower()
+    txt = txt0.strip().lower().replace('_','')
     if txt[-1] == 's':
         txt = txt[0:-1]
     if txt in ['vpc'] or id.startswith('vpc-'):
         return 'vpc'
-    if txt in ['webgate', 'internetgateway'] or txt.startswith('igw-'):
+    if txt in ['webgate', 'internetgateway', 'gateway', 'gate', 'networkgate'] or txt.startswith('igw-'):
         return 'webgate'
     if txt in ['rtable', 'routetable'] or id.startswith('rtb-'):
         return 'rtable'
@@ -31,6 +31,8 @@ def enumr(txt0):
         return 'user'
     if txt in ['route', 'path', 'pathway']: # Not a top-level resource.
         return 'route'
+    if txt in ['policy','policies','policie'] or id.startswith('ANP'):
+        return 'policy'
     raise Exception(f'{txt0} is not an understood AWS resource type.')
 
 def obj2id(obj_desc): # Gets the ID from the object.
