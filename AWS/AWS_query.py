@@ -147,42 +147,42 @@ def what_needs_these(custom_only=False, include_empty=False): # What Ids depend 
 
     for k in x.keys():
         for desc in x[k]:
-            id = AWS_format.obj2id(desc)
-            if include_empty and id not in out:
+            the_id = AWS_format.obj2id(desc)
+            if include_empty and the_id not in out:
                 out[id] = []
             if k=='sgroups' and 'VpcId' in desc:
-                _add(desc['VpcId'], id)
+                _add(desc['VpcId'], the_id)
             if k=='webgates' and 'Attachments' in desc:
                 for atth in desc['Attachments']:
-                    _add(atth['VpcId'], id) # one way or two way need?
+                    _add(atth['VpcId'], the_id) # one way or two way need?
             if k=='machines': # A big one!
                 if 'SecurityGroups' in desc:
                     for sg in desc['SecurityGroups']:
-                        _add(sg['GroupId'], id)
+                        _add(sg['GroupId'], the_id)
                 #if 'NetworkInterfaces' in desc: #It makes one of these automatically, not sure the delete rules on this.
                 #    for nt in desc['NetworkInterfaces']:
-                #        _add(nt['NetworkInterfaceId'], id)
+                #        _add(nt['NetworkInterfaceId'], the_id)
                 if 'SubnetId' in desc:
-                    _add(desc['SubnetId'], id)
+                    _add(desc['SubnetId'], the_id)
                 if 'VpcId' in desc:
-                    _add(desc['VpcId'], id)
+                    _add(desc['VpcId'], the_id)
             if k=='rtables' and 'Associations' in desc:
                 for asc in desc['Associations']:
                     if 'SubnetId' in asc:
-                        #_add(asc['SubnetId'], id)
+                        #_add(asc['SubnetId'], the_id)
                         _add(id, asc['SubnetId'])
     return out
 
 def assocs(desc_or_id, with_which_type):
     #Gets associations of desc_or_id with_which_type. Returns a list.
     ty = AWS_core.enumr(with_which_type)
-    id = AWS_format.obj2id(desc_or_id)
+    the_id = AWS_format.obj2id(desc_or_id)
     desc = AWS_format.id2obj(desc_or_id)
     # Nested switchyard:
     out = None
     if ty=='user':
         raise Exception('Currently this function does not query associations with other resources')
-    if id.startswith('igw-'):
+    if the_id.startswith('igw-'):
         if ty == 'webgate':
             raise Exception('Internet gateways are not associated with thier own kind.')
         if ty in ['user','address','kpair','sgroup','peering']:
@@ -198,7 +198,7 @@ def assocs(desc_or_id, with_which_type):
             rtables = get_resources('rtable')
             for rtable in rtables:
                 for route in rtable['Routes']:
-                    if route.get('GatewayId',None) == id:
+                    if route.get('GatewayId',None) == the_id:
                         out.append(AWS_format.obj2id(rtable))
                         break
         if ty=='machine':
@@ -207,7 +207,7 @@ def assocs(desc_or_id, with_which_type):
             for reservation in response['Reservations']:
                 for inst in reservation['Instances']:
                     out.append(AWS_format.obj2id(inst))
-    elif id.startswith('vpc-'):
+    elif the_id.startswith('vpc-'):
         if ty == 'vpc':
             out = []
             filter0 = {'Name': 'accepter-vpc-info.vpc-id','Values': [vpc_id]}
@@ -229,7 +229,7 @@ def assocs(desc_or_id, with_which_type):
             gates = get_resources('webgates')
             for g in gates:
                 for a in g['Attachments']:
-                    if a['VpcId'] == id:
+                    if a['VpcId'] == the_id:
                         out.append(AWS_format.obj2id(g))
         if ty=='machine':
             out = [AWS_format.obj2id(m) for m in ec2c.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [id]}])['Reservations']]
@@ -245,7 +245,7 @@ def assocs(desc_or_id, with_which_type):
         if ty=='rtable':
             rtables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [id]}])['RouteTables']
             out = [AWS_format.obj2id(rtable) for rtable in rtables]
-    elif id.startswith('subnet-'):
+    elif the_id.startswith('subnet-'):
         if ty == 'subnet':
             raise Exception('Subnets cannot be associated with thier own kind.')
         if ty in ['user','kpair','machine','peering']:
@@ -269,7 +269,7 @@ def assocs(desc_or_id, with_which_type):
             addrs = get_resources('addresses')
             out = []
             for addr in addrs:
-                if id==addr['SubnetId']:
+                if the_id==addr['SubnetId']:
                     out.append(AWS_format.obj2id(addr))
         if ty=='sgroup':
             interfaces = ec2.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])['Interfaces']
@@ -284,7 +284,7 @@ def assocs(desc_or_id, with_which_type):
             for reservation in x['Reservations']:
                 for inst in reservation['Instances']:
                     out.append(AWS_format.obj2id(inst))
-    elif id.startswith('key-'): #Only needs the name.
+    elif the_id.startswith('key-'): #Only needs the name.
         if ty == 'keypair':
             raise Exception('Keypairs are not associated with thier own kind.')
         if ty in ['webgate','vpc','subnet','sgroup','rtable','address','peering','user']:
@@ -296,7 +296,7 @@ def assocs(desc_or_id, with_which_type):
             for idesc in insts:
                 if idesc.get('KeyName', []) == kname:
                     out.append(AWS_format.obj2id(idesc))
-    elif id.startswith('sg-'):
+    elif the_id.startswith('sg-'):
         if ty == 'sgroup':
             raise Exception('Security groups are not associated with thier own kind.')
         if ty in ['keypair','webgate','user','rtable','address','peering']:
@@ -307,19 +307,19 @@ def assocs(desc_or_id, with_which_type):
             out = []
             insts = get_resources('machines')
             for idesc in insts:
-                if id in [sg['GroupId'] for sg in idesc['SecurityGroups']]:
+                if the_id in [sg['GroupId'] for sg in idesc['SecurityGroups']]:
                     out.append(AWS_format.obj2id(idesc))
         if ty=='subnets':
             out = []
             ifaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'group-id','Values': [security_group_id]}])['NetworkInterfaces']
             for iface in ifaces:
                 out.append(iface['SubnetId'])
-    elif id.startswith('rtb-'):
+    elif the_id.startswith('rtb-'):
         if ty == 'rtable':
             raise Exception('Route tables are not associated with thier own kind.')
         if ty in ['keypair','sgroup','user','machine']:
             raise Exception(f'Route tables can not be directly associated with {ty}s.')
-        pairs = [['vpc':'VpcId'],['subnet':'SubnetId'],['peering','VpcPeeringConnectionId'], ['webgate','GatewayId']]
+        pairs = [['vpc','VpcId'],['subnet','SubnetId'],['peering','VpcPeeringConnectionId'], ['webgate','GatewayId']]
         for p in pairs:
             if ty in p[0]:
                 out = []
@@ -334,7 +334,7 @@ def assocs(desc_or_id, with_which_type):
                     if in_cidr(addr['PublicIp'], route['DestinationCidrBlock']):
                         out.append(addr)
                         break
-    elif id.startswith('i-'):
+    elif the_id.startswith('i-'):
         if ty == 'machine':
             raise Exception('Machines can not associated with thier own kind.')
         if ty in ['peering', 'rtable','user']:
@@ -355,7 +355,7 @@ def assocs(desc_or_id, with_which_type):
             out = [AWS_format.obj2id(kpair)]
         if ty=='sgroup':
             out = [AWS_format.obj2id(s) for s in desc['SecurityGroups']]
-    elif id.startswith('eipalloc-'): # These are addresses
+    elif the_id.startswith('eipalloc-'): # These are addresses
         if ty == 'address':
             raise Exception('Addresses can not associated with thier own kind.')
         if ty in ['vpc', 'kpair', 'peering', 'machine']:
@@ -370,7 +370,7 @@ def assocs(desc_or_id, with_which_type):
             raise Exception('Addresses can not be directly associated with internet gateways.')
         if ty=='subnet':
             out = [desc['SubnetId']]
-    elif id.startswith('pcx-'):
+    elif the_id.startswith('pcx-'):
         if ty == 'peering':
             raise Exception('Peering connections can not associated with thier own kind.')
         if ty in ['machine','webgate','subnet','kpair','sgroup','address']:
@@ -382,16 +382,15 @@ def assocs(desc_or_id, with_which_type):
             out = []
             for rtable in rtables:
                 for route in rtable['Routes']:
-                    if route.get('VpcPeeringConnectionId', None) == id:
+                    if route.get('VpcPeeringConnectionId', None) == the_id:
                         out.append(AWS_format.obj2id(rtable))
-    elif id.startswith('AID'):
+    elif the_id.startswith('AID'):
         if ty in ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address', 'peering', 'user']:
             raise Exception('Users cannot be directly associated with anything in this current implementation.')
         if ty == 'user':
             raise Exception('Users can not associated with thier own kind (except in real life).')
     else:
-        raise Exception('TODO: handle this pair:', id, ty)
-
+        raise Exception('TODO: handle this pair:', the_id, ty)
     if out is None:
         raise Exception(f'Does not understand pair (likely TODO in this assocs function){AWS_format.enumr(id)} vs {ty}')
     out = list(set(out)); out.sort()
