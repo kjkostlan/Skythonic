@@ -175,7 +175,7 @@ def what_needs_these(custom_only=False, include_empty=False): # What Ids depend 
 
 def assocs(desc_or_id, with_which_type):
     #Gets associations of desc_or_id with_which_type. Returns a list.
-    ty = AWS_core.enumr(with_which_type)
+    ty = AWS_format.enumr(with_which_type)
     the_id = AWS_format.obj2id(desc_or_id)
     desc = AWS_format.id2obj(desc_or_id)
     # Nested switchyard:
@@ -212,8 +212,8 @@ def assocs(desc_or_id, with_which_type):
             out = []
             filter0 = {'Name': 'accepter-vpc-info.vpc-id','Values': [vpc_id]}
             filter1 = {'Name': 'requester-vpc-info.vpc-id','Values': [vpc_id]}
-            peerings = ec2.describe_vpc_peering_connections(Filters=[filter0])['VpcPeeringConnections']
-            peerings = peerings+ec2.describe_vpc_peering_connections(Filters=[filter1])['VpcPeeringConnections']
+            peerings = ec2c.describe_vpc_peering_connections(Filters=[filter0])['VpcPeeringConnections']
+            peerings = peerings+ec2c.describe_vpc_peering_connections(Filters=[filter1])['VpcPeeringConnections']
             for peering in peerings:
                 id0 = AWS_format.obj2id(peering['requesterVpcInfo'])
                 id1 = AWS_format.obj2id(peering['accepterVpcInfo'])
@@ -224,26 +224,27 @@ def assocs(desc_or_id, with_which_type):
         if ty in ['user','address','kpair']:
             raise Exception(f'VPCs can not be directly associated with {ty}s.')
         if ty=='sgroup':
-            out = [AWS_format.obj2id(s) for s in ec2c.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [id]}])['SecurityGroups']]
+            out = [AWS_format.obj2id(s) for s in ec2c.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['SecurityGroups']]
         if ty=='webgate':
             gates = get_resources('webgates')
+            out = []
             for g in gates:
                 for a in g['Attachments']:
                     if a['VpcId'] == the_id:
                         out.append(AWS_format.obj2id(g))
         if ty=='machine':
-            out = [AWS_format.obj2id(m) for m in ec2c.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [id]}])['Reservations']]
+            out = [AWS_format.obj2id(m) for m in ec2c.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['Reservations']]
         if ty=='subnet':
-            subnets = ec2.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['Subnets']
+            subnets = ec2c.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['Subnets']
             out = [AWS_format.obj2id(s) for s in subnets]
         if ty=='peering':
-            filter0 = {'Name': 'accepter-vpc-info.vpc-id','Values': [vpc_id]}
-            filter1 = {'Name': 'requester-vpc-info.vpc-id','Values': [vpc_id]}
-            peerings = ec2.describe_vpc_peering_connections(Filters=[filter0])['VpcPeeringConnections']
-            peerings = peerings+ec2.describe_vpc_peering_connections(Filters=[filter1])['VpcPeeringConnections']
+            filter0 = {'Name': 'accepter-vpc-info.vpc-id','Values': [the_id]}
+            filter1 = {'Name': 'requester-vpc-info.vpc-id','Values': [the_id]}
+            peerings = ec2c.describe_vpc_peering_connections(Filters=[filter0])['VpcPeeringConnections']
+            peerings = peerings+ec2c.describe_vpc_peering_connections(Filters=[filter1])['VpcPeeringConnections']
             out = [AWS_format.obj2id(p) for p in peerings]
         if ty=='rtable':
-            rtables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [id]}])['RouteTables']
+            rtables = ec2_client.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['RouteTables']
             out = [AWS_format.obj2id(rtable) for rtable in rtables]
     elif the_id.startswith('subnet-'):
         if ty == 'subnet':
@@ -253,14 +254,14 @@ def assocs(desc_or_id, with_which_type):
         if ty=='vpc':
             out = [desc['VpcId']]
         if ty=='rtable':
-            rtables = ec2.describe_route_tables(Filters=[{'Name': 'association.subnet-id','Values': [subnet_id]}])['RouteTables']
+            rtables = ec2c.describe_route_tables(Filters=[{'Name': 'association.subnet-id','Values': [the_id]}])['RouteTables']
             out = [AWS_format.obj2id(x) for x in rtables]
         if ty=='webgate':
             out = []
             for rtable_id in assocs(desc_or_id, 'rtable'):
                 f0 = {'Name': 'route-table-id','Values': [rtable_id]}
                 f1 = {'Name': 'route.gateway-id','Values': ['igw-*']}
-                rtables1 = ec2.describe_route_tables(Filters=[f0, f1])['RouteTables']
+                rtables1 = ec2c.describe_route_tables(Filters=[f0, f1])['RouteTables']
                 for rtable1 in rtables1:
                     for route1 in rtable1['routes']:
                         if 'GatewayId' in rtable1:
@@ -272,14 +273,14 @@ def assocs(desc_or_id, with_which_type):
                 if the_id==addr['SubnetId']:
                     out.append(AWS_format.obj2id(addr))
         if ty=='sgroup':
-            interfaces = ec2.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])['Interfaces']
+            interfaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [the_id]}])['Interfaces']
             out = []
             for inf in interfaces:
                 for grs in inf['Groups']:
                     for gr in grs:
                         out.append(AWS_format.obj2id(gr))
         if ty=='instance':
-            x = ec2_client.describe_instances(Filters=[{'Name': 'subnet-id', 'Values': [id]}])
+            x = ec2_client.describe_instances(Filters=[{'Name': 'subnet-id', 'Values': [the_id]}])
             out = []
             for reservation in x['Reservations']:
                 for inst in reservation['Instances']:
@@ -311,7 +312,7 @@ def assocs(desc_or_id, with_which_type):
                     out.append(AWS_format.obj2id(idesc))
         if ty=='subnets':
             out = []
-            ifaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'group-id','Values': [security_group_id]}])['NetworkInterfaces']
+            ifaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'group-id','Values': [the_id]}])['NetworkInterfaces']
             for iface in ifaces:
                 out.append(iface['SubnetId'])
     elif the_id.startswith('rtb-'):
@@ -342,7 +343,7 @@ def assocs(desc_or_id, with_which_type):
         if ty=='vpc':
             out = [desc['VpcId']]
         if ty=='webgate':
-            x = ec2.describe_vpcs(VpcIds=[desc['VpcId']])['Vpcs']
+            x = ec2c.describe_vpcs(VpcIds=[desc['VpcId']])['Vpcs']
             if len(x)==0:
                 out = []
             else:
