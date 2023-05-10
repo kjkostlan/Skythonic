@@ -65,8 +65,71 @@ def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name):
 
 def test_assoc_query():
     # Associations = attachments = connections.
-    
-    return False
+    print('This test is expensive O(n^2) for large amounts of resources.')
+    safe_err_msgs = ['thier own kind.', 'directly associated with']
+    all = AWS_query.get_resources()
+    types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user']
+    resc_count = 0; link_count = 0
+    link_map = {} # {type: {id:[resources]}}
+    err_map = {} #{type_type:error}, only one error at a time. Makes sure reciprocal.
+    for ty in types:
+        link_map[ty] = {}
+        for ky in all.keys():
+            for x in all[ky]:
+                id = AWS_format.obj2id(x)
+            try:
+                links = AWS_query.assocs(x, ty)
+                link_map[ty][id] = links; link_count = link_count+len(links)
+            except Exception as e:
+                bad_err = True
+                for msg in safe_err_msgs:
+                    if msg in str(e):
+                        err_map[AWS_format.enumr(id)+'_'+ty] = msg
+                        bad_err = False
+                if bad_err:
+                    raise e
+            resc_count += 1
+
+    if resc_count<10:
+        raise Exception('So few resources that this test cannot be trusted.')
+    if link_count<12:
+        raise Exception('Too few links between resources.')
+
+    # Test reciprocity:
+    reverse_link_map = {} #Also {type: {id:[resources]}}
+    for ty in types:
+        reverse_link_map[ty] = {}
+        for id in link_map[ty].keys():
+            for dest_id in link_map[ty][id]:
+                if dest_id not in reverse_link_map[ty]:
+                    reverse_link_map[ty][dest_id] = []
+                reverse_link_map[ty][dest_id].append(id)
+
+    out = True
+
+    forward_only = {} #{type: [id]}
+    reverse_only = {}
+    for ty in types:
+        forward_only[ty] = []
+        reverse_only[ty] = []
+        kys = set(list(link_map[ty].keys())+list(reverse_link_map[ty].keys()))
+        for ky in kys:
+            l0 = set(link_map[ty].get(ky,[])); l1 = set(reverse_link_map[ty].get(ky,[]))
+            for hanging in l0-l1:
+                forward_only[ty].append(hanging)
+            for hanging in l1-l0:
+                reverse_only[ty].append(hanging)
+        out = out and len(forward_only[ty])+len(reverse_only[ty])==0
+
+    bad_kys = []
+    for k in err_map.keys(): # Errors must also have reciprocity
+        pieces = k.split('_')
+        k1 = pieces[1]+'_'+pieces[0]
+        if err_map[k] != err_map.get(k1,None):
+            out = False
+            bad_kys.append(k)
+
+    return out
 
 def test_ssh_jumpbox():
     # Tests: A: is everything installed?
