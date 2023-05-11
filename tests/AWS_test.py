@@ -80,7 +80,7 @@ def test_obj2id():
 def test_assoc_query():
     # Associations = attachments = connections.
     print('This test is expensive O(n^2) for large amounts of resources.')
-    safe_err_msgs = ['thier own kind.', 'directly associated with']
+    safe_err_msgs = ['thier own kind', 'directly associated with']
     all = AWS_query.get_resources()
     types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user']
     resc_count = 0; link_count = 0

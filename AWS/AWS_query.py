@@ -57,7 +57,7 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
         out['subnets'] = ec2c.describe_subnets()['Subnets']
     if which_types is None or 'sgroup' in which_types:
         out['sgroups'] = ec2c.describe_security_groups()['SecurityGroups']
-    if which_types is None or 'keypair' in which_types:
+    if which_types is None or 'kpair' in which_types:
         out['kpairs'] = ec2c.describe_key_pairs()['KeyPairs']
     if which_types is None or 'machine' in which_types:
         machines = []
@@ -149,7 +149,7 @@ def what_needs_these(custom_only=False, include_empty=False): # What Ids depend 
         for desc in x[k]:
             the_id = AWS_format.obj2id(desc)
             if include_empty and the_id not in out:
-                out[id] = []
+                out[the_id] = []
             if k=='sgroups' and 'VpcId' in desc:
                 _add(desc['VpcId'], the_id)
             if k=='webgates' and 'Attachments' in desc:
@@ -180,8 +180,6 @@ def assocs(desc_or_id, with_which_type):
     desc = AWS_format.id2obj(desc_or_id)
     # Nested switchyard:
     out = None
-    if ty=='user':
-        raise Exception('Currently this function does not query associations with other resources')
     if the_id.startswith('igw-'):
         if ty == 'webgate':
             raise Exception('Internet gateways are not associated with thier own kind.')
@@ -202,11 +200,9 @@ def assocs(desc_or_id, with_which_type):
                         out.append(AWS_format.obj2id(rtable))
                         break
         if ty=='machine':
-            x = ec2c.describe_instances(Filters=[{'Name': 'route.gateway-id','Values': [id]}])
-            out = []
-            for reservation in response['Reservations']:
-                for inst in reservation['Instances']:
-                    out.append(AWS_format.obj2id(inst))
+            all_machines = get_resources('machines')
+            machines = [inst for inst in all_machines if any(intr.get('Attachment',{}).get('GatewayId',None) == the_id for intr in inst.get('NetworkInterfaces', []))]
+            out = [AWS_format.obj2id(machine) for machine in machines]
     elif the_id.startswith('vpc-'):
         if ty == 'vpc':
             out = []
@@ -262,13 +258,13 @@ def assocs(desc_or_id, with_which_type):
                         if 'GatewayId' in rtable1:
                             out.append(rtable1['GatewayId'])
         if ty=='address':
-            addrs = get_resources('addresses')
             out = []
-            for addr in addrs:
-                if the_id==addr['SubnetId']:
-                    out.append(AWS_format.obj2id(addr))
+            addresses = get_resources('addresses')
+            for address in addresses:
+                if in_cidr(address['PublicIp'], desc['CidrBlock']):
+                    out.append(AWS_format.obj2id(address))
         if ty=='sgroup':
-            interfaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [the_id]}])['Interfaces']
+            interfaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [the_id]}])['NetworkInterfaces']
             out = []
             for inf in interfaces:
                 for grs in inf['Groups']:
@@ -283,7 +279,7 @@ def assocs(desc_or_id, with_which_type):
                 for inst in reservation['Instances']:
                     out.append(AWS_format.obj2id(inst))
     elif the_id.startswith('key-'): #Only needs the name.
-        if ty == 'keypair':
+        if ty == 'kpair':
             raise Exception('Keypairs are not associated with thier own kind.')
         if ty in ['webgate','vpc','subnet','sgroup','rtable','address','peering','user','IAMpolicy']:
             raise Exception(f'Security groups cannot be directly associated with {ty}s.')
@@ -297,7 +293,7 @@ def assocs(desc_or_id, with_which_type):
     elif the_id.startswith('sg-'):
         if ty == 'sgroup':
             raise Exception('Security groups are not associated with thier own kind.')
-        if ty in ['keypair','webgate','user','rtable','address','peering','IAMpolicy']:
+        if ty in ['kpair','webgate','user','rtable','address','peering','IAMpolicy']:
             raise Exception(f'Security groups cannot be directly associated with {ty}s.')
         if ty=='vpc':
             out = [desc['VpcId']]
@@ -315,7 +311,7 @@ def assocs(desc_or_id, with_which_type):
     elif the_id.startswith('rtb-'):
         if ty == 'rtable':
             raise Exception('Route tables are not associated with thier own kind.')
-        if ty in ['keypair','sgroup','user','machine','IAMpolicy']:
+        if ty in ['kpair','sgroup','user','machine','IAMpolicy']:
             raise Exception(f'Route tables cannot be directly associated with {ty}s.')
         pairs = [['vpc','VpcId'],['subnet','SubnetId'],['peering','VpcPeeringConnectionId'], ['webgate','GatewayId']]
         for p in pairs:
@@ -328,14 +324,14 @@ def assocs(desc_or_id, with_which_type):
             addresses = get_resources('addresses')
             out = []
             for addr in addresses:
-                for route in rtable['Routes']:
+                for route in desc['Routes']:
                     if in_cidr(addr['PublicIp'], route['DestinationCidrBlock']):
-                        out.append(addr)
+                        out.append(AWS_format.obj2id(addr))
                         break
     elif the_id.startswith('i-'):
         if ty == 'machine':
             raise Exception('Machines cannot be associated with thier own kind.')
-        if ty in ['peering', 'rtable','user','IAMpolicy']:
+        if ty in ['peering', 'rtable','user', 'IAMpolicy']:
             raise Exception(f'Instances cannot be directly associated with {ty}s.')
         if ty=='vpc':
             out = [desc['VpcId']]
@@ -349,10 +345,15 @@ def assocs(desc_or_id, with_which_type):
             out = [AWS_format.obj2id(kpair)]
         if ty=='sgroup':
             out = [AWS_format.obj2id(s) for s in desc['SecurityGroups']]
+        if ty=='address':
+            out = []
+            for addr in get_resources('address'):
+                if addr.get('PublicIp', '404') == desc.get('PublicIpAddress', 'four-oh-four') or addr.get('PrivateIp', '404') == desc.get('PrivateIpAddress', 'four-oh-four'):
+                    out.append(AWS_format.ob2id(addr))
     elif the_id.startswith('eipalloc-'): # These are addresses
         if ty == 'address':
             raise Exception('Addresses cannot be associated with thier own kind.')
-        if ty in ['vpc', 'kpair', 'peering', 'machine','IAMpolicy']:
+        if ty in ['vpc', 'kpair', 'peering', 'machine','IAMpolicy', 'sgroup', 'user']:
             raise Exception(f'Addresses cannot be directly associated with {ty}s.')
         if ty=='machine':
             out = [desc['InstanceId']] if 'InstanceId' in desc else []
@@ -363,7 +364,11 @@ def assocs(desc_or_id, with_which_type):
         if ty=='webgate':
             raise Exception('Addresses cannot be directly associated with internet gateways.')
         if ty=='subnet':
-            out = [desc['SubnetId']]
+            subnets = get_resources('subnets')
+            out = []
+            for subnet in subnets:
+                if in_cidr(desc['PublicIp'],subnet['CidrBlock']):
+                    out.append(AWS_format.obj2id(subnet))
     elif the_id.startswith('pcx-'):
         if ty == 'peering':
             raise Exception('Peering connections cannot be associated with thier own kind.')
@@ -395,8 +400,11 @@ def assocs(desc_or_id, with_which_type):
             users = iam.list_entities_for_policy(PolicyArn=desc['Arn'],EntityFilter='User')['PolicyUsers']
             out = [AWS_format.obj2id(user) for user in users]
     else:
-        raise Exception(f'TODO: handle this pair {the_id} (type is {AWS_format.enumr(the_id)}) and {ty}')
+        raise Exception(f'TODO: handle this case {the_id} (type is {AWS_format.enumr(the_id)}).')
     if out is None:
-        raise Exception(f'Does not understand pair (likely TODO in this assocs function) {AWS_format.enumr(the_id)} vs {ty}')
+        raise Exception(f'Does not understand pair (likely TODO in this assocs function) {the_id} ({AWS_format.enumr(the_id)}) vs {ty}')
+    for o in out:
+        if type(o) is dict:
+            raise Exception(f'Bug in this code, need to include obj2id call for {the_id} ({AWS_format.enumr(the_id)}) vs {ty}')
     out = list(set(out)); out.sort()
     return out
