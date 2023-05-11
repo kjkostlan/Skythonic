@@ -231,7 +231,7 @@ def assocs(desc_or_id, with_which_type):
         if ty=='machine':
             out = [AWS_format.obj2id(m) for m in ec2c.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['Reservations']]
         if ty=='subnet':
-            subnets = ec2c.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])['Subnets']
+            subnets = ec2c.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['Subnets']
             out = [AWS_format.obj2id(s) for s in subnets]
         if ty=='peering':
             filter0 = {'Name': 'accepter-vpc-info.vpc-id','Values': [the_id]}
@@ -307,7 +307,7 @@ def assocs(desc_or_id, with_which_type):
             for idesc in insts:
                 if the_id in [sg['GroupId'] for sg in idesc['SecurityGroups']]:
                     out.append(AWS_format.obj2id(idesc))
-        if ty=='subnets':
+        if ty=='subnet':
             out = []
             ifaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'group-id','Values': [the_id]}])['NetworkInterfaces']
             for iface in ifaces:
@@ -397,6 +397,6 @@ def assocs(desc_or_id, with_which_type):
     else:
         raise Exception(f'TODO: handle this pair {the_id} (type is {AWS_format.enumr(the_id)}) and {ty}')
     if out is None:
-        raise Exception(f'Does not understand pair (likely TODO in this assocs function){AWS_format.enumr(id)} vs {ty}')
+        raise Exception(f'Does not understand pair (likely TODO in this assocs function) {AWS_format.enumr(the_id)} vs {ty}')
     out = list(set(out)); out.sort()
     return out
