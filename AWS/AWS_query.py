@@ -349,7 +349,7 @@ def assocs(desc_or_id, with_which_type):
             out = []
             for addr in get_resources('address'):
                 if addr.get('PublicIp', '404') == desc.get('PublicIpAddress', 'four-oh-four') or addr.get('PrivateIp', '404') == desc.get('PrivateIpAddress', 'four-oh-four'):
-                    out.append(AWS_format.ob2id(addr))
+                    out.append(AWS_format.obj2id(addr))
     elif the_id.startswith('eipalloc-'): # These are addresses
         if ty == 'address':
             raise Exception('Addresses cannot be associated with thier own kind.')
@@ -393,7 +393,7 @@ def assocs(desc_or_id, with_which_type):
             out = [AWS_format.obj2id(policy) for policy in policies]
     elif the_id.startswith('ANP'):
         if ty in ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address', 'peering']:
-            raise Exception('Users cannot be directly associated with anything in this current implementation.')
+            raise Exception(f'IAMpolicies cannot be directly associated with {ty}s.')
         if ty == 'IAMpolicy':
             raise Exception('IAMpolicies cannot be associated with thier own kind.')
         if ty == 'user':

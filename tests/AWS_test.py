@@ -105,18 +105,18 @@ def test_assoc_query(printouts=True):
         link_map[ty] = {}
         for ky in all.keys():
             for x in all[ky]:
-                id = AWS_format.obj2id(x)
-            try:
-                links = AWS_query.assocs(x, ty)
-                link_map[ty][id] = links; link_count = link_count+len(links)
-            except Exception as e:
-                bad_err = True
-                for msg in safe_err_msgs:
-                    if msg in str(e):
-                        err_map[AWS_format.enumr(id)+'_'+ty] = msg
-                        bad_err = False
-                if bad_err:
-                    raise e
+                the_id = AWS_format.obj2id(x)
+                try:
+                    links = AWS_query.assocs(x, ty)
+                    link_map[ty][the_id] = links; link_count = link_count+len(links)
+                except Exception as e:
+                    bad_err = True
+                    for msg in safe_err_msgs:
+                        if msg in str(e):
+                            err_map[AWS_format.enumr(the_id)+'_'+ty] = msg
+                            bad_err = False
+                    if bad_err:
+                        raise e
             resc_count += 1
 
     if resc_count<10:
@@ -128,16 +128,15 @@ def test_assoc_query(printouts=True):
     reverse_link_map = {} #Also {type: {id:[resources]}}
     for ty in types:
         reverse_link_map[ty] = {}
-        for id in link_map[ty].keys():
-            for dest_id in link_map[ty][id]:
+        for orig_id in link_map[ty].keys():
+            for dest_id in link_map[ty][orig_id]:
                 if dest_id not in reverse_link_map[ty]:
                     reverse_link_map[ty][dest_id] = []
-                reverse_link_map[ty][dest_id].append(id)
+                reverse_link_map[ty][dest_id].append(orig_id)
 
     out = True
 
-    forward_only = {} #{type: [id]}
-    reverse_only = {}
+    forward_only = {}; reverse_only = {} #{type: [id]}
     for ty in types:
         forward_only[ty] = []
         reverse_only[ty] = []
@@ -163,7 +162,7 @@ def test_assoc_query(printouts=True):
             out = False
             bad_kys.append(k)
             if printouts:
-                print('Forward and reverse errs not the same for', k, err_map[k],'vs',err_map.get(k1,None))
+                print(f'Forward and reverse errs not the same for {k}; {err_map[k]} vs {err_map.get(k1,None)}')
 
     return out
 
