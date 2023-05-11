@@ -4,8 +4,7 @@ ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
 
-def enumr(txt0):
-    # Resource enum.
+def enumr(txt0): # Projection into one of a dozen or so resource types.
     txt = txt0.strip().lower().replace('_','')
     if txt[-1] == 's':
         txt = txt[0:-1]
@@ -27,20 +26,22 @@ def enumr(txt0):
         return 'address'
     if txt in ['vpcpeer', 'vpcpeering', 'peer', 'peering'] or txt.startswith('pcx-'):
         return 'peering'
-    if txt in ['user'] or txt.startswith('AID'):
+    if txt in ['user'] or txt0.startswith('AID'):
         return 'user'
     if txt in ['route', 'path', 'pathway']: # Not a top-level resource.
         return 'route'
-    if txt in ['policy','policies','policie'] or txt.startswith('ANP'):
-        return 'policy'
+    if txt in ['policy','policies','policie','IAMpolicy','IAMpolicies','IAMpolicie'] or txt0.startswith('ANP'):
+        return 'IAMpolicy'
     raise Exception(f'{txt0} is not an understood AWS resource type.')
 
 def obj2id(obj_desc): # Gets the ID from a description.
     if type(obj_desc) is str:
         return obj_desc
+    if 'ImageId' in obj_desc and 'InstanceId' in obj_desc:
+        return obj_desc['InstanceId'] # Instances have a lot of Ids. ImageId should be unique to instances.
     the_id = None
-    avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId'} #Tricky since some objects have multible ids
-    priority = ['InstanceId', 'RouteTableId', 'SubnetId'] # Order matters here for objects with multible id's.
+    avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId', 'InstanceId'} #Tricky since some objects have multible ids
+    priority = ['AllocationId', 'RouteTableId', 'SubnetId'] # Order matters here for objects with multible id's.
     for kp in priority:
         if kp in obj_desc:
             return obj_desc[kp]
