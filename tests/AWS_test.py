@@ -43,8 +43,7 @@ class test_results:
                 lines.append('FAILED TEST: '+self.names[i]+(': '+str(self.details[i]).replace('\r\n','\n') if verbose else ''))
         return '\n'.join(lines)
 
-def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name):
-    print('Testing cmd on jumpbox: '+test_name)
+def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name, printouts=True):
     tubo = vm.patient_ssh_pipe(vm_id, printouts=False)
 
     #tubo.send('echo AWS_test')
@@ -62,8 +61,11 @@ def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name):
     tubo.close()
     passed = look_for in pipe_dump
     results.add_test(passed, pipe_dump, test_name)
+    if not passed:
+        print('Testing cmd on jumpbox failed: '+test_name+' looked for but did not find: '+look_for)
 
-def test_obj2id():
+
+def test_obj2id(printouts=True):
     out = True
     all = AWS_query.get_resources()
     n = 0
@@ -71,15 +73,28 @@ def test_obj2id():
         for x in all[k]:
             the_id =AWS_format.obj2id(x)
             x1 = AWS_format.id2obj(the_id)
-            out = out and type(the_id) is str and type(x) is dict and type(x1) is dict
+            the_id2 = AWS_format.obj2id(x1)
+            if printouts:
+                if type(x) is not dict:
+                    print('Original qurey not a dict:\n', x)
+                if type(x1) is not dict and type(x) is dict:
+                    print('New query not a dict:\n', x)
+                if type(the_id) is not str:
+                    print('Converting this to an id failed:\n',x)
+                if the_id != the_id2:
+                    print('Id round trip not equal:',the_id, the_id2)
+                if x != x1:
+                    print('Difference in round-trip dict-to-dict; may be a subtle difference not our fault but needs to be OKed by this fn if so.')
+            out = out and type(the_id) is str and type(x) is dict and type(x1) is dict and the_id2==the_id and x==x1
             n = n+1
     if n<8:
         raise Exception('Not enough resource to give a good test of this fn.')
     return out
 
-def test_assoc_query():
+def test_assoc_query(printouts=True):
     # Associations = attachments = connections.
-    print('This test is expensive O(n^2) for large amounts of resources.')
+    if printouts:
+        print('This test is expensive O(n^2) for large amounts of resources.')
     safe_err_msgs = ['thier own kind', 'directly associated with']
     all = AWS_query.get_resources()
     types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user']
@@ -133,6 +148,11 @@ def test_assoc_query():
                 forward_only[ty].append(hanging)
             for hanging in l1-l0:
                 reverse_only[ty].append(hanging)
+        if printouts:
+            if len(forward_only[ty])>0:
+                print('One way connection detected:', forward_only[ty])
+            if len(reverse_only[ty])>0:
+                print('Reverse one way connection detected:', reverse_only[ty])
         out = out and len(forward_only[ty])+len(reverse_only[ty])==0
 
     bad_kys = []
@@ -142,12 +162,15 @@ def test_assoc_query():
         if err_map[k] != err_map.get(k1,None):
             out = False
             bad_kys.append(k)
+            if printouts:
+                print('Forward and reverse errs not the same for', k, err_map[k],'vs',err_map.get(k1,None))
 
     return out
 
-def test_ssh_jumpbox():
+def test_ssh_jumpbox(printouts=True):
     # Tests: A: is everything installed?
     #        B: Are the scp files actually copied over?
+    # (printotus will not print everything, only test failures)
     out = test_results('weaker_jumpbox_tests')
     vm_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')
     if vm_desc is None:
@@ -170,21 +193,21 @@ def test_ssh_jumpbox():
     #tubo.close()
     #return False
 
-    _jump_ssh_cmd_test(out, 'ping', 'ping: usage error: Destination address required', vm_desc, 'Test_ping')
-    _jump_ssh_cmd_test(out, 'aws ec2 describe-subnets', 'BYOC_jumpbox_subnet', vm_desc, 'Test_AWS_descsubnets')
+    _jump_ssh_cmd_test(out, 'ping', 'ping: usage error: Destination address required', vm_desc, 'Test_ping', printouts)
+    _jump_ssh_cmd_test(out, 'aws ec2 describe-subnets', 'BYOC_jumpbox_subnet', vm_desc, 'Test_AWS_descsubnets', printouts)
 
-    _jump_ssh_cmd_test(out, 'cd ~/Skythonic\n ls -a', 'eye_term.py', vm_desc, 'test files skythonic')
+    _jump_ssh_cmd_test(out, 'cd ~/Skythonic\n ls -a', 'eye_term.py', vm_desc, 'test files skythonic', printouts)
 
     # Delete and re-install Skythonic:
-    _jump_ssh_cmd_test(out, 'rm -rf ~/Skythonic \n echo deleted', 'deleted', vm_desc, 'delete and re-download Skythonic')
+    _jump_ssh_cmd_test(out, 'rm -rf ~/Skythonic \n echo deleted', 'deleted', vm_desc, 'delete and re-download Skythonic', printouts)
     #print('<<Re-Installing Skythonic>>')
     vm.install_Skythonic(vm_desc, '~/Skythonic', printouts=False)
     #print('<<DONE Re-Installing Skythonic>>')
     covert.danger_copy_keys_to_vm(vm_desc, '~/Skythonic', printouts=False)
 
-    _jump_ssh_cmd_test(out, 'cd ~/Skythonic/softwareDump\n ls -a', 'BYOC_keypair.pem', vm_desc, 'test softwareDump')
+    _jump_ssh_cmd_test(out, 'cd ~/Skythonic/softwareDump\n ls -a', 'BYOC_keypair.pem', vm_desc, 'test softwareDump', printouts)
 
-    _jump_ssh_cmd_test(out, 'cd ~/Skythonic/\npython3\nx=1944+2018\nprint(x)\nquit()', str(1944+2018), vm_desc, 'test py shell')
+    _jump_ssh_cmd_test(out, 'cd ~/Skythonic/\npython3\nx=1944+2018\nprint(x)\nquit()', str(1944+2018), vm_desc, 'test py shell', printouts)
 
     return out
 
