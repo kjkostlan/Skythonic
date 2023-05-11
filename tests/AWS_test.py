@@ -63,6 +63,20 @@ def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name):
     passed = look_for in pipe_dump
     results.add_test(passed, pipe_dump, test_name)
 
+def test_obj2id():
+    out = True
+    all = AWS_query.get_resources()
+    n = 0
+    for k in all.keys():
+        for x in all[k]:
+            the_id =AWS_format.obj2id(x)
+            x1 = AWS_format.id2obj(the_id)
+            out = out and type(the_id) is str and type(x) is dict and type(x1) is dict
+            n = n+1
+    if n<8:
+        raise Exception('Not enough resource to give a good test of this fn.')
+    return out
+
 def test_assoc_query():
     # Associations = attachments = connections.
     print('This test is expensive O(n^2) for large amounts of resources.')
