@@ -204,9 +204,10 @@ def assocs(desc_or_id, with_which_type):
                         out.append(AWS_format.obj2id(rtable))
                         break
         if ty=='machine':
-            all_machines = get_resources('machines')
-            machines = [inst for inst in all_machines if any(intr.get('Attachment',{}).get('GatewayId',None) == the_id for intr in inst.get('NetworkInterfaces', []))]
-            out = [AWS_format.obj2id(machine) for machine in machines]
+            vpcs = assocs(the_id, 'vpc')
+            out = []
+            for vpc_id in vpcs:
+                out.extend([AWS_format.obj2id(m) for m in filtered_machines([{'Name': 'vpc-id','Values': [vpc_id]}])])
     elif the_id.startswith('vpc-'):
         if ty == 'vpc':
             out = []

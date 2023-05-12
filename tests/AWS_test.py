@@ -92,34 +92,36 @@ def test_obj2id(printouts=True):
     return out
 
 def test_assoc_query(printouts=True):
-    # Associations = attachments = connections.
-    if printouts:
-        print('This test is expensive O(n^2) for large amounts of resources.')
-    safe_err_msgs = ['thier own kind', 'directly associated with']
-    all = AWS_query.get_resources()
-    if printouts:
-        print('Total resource counts:', [f'{k}={len(all[k])}' for k in all.keys()])
+    # Associations must be symmetric.
+    out = True
 
-    #tmp_debug=True
-    #if tmp_debug:
-    #    print('Instances:', [AWS_query.obj2id(all['machines']])
+    tmp_debug=False
+    if tmp_debug:
+        #i-09e572583c1efc068 to {'igw-0b98d77447d12ed08'}
+        all = AWS_query.get_resources()
+        print('Instances:', [AWS_format.obj2id(x) for x in all['machines']])
+        print('InternetGateways:', [AWS_format.obj2id(x) for x in all['webgates']])
+        print('Connections:', AWS_query.assocs('i-09e572583c1efc068','webgates'))
+        print('RConnections:', AWS_query.assocs('igw-0b98d77447d12ed08','machines'))
+        return False
 
     AWS_types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user', 'IAMpolicy']
     has_resources = {}
     resc_count = 0; link_count = 0
-    link_map = {} # {type: {id:[resources]}}
+    link_map = {} # {id:[resources]}
     err_map = {} #{type_type:error}, only one error at a time. Makes sure reciprocal.
     for ty in AWS_types:
         if printouts:
             print('Working on connections to:', ty)
-        link_map[ty] = {}
         for ky in all.keys():
             for x in all[ky]:
                 has_resources[ky] = True
                 the_id = AWS_format.obj2id(x)
                 try:
                     links = AWS_query.assocs(x, ty)
-                    link_map[ty][the_id] = links; link_count = link_count+len(links)
+                    if the_id not in link_map:
+                        link_map[the_id] = []
+                    link_map[the_id].extend(links); link_count = link_count+len(links)
                 except Exception as e:
                     bad_err = True
                     for msg in safe_err_msgs:
@@ -139,45 +141,29 @@ def test_assoc_query(printouts=True):
         raise Exception('Too few links between resources.')
 
     # Test reciprocity:
-    reverse_link_map = {} #Also {type: {id:[resources]}}
-    for ty in AWS_types:
-        reverse_link_map[ty] = {}
-        for orig_id in link_map[ty].keys():
-            for dest_id in link_map[ty][orig_id]:
-                if dest_id not in reverse_link_map[ty]:
-                    reverse_link_map[ty][dest_id] = []
-                reverse_link_map[ty][dest_id].append(orig_id)
+    reverse_link_map = {} #Also {id:[resources]}
+    for orig_id in link_map.keys():
+        for dest_id in link_map[orig_id]:
+            if dest_id not in reverse_link_map:
+                reverse_link_map[dest_id] = []
+            reverse_link_map[dest_id].append(orig_id)
 
-    out = True
-    need_detailed_err_report = True
-    if printouts:
-        all0 = dict(zip([AWS_format.enumr(k) for k in all.keys()], all.values()))
-        for ty in AWS_types:
-            chunk = []
-            for subchunk in link_map[ty].values():
-                chunk.extend(subchunk)
-            hidden_mudballs = set([AWS_format.obj2id(c) for c in chunk])-set([AWS_format.obj2id(c) for c in all0[ty]])
-            if len(hidden_mudballs)>0:
-                need_detailed_err_report = False
-                print(f'For type {ty} there are resources which are linked to but are not in describe resources: {hidden_mudballs}')
+    forward_only = []; reverse_only = []; total_oneways = 0
 
-    forward_only = {}; reverse_only = {} #{type: [id]}
-    for ty in AWS_types:
-        forward_only[ty] = []
-        reverse_only[ty] = []
-        kys = set(list(link_map[ty].keys())+list(reverse_link_map[ty].keys()))
-        for ky in kys:
-            l0 = set(link_map[ty].get(ky,[])); l1 = set(reverse_link_map[ty].get(ky,[]))
-            for hanging in l0-l1:
-                forward_only[ty].append(hanging)
-            for hanging in l1-l0:
-                reverse_only[ty].append(hanging)
-            if printouts and need_detailed_err_report:
-                if len(l0-l1)>0:
-                    print('One way forward-only connection:', ky, 'to', l0-l1)
-                if len(l1-l0)>0:
-                    print('One way reverse-only connection:', ky, 'from', l1-l0)
-        out = out and len(forward_only[ty])+len(reverse_only[ty])==0
+    kys = set(list(link_map.keys())+list(reverse_link_map.keys()))
+    for ky in kys:
+        l0 = set(link_map.get(ky,[])); l1 = set(reverse_link_map.get(ky,[]))
+        for hanging in l0-l1:
+            forward_only.append(hanging)
+        for hanging in l1-l0:
+            reverse_only.append(hanging)
+        if printouts:
+            if len(l0-l1)>0:
+                total_oneways = total_oneways+len(l0-l1)
+                print('One way forward-only connection:', ky, 'to', l0-l1)
+            #if len(l1-l0)>0: # Redundent.
+            #    print('One way reverse-only connection:', ky, 'from', l1-l0)
+    out = out and len(forward_only)+len(reverse_only)==0
     bad_kys = []
     for k in err_map.keys(): # Errors must also have reciprocity
         pieces = k.split('_')
