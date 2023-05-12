@@ -36,6 +36,13 @@ def lingers(desc_or_id):
         return False
     return AWS_format.tag_dict(desc_or_id).get('__deleted__',False)
 
+def filtered_machines(filters): # For some reason describe_instances doesn't return a list of instances.
+    x = ec2c.describe_instances() if filters is None else ec2c.describe_instances(Filters=filters)
+    machines = []
+    for pack in x['Reservations']:
+        machines.extend(pack['Instances'])
+    return machines
+
 def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
     # Will not find routes directly, but does find rtables.
@@ -60,10 +67,7 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
     if which_types is None or 'kpair' in which_types:
         out['kpairs'] = ec2c.describe_key_pairs()['KeyPairs']
     if which_types is None or 'machine' in which_types:
-        machines = []
-        for pack in ec2c.describe_instances()['Reservations']:
-            machines = machines+pack['Instances']
-        out['machines'] = machines
+        out['machines'] = filtered_machines(None)
     if which_types is None or 'address' in which_types:
         out['addresses'] = ec2c.describe_addresses()['Addresses']
     if which_types is None or 'peering' in which_types:
@@ -225,7 +229,7 @@ def assocs(desc_or_id, with_which_type):
             gates = ec2c.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id','Values': [the_id]}])['InternetGateways']
             out = [AWS_format.obj2id(gate) for gate in gates]
         if ty=='machine':
-            out = [AWS_format.obj2id(m) for m in ec2c.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['Reservations']]
+            out = [AWS_format.obj2id(m) for m in filtered_machines([{'Name': 'vpc-id', 'Values': [the_id]}])]
         if ty=='subnet':
             subnets = ec2c.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['Subnets']
             out = [AWS_format.obj2id(s) for s in subnets]
@@ -268,16 +272,15 @@ def assocs(desc_or_id, with_which_type):
             out = []
             for inf in interfaces:
                 for grs in inf['Groups']:
-                    for gr in grs:
-                        out.append(AWS_format.obj2id(gr))
+                    if type(grs) is list: # Singular vs plural confusion.
+                        out.extend([AWS_format.obj2id(gr) for gr in groups])
+                    elif 'GroupId' not in grs:
+                        raise Exception('No group id in group?')
+                    out.append(AWS_format.obj2id(grs))
         if ty=='machine':
             #        if ty=='subnet':
             #            out = [ni['SubnetId'] for ni in desc['NetworkInterfaces']]
-            x = ec2c.describe_instances(Filters=[{'Name': 'subnet-id', 'Values': [the_id]}])
-            out = []
-            for reservation in x['Reservations']:
-                for inst in reservation['Instances']:
-                    out.append(AWS_format.obj2id(inst))
+            out = [AWS_format.obj2id(inst) for inst in filtered_machines([{'Name': 'subnet-id', 'Values': [the_id]}])]
     elif the_id.startswith('key-'): #Only needs the name.
         if ty == 'kpair':
             raise Exception('Keypairs are not associated with thier own kind.')
@@ -315,11 +318,11 @@ def assocs(desc_or_id, with_which_type):
             raise Exception(f'Route tables cannot be directly associated with {ty}s.')
         pairs = [['vpc','VpcId'],['subnet','SubnetId'],['peering','VpcPeeringConnectionId'], ['webgate','GatewayId']]
         for p in pairs:
-            if ty in p[0]:
+            if ty == p[0]:
                 out = []
                 for a in desc['Associations']:
                     if p[1] in a:
-                        out.append(p[1])
+                        out.append(a[p[1]])
         if ty=='address':
             addresses = get_resources('addresses')
             out = []
@@ -406,5 +409,11 @@ def assocs(desc_or_id, with_which_type):
     for o in out:
         if type(o) is dict:
             raise Exception(f'Bug in this code, need to include obj2id call for {the_id} ({AWS_format.enumr(the_id)}) vs {ty}')
+        try:
+            oty = AWS_format.enumr(o)
+        except Exception as e:
+            raise Exception(f'Bug in this code or AWS_format.enumr for {the_id}<=>{ty} queries: recieved a resource-id {o} which may be malformed or unrecognized by our code.')
+        if oty != ty:
+            raise Exception(f'Bug in this code for {the_id}<=>{ty} queries. Requested type is {ty} but recieved a resource-id {o} with type {AWS_format.enumr(o)}.')
     out = list(set(out)); out.sort()
     return out
