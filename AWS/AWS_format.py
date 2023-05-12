@@ -30,7 +30,7 @@ def enumr(txt0): # Projection into one of a dozen or so resource types.
         return 'user'
     if txt in ['route', 'path', 'pathway']: # Not a top-level resource.
         return 'route'
-    if txt in ['policy','policies','policie','IAMpolicy','IAMpolicies','IAMpolicie'] or txt0.startswith('ANP'):
+    if txt in ['policy','policies','policie','iampolicy','iampolicies','iampolicie'] or txt0.startswith('ANP'):
         return 'IAMpolicy'
     raise Exception(f'{txt0} is not an understood AWS resource type.')
 

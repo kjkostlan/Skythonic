@@ -97,14 +97,18 @@ def test_assoc_query(printouts=True):
         print('This test is expensive O(n^2) for large amounts of resources.')
     safe_err_msgs = ['thier own kind', 'directly associated with']
     all = AWS_query.get_resources()
-    types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user']
+    AWS_types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user', 'IAMpolicy']
+    has_resources = {}
     resc_count = 0; link_count = 0
     link_map = {} # {type: {id:[resources]}}
     err_map = {} #{type_type:error}, only one error at a time. Makes sure reciprocal.
-    for ty in types:
+    for ty in AWS_types:
+        if printouts:
+            print('Working on connections to:', ty)
         link_map[ty] = {}
         for ky in all.keys():
             for x in all[ky]:
+                has_resources[ky] = True
                 the_id = AWS_format.obj2id(x)
                 try:
                     links = AWS_query.assocs(x, ty)
@@ -113,11 +117,14 @@ def test_assoc_query(printouts=True):
                     bad_err = True
                     for msg in safe_err_msgs:
                         if msg in str(e):
+                            _tmp = the_id+ AWS_format.enumr(the_id)+'_'+ty# DEBUG
                             err_map[AWS_format.enumr(the_id)+'_'+ty] = msg
                             bad_err = False
                     if bad_err:
                         raise e
             resc_count += 1
+    if printouts:
+        print('Done with heavy AWS API usage.')
 
     if resc_count<10:
         raise Exception('So few resources that this test cannot be trusted.')
@@ -126,7 +133,7 @@ def test_assoc_query(printouts=True):
 
     # Test reciprocity:
     reverse_link_map = {} #Also {type: {id:[resources]}}
-    for ty in types:
+    for ty in AWS_types:
         reverse_link_map[ty] = {}
         for orig_id in link_map[ty].keys():
             for dest_id in link_map[ty][orig_id]:
@@ -137,7 +144,7 @@ def test_assoc_query(printouts=True):
     out = True
 
     forward_only = {}; reverse_only = {} #{type: [id]}
-    for ty in types:
+    for ty in AWS_types:
         forward_only[ty] = []
         reverse_only[ty] = []
         kys = set(list(link_map[ty].keys())+list(reverse_link_map[ty].keys()))
@@ -147,22 +154,23 @@ def test_assoc_query(printouts=True):
                 forward_only[ty].append(hanging)
             for hanging in l1-l0:
                 reverse_only[ty].append(hanging)
-        if printouts:
-            if len(forward_only[ty])>0:
-                print('One way connection detected:', forward_only[ty])
-            if len(reverse_only[ty])>0:
-                print('Reverse one way connection detected:', reverse_only[ty])
+            if printouts:
+                if len(l0-l1)>0:
+                    print('One way forward-only connection:', ky, 'to', l0-l1)
+                if len(l1-l0)>0:
+                    print('One way reverse-only connection:', ky, 'from', l1-l0)
         out = out and len(forward_only[ty])+len(reverse_only[ty])==0
 
     bad_kys = []
     for k in err_map.keys(): # Errors must also have reciprocity
         pieces = k.split('_')
-        k1 = pieces[1]+'_'+pieces[0]
-        if err_map[k] != err_map.get(k1,None):
-            out = False
-            bad_kys.append(k)
-            if printouts:
-                print(f'Forward and reverse errs not the same for {k}; {err_map[k]} vs {err_map.get(k1,None)}')
+        if has_resources.get(pieces[0], False) and has_resources.get(pieces[1],False): # Only two-way errors.
+            k1 = pieces[1]+'_'+pieces[0]
+            if err_map[k] != err_map.get(k1,None):
+                out = False
+                bad_kys.append(k)
+                if printouts:
+                    print(f'Forward and reverse errs not the same for {k}; {err_map[k]} vs {err_map.get(k1,None)}')
 
     return out
 

@@ -70,8 +70,8 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
         out['peerings'] = ec2c.describe_vpc_peering_connections()['VpcPeeringConnections']
     if which_types is None or 'user' in which_types:
         out['users'] = iam.list_users()['Users']
-    if which_types is None or 'IAMpolicy' in which_types:
-        out['IAMpolicies'] = iam.list_policies()['Policies']
+    if which_types is None or 'IAMpolicy' in which_types: # Only includes resources with a 'PolicyId'
+        out['IAMpolicies'] = list(filter(lambda x: 'PolicyId' in x, iam.list_policies()['Policies']))
     if ids:
         for k, v in out.items():
             out[k] = AWS_format.obj2id(k)
@@ -222,7 +222,7 @@ def assocs(desc_or_id, with_which_type):
         if ty=='sgroup':
             out = [AWS_format.obj2id(s) for s in ec2c.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['SecurityGroups']]
         if ty=='webgate':
-            gates = ec2c.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id','Values': [the_id]}])
+            gates = ec2c.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id','Values': [the_id]}])['InternetGateways']
             out = [AWS_format.obj2id(gate) for gate in gates]
         if ty=='machine':
             out = [AWS_format.obj2id(m) for m in ec2c.describe_instances(Filters=[{'Name': 'vpc-id', 'Values': [the_id]}])['Reservations']]
@@ -241,7 +241,7 @@ def assocs(desc_or_id, with_which_type):
     elif the_id.startswith('subnet-'):
         if ty == 'subnet':
             raise Exception('Subnets cannot be associated with thier own kind.')
-        if ty in ['user','kpair','machine','peering','IAMpolicy']:
+        if ty in ['user','kpair','peering','IAMpolicy']:
             raise Exception(f'subnets cannot be directly associated with {ty}s.')
         if ty=='vpc':
             out = [desc['VpcId']]
@@ -270,7 +270,7 @@ def assocs(desc_or_id, with_which_type):
                 for grs in inf['Groups']:
                     for gr in grs:
                         out.append(AWS_format.obj2id(gr))
-        if ty=='instance':
+        if ty=='machine':
             #        if ty=='subnet':
             #            out = [ni['SubnetId'] for ni in desc['NetworkInterfaces']]
             x = ec2c.describe_instances(Filters=[{'Name': 'subnet-id', 'Values': [the_id]}])
@@ -353,7 +353,7 @@ def assocs(desc_or_id, with_which_type):
     elif the_id.startswith('eipalloc-'): # These are addresses
         if ty == 'address':
             raise Exception('Addresses cannot be associated with thier own kind.')
-        if ty in ['vpc', 'kpair', 'peering', 'machine','IAMpolicy', 'sgroup', 'user']:
+        if ty in ['vpc', 'kpair', 'peering','IAMpolicy', 'sgroup', 'user']:
             raise Exception(f'Addresses cannot be directly associated with {ty}s.')
         if ty=='machine':
             out = [desc['InstanceId']] if 'InstanceId' in desc else []
@@ -390,7 +390,7 @@ def assocs(desc_or_id, with_which_type):
             raise Exception('Users cannot be associated with thier own kind (except in real life).')
         if ty=='IAMpolicy':
             policies = iam.list_attached_user_policies(UserName=desc['UserName'])['AttachedPolicies']
-            out = [AWS_format.obj2id(policy) for policy in policies]
+            out = [AWS_format.obj2id(policy) for policy in list(filter(lambda x: 'PolicyId' in x, policies))]
     elif the_id.startswith('ANP'):
         if ty in ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address', 'peering']:
             raise Exception(f'IAMpolicies cannot be directly associated with {ty}s.')
