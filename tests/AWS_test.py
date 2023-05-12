@@ -97,6 +97,13 @@ def test_assoc_query(printouts=True):
         print('This test is expensive O(n^2) for large amounts of resources.')
     safe_err_msgs = ['thier own kind', 'directly associated with']
     all = AWS_query.get_resources()
+    if printouts:
+        print('Total resource counts:', [f'{k}={len(all[k])}' for k in all.keys()])
+
+    #tmp_debug=True
+    #if tmp_debug:
+    #    print('Instances:', [AWS_query.obj2id(all['machines']])
+
     AWS_types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user', 'IAMpolicy']
     has_resources = {}
     resc_count = 0; link_count = 0
@@ -142,6 +149,17 @@ def test_assoc_query(printouts=True):
                 reverse_link_map[ty][dest_id].append(orig_id)
 
     out = True
+    need_detailed_err_report = True
+    if printouts:
+        all0 = dict(zip([AWS_format.enumr(k) for k in all.keys()], all.values()))
+        for ty in AWS_types:
+            chunk = []
+            for subchunk in link_map[ty].values():
+                chunk.extend(subchunk)
+            hidden_mudballs = set([AWS_format.obj2id(c) for c in chunk])-set([AWS_format.obj2id(c) for c in all0[ty]])
+            if len(hidden_mudballs)>0:
+                need_detailed_err_report = False
+                print(f'For type {ty} there are resources which are linked to but are not in describe resources: {hidden_mudballs}')
 
     forward_only = {}; reverse_only = {} #{type: [id]}
     for ty in AWS_types:
@@ -154,13 +172,12 @@ def test_assoc_query(printouts=True):
                 forward_only[ty].append(hanging)
             for hanging in l1-l0:
                 reverse_only[ty].append(hanging)
-            if printouts:
+            if printouts and need_detailed_err_report:
                 if len(l0-l1)>0:
                     print('One way forward-only connection:', ky, 'to', l0-l1)
                 if len(l1-l0)>0:
                     print('One way reverse-only connection:', ky, 'from', l1-l0)
         out = out and len(forward_only[ty])+len(reverse_only[ty])==0
-
     bad_kys = []
     for k in err_map.keys(): # Errors must also have reciprocity
         pieces = k.split('_')
