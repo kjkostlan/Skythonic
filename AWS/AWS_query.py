@@ -71,7 +71,7 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
     if which_types is None or 'user' in which_types:
         out['users'] = iam.list_users()['Users']
     if which_types is None or 'IAMpolicy' in which_types: # Only includes resources with a 'PolicyId'
-        out['IAMpolicies'] = list(filter(lambda x: 'PolicyId' in x, iam.list_policies()['Policies']))
+        out['IAMpolicies'] = list(iam.list_policies()['Policies'])
     if ids:
         for k, v in out.items():
             out[k] = AWS_format.obj2id(k)
@@ -172,6 +172,7 @@ def assocs(desc_or_id, with_which_type, filter_exists=True):
     ty = AWS_format.enumr(with_which_type)
     the_id = AWS_format.obj2id(desc_or_id)
     desc = AWS_format.id2obj(desc_or_id)
+
     # Nested switchyard:
     out = None
     if the_id.startswith('igw-'):
@@ -393,8 +394,13 @@ def assocs(desc_or_id, with_which_type, filter_exists=True):
             raise Exception('Users cannot be associated with thier own kind (except in real life).')
         if ty=='IAMpolicy':
             policies = iam.list_attached_user_policies(UserName=desc['UserName'])['AttachedPolicies']
-            out = [AWS_format.obj2id(policy) for policy in list(filter(lambda x: 'PolicyId' in x, policies))]
-    elif the_id.startswith('ANP'):
+            out = []
+            for policy in policies:
+                try:
+                    out.append(AWS_format.obj2id(policy))
+                except:
+                    pass
+    elif the_id.startswith('arn:'):
         if ty in ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address', 'peering']:
             raise Exception(f'IAMpolicies cannot be directly associated with {ty}s.')
         if ty == 'IAMpolicy':
@@ -403,6 +409,8 @@ def assocs(desc_or_id, with_which_type, filter_exists=True):
             users = iam.list_entities_for_policy(PolicyArn=desc['Arn'],EntityFilter='User')['PolicyUsers']
             out = [AWS_format.obj2id(user) for user in users]
     else:
+        if the_id.startswith('ANP'):
+            raise Exception('IAMpolicies must be addressed with the ARN not the PolicyId; this is because the former "acts" more like an ID.')
         raise Exception(f'TODO: handle this case {the_id} (type is {AWS_format.enumr(the_id)}).')
     if out is None:
         raise Exception(f'Does not understand pair (likely TODO in this assocs function) {the_id} ({AWS_format.enumr(the_id)}) vs {ty}')

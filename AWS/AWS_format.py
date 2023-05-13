@@ -1,5 +1,5 @@
 # Misc formatting.
-import boto3
+import re, boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
@@ -30,9 +30,9 @@ def enumr(txt0): # Projection into one of a dozen or so resource types.
         return 'user'
     if txt in ['route', 'path', 'pathway']: # Not a top-level resource.
         return 'route'
-    if txt in ['policy','policies','policie','iampolicy','iampolicies','iampolicie'] or txt0.startswith('ANP'):
+    if txt in ['policy','policies','policie','iampolicy','iampolicies','iampolicie'] or txt0.startswith('ANP') or txt0.startswith('arn:'):
         return 'IAMpolicy'
-    raise Exception(f'{txt0} is not an understood AWS resource type.')
+    raise Exception(f'{txt0} is not an understood AWS resource ID nor type.')
 
 def obj2id(obj_desc): # Gets the ID from a description.
     if type(obj_desc) is str:
@@ -40,7 +40,7 @@ def obj2id(obj_desc): # Gets the ID from a description.
     if 'ImageId' in obj_desc and 'InstanceId' in obj_desc:
         return obj_desc['InstanceId'] # Instances have a lot of Ids. ImageId should be unique to instances.
     the_id = None
-    avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId', 'InstanceId'} #Tricky since some objects have multible ids
+    avoid = {'DhcpOptionsId','OwnerId','AvailabilityZoneId', 'ImageId', 'InstanceId', 'PolicyId', 'DefaultVersionId'} #Tricky since some objects have multible ids
     priority = ['AllocationId', 'RouteTableId', 'SubnetId'] # Order matters here for objects with multible id's.
     for kp in priority:
         if kp in obj_desc:
@@ -50,6 +50,10 @@ def obj2id(obj_desc): # Gets the ID from a description.
         if ky not in avoid and ky.endswith('Id'):
             the_id = obj_desc[ky]
             break
+    if the_id is None and 'PolicyArn' in obj_desc:
+        the_id = obj_desc['PolicyArn']
+    if the_id is None and 'Arn' in obj_desc:
+        the_id = obj_desc['Arn']
     if the_id is None:
         print('This is the confusing object:', obj_desc)
         raise Exception("Can't extract the ID.")
@@ -82,6 +86,8 @@ def id2obj(the_id, assert_exist=True):
             for xi in x:
                 if xi['UserId']==the_id:
                     return xi
+        elif the_id.startswith('arn:'):
+            return iam.list_entities_for_policy(PolicyArn=the_id)
         else:
             raise Exception('TODO: handle this case:', the_id)
     except Exception as e:
