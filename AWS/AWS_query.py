@@ -10,6 +10,24 @@ def in_cidr(ip_address, cidr_block):
         return True
     return ipaddress.ip_network(ip_address).subnet_of(ipaddress.ip_network(cidr_block))
 
+def enclosing_cidrs(ip_or_cidr):
+    # All enclosing cidrs, including itself. Shouldn't the ipddress module have a similar feature?
+    if ':' in ip_or_cidr:
+        raise Exception('TODO: ipv6')
+    pieces = ip_or_cidr.replace('/','.').split('.')
+    if '/' not in ip_or_cidr:
+        return enclosing_cidrs(ip_or_cidr+'/32')
+    elif '/32' in ip_or_cidr:
+        return [ip_or_cidr.replace('/32',''), ip_or_cidr]+enclosing_cidrs('.'.join(pieces[0:3])+'.0/24')
+    elif '/24' in ip_or_cidr:
+        return [ip_or_cidr]+enclosing_cidrs('.'.join(pieces[0:2]+['0'])+'.0/16')
+    elif '/16' in ip_or_cidr:
+        return [ip_or_cidr]+enclosing_cidrs('.'.join(pieces[0:1]+['0', '0'])+'.0/8')
+    elif '/8' in ip_or_cidr:
+        return [ip_or_cidr, '0.0.0.0/0']
+    elif '/0' in ip_or_cidr:
+        return [ip_or_cidr]
+
 def dplane(x, out=None):
     # Flattens a nested dictionary into 2D: [key][index].
     if type(x) is list or type(x) is tuple:
@@ -252,6 +270,7 @@ def assocs(desc_or_id, with_which_type):
             out = [desc['VpcId']]
         if ty=='rtable':
             rtables = ec2c.describe_route_tables(Filters=[{'Name': 'association.subnet-id','Values': [the_id]}])['RouteTables']
+            #rtables+ec2c.describe_route_tables(Filters=[{'Name': 'subnet-id','Values': [the_id]}])['RouteTables']
             out = [AWS_format.obj2id(x) for x in rtables]
         if ty=='webgate':
             out = []
@@ -317,13 +336,15 @@ def assocs(desc_or_id, with_which_type):
             raise Exception('Route tables are not associated with thier own kind.')
         if ty in ['kpair','sgroup','user','machine','IAMpolicy']:
             raise Exception(f'Route tables cannot be directly associated with {ty}s.')
-        pairs = [['vpc','VpcId'],['subnet','SubnetId'],['peering','VpcPeeringConnectionId'], ['webgate','GatewayId']]
+        pairs = [['peering','VpcPeeringConnectionId'], ['webgate','GatewayId'], ['subnet','SubnetId'], ['vpc', 'VpcId']]
         for p in pairs:
             if ty == p[0]:
                 out = []
                 for a in desc['Associations']:
                     if p[1] in a:
                         out.append(a[p[1]])
+                if p[1] in desc:
+                    out.append(desc[p[1]])
         if ty=='address':
             addresses = get_resources('addresses')
             out = []
@@ -363,8 +384,11 @@ def assocs(desc_or_id, with_which_type):
             out = [desc['InstanceId']] if 'InstanceId' in desc else []
         if ty=='rtable':
             public_ip = desc['PublicIp']
-            rtables = ec2c.describe_route_tables(Filters=[{'Name': 'route.destination-cidr-block','Values': [f'{public_ip}/32']}])['RouteTables']
-            out = [AWS_format.obj2id(rtable) for rtable in rtables]
+            cidrs = enclosing_cidrs(desc['PublicIp'])
+            out = []
+            for cidr_or_ip in cidrs: # The filter is dumb and only looks for a string match.
+                rtables = ec2c.describe_route_tables(Filters=[{'Name': 'route.destination-cidr-block','Values': [cidr_or_ip]}])['RouteTables']
+                out.extend([AWS_format.obj2id(rtable) for rtable in rtables])
         if ty=='webgate':
             raise Exception('Addresses cannot be directly associated with internet gateways.')
         if ty=='subnet':

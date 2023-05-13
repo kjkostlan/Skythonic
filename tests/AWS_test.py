@@ -64,6 +64,20 @@ def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name, printouts=T
     if not passed:
         print('Testing cmd on jumpbox failed: '+test_name+' looked for but did not find: '+look_for)
 
+def test_ip_cidr(printouts=True):
+    # Such a simple tehcnical test.
+    out = True
+    gold = ['123.456.7.8', '123.456.7.8/32', '123.456.7.0/24', '123.456.0.0/16', '123.0.0.0/8', '0.0.0.0/0']
+    green = AWS_query.enclosing_cidrs('123.456.7.8')
+    out = out and gold==green
+    if printouts and not gold==green:
+        print('Gold vs green:', [gold[i]+' '+green[i] for i in range(len(gold))])
+    gold = ['555.444.3.0/24', '555.444.0.0/16', '555.0.0.0/8', '0.0.0.0/0']
+    green = AWS_query.enclosing_cidrs('555.444.3.0/24')
+    out = out and gold==green
+    if printouts and not gold==green:
+        print('Gold vs green:', [gold[i]+' '+green[i] for i in range(len(gold))])
+    return out
 
 def test_obj2id(printouts=True):
     out = True
@@ -95,15 +109,13 @@ def test_assoc_query(printouts=True):
     # Associations must be symmetric.
     out = True
 
-    tmp_debug=False
-    if tmp_debug:
-        #i-09e572583c1efc068 to {'igw-0b98d77447d12ed08'}
-        all = AWS_query.get_resources()
-        print('Instances:', [AWS_format.obj2id(x) for x in all['machines']])
-        print('InternetGateways:', [AWS_format.obj2id(x) for x in all['webgates']])
-        print('Connections:', AWS_query.assocs('i-09e572583c1efc068','webgates'))
-        print('RConnections:', AWS_query.assocs('igw-0b98d77447d12ed08','machines'))
-        return False
+    # Associations = attachments = connections.
+    if printouts:
+        print('This test is expensive O(n^2) for large amounts of resources.')
+    safe_err_msgs = ['thier own kind', 'directly associated with']
+    all = AWS_query.get_resources()
+    if printouts:
+        print('Total resource counts:', [f'{k}={len(all[k])}' for k in all.keys()])
 
     AWS_types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user', 'IAMpolicy']
     has_resources = {}
