@@ -1,32 +1,10 @@
-import boto3, ipaddress
+import boto3
 import AWS.AWS_format as AWS_format
+import plumbing
 
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
-
-def in_cidr(ip_address, cidr_block):
-    if ip_address==cidr_block:
-        return True
-    return ipaddress.ip_network(ip_address).subnet_of(ipaddress.ip_network(cidr_block))
-
-def enclosing_cidrs(ip_or_cidr):
-    # All enclosing cidrs, including itself. Shouldn't the ipddress module have a similar feature?
-    if ':' in ip_or_cidr:
-        raise Exception('TODO: ipv6')
-    pieces = ip_or_cidr.replace('/','.').split('.')
-    if '/' not in ip_or_cidr:
-        return enclosing_cidrs(ip_or_cidr+'/32')
-    elif '/32' in ip_or_cidr:
-        return [ip_or_cidr.replace('/32',''), ip_or_cidr]+enclosing_cidrs('.'.join(pieces[0:3])+'.0/24')
-    elif '/24' in ip_or_cidr:
-        return [ip_or_cidr]+enclosing_cidrs('.'.join(pieces[0:2]+['0'])+'.0/16')
-    elif '/16' in ip_or_cidr:
-        return [ip_or_cidr]+enclosing_cidrs('.'.join(pieces[0:1]+['0', '0'])+'.0/8')
-    elif '/8' in ip_or_cidr:
-        return [ip_or_cidr, '0.0.0.0/0']
-    elif '/0' in ip_or_cidr:
-        return [ip_or_cidr]
 
 def dplane(x, out=None):
     # Flattens a nested dictionary into 2D: [key][index].
@@ -116,23 +94,17 @@ def get_by_tag(rtype, k, v): # Gets a given tag.
 def get_by_name(rtype, name): # Convenience fn.
     return get_by_tag(rtype, 'Name', name)
 
-def flat_lookup(rtype, k, v, assert_range=None):
-    # Flat resource lokup. Not recommended for tags.
-    resc = get_resources(rtype)
-    if assert_range is None:
-        assert_range = [0, 1e100]
-    elif type(assert_range) is int:
-        assert_range = [assert_range, assert_range]
-    out = []
-    for r in resc:
-        r2 = dplane(r)
-        if v in r2.get(k, []):
-            out.append(r)
-    if len(out)<assert_range[0]:
-        raise Exception(f'Too few matches to {rtype} {k} {v}')
-    elif len(out)>assert_range[1]:
-        raise Exception(f'Too many matches to {rtype} {k} {v}')
-    return out
+def exists(desc_or_id):
+    the_id = AWS_format.obj2id(desc_or_id)
+    if type(the_id) is not str:
+        raise Exception('Possible bug in obj2id.')
+    try:
+        desc1 = AWS_format.id2obj(the_id)
+        return desc1 is not None and desc1 is not False
+    except Exception as e:
+        if 'index out of range' in str(e) or 'does not exist' in str(e):
+            return False
+        raise e
 
 def _default_custom():
     dresc = {}; cresc = {}; resc = get_resources()
@@ -195,7 +167,7 @@ def what_needs_these(custom_only=False, include_empty=False): # What Ids depend 
                         _add(id, asc['SubnetId'])
     return out
 
-def assocs(desc_or_id, with_which_type):
+def assocs(desc_or_id, with_which_type, filter_exists=True):
     #Gets associations of desc_or_id with_which_type. Returns a list.
     ty = AWS_format.enumr(with_which_type)
     the_id = AWS_format.obj2id(desc_or_id)
@@ -285,7 +257,7 @@ def assocs(desc_or_id, with_which_type):
             out = []
             addresses = get_resources('addresses')
             for address in addresses:
-                if in_cidr(address['PublicIp'], desc['CidrBlock']):
+                if plumbing.in_cidr(address['PublicIp'], desc['CidrBlock']):
                     out.append(AWS_format.obj2id(address))
         if ty=='sgroup':
             interfaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [the_id]}])['NetworkInterfaces']
@@ -345,12 +317,15 @@ def assocs(desc_or_id, with_which_type):
                         out.append(a[p[1]])
                 if p[1] in desc:
                     out.append(desc[p[1]])
+                for route in desc['Routes']:
+                    if p[1] in route and '-' in route[p[1]]: # Sometimes the "Id" isn't actually an ID.
+                        out.append(route[p[1]])
         if ty=='address':
             addresses = get_resources('addresses')
             out = []
             for addr in addresses:
                 for route in desc['Routes']:
-                    if in_cidr(addr['PublicIp'], route['DestinationCidrBlock']):
+                    if plumbing.in_cidr(addr['PublicIp'], route['DestinationCidrBlock']):
                         out.append(AWS_format.obj2id(addr))
                         break
     elif the_id.startswith('i-'):
@@ -384,7 +359,7 @@ def assocs(desc_or_id, with_which_type):
             out = [desc['InstanceId']] if 'InstanceId' in desc else []
         if ty=='rtable':
             public_ip = desc['PublicIp']
-            cidrs = enclosing_cidrs(desc['PublicIp'])
+            cidrs = plumbing.enclosing_cidrs(desc['PublicIp'])
             out = []
             for cidr_or_ip in cidrs: # The filter is dumb and only looks for a string match.
                 rtables = ec2c.describe_route_tables(Filters=[{'Name': 'route.destination-cidr-block','Values': [cidr_or_ip]}])['RouteTables']
@@ -395,7 +370,7 @@ def assocs(desc_or_id, with_which_type):
             subnets = get_resources('subnets')
             out = []
             for subnet in subnets:
-                if in_cidr(desc['PublicIp'],subnet['CidrBlock']):
+                if plumbing.in_cidr(desc['PublicIp'],subnet['CidrBlock']):
                     out.append(AWS_format.obj2id(subnet))
     elif the_id.startswith('pcx-'):
         if ty == 'peering':
@@ -441,4 +416,10 @@ def assocs(desc_or_id, with_which_type):
         if oty != ty:
             raise Exception(f'Bug in this code for {the_id}<=>{ty} queries. Requested type is {ty} but recieved a resource-id {o} with type {AWS_format.enumr(o)}.')
     out = list(set(out)); out.sort()
+    if filter_exists:
+        out1 = []
+        for o in out:
+            if exists(o):
+                out1.append(o)
+        out = out1
     return out

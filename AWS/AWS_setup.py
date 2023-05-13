@@ -5,7 +5,7 @@ import AWS.AWS_query as AWS_query
 import AWS.AWS_format as AWS_format
 import vm, eye_term
 import time
-import covert
+import covert, plumbing
 ec2r = boto3.resource('ec2'); ec2c = boto3.client('ec2'); iam = boto3.client('iam')
 
 def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
@@ -154,7 +154,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             raise e
 
     # Testing time:
-    jbox_id = AWS_format.obj2id(AWS_query.flat_lookup('machine', 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+    jbox_id = AWS_format.obj2id(plumbing.flat_lookup('machine', 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
     print(f'Testing ssh ping from machine {jbox_id}')
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.

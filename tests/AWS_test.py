@@ -4,7 +4,7 @@ import AWS.AWS_setup as AWS_setup
 import AWS.AWS_format as AWS_format
 import AWS.AWS_clean as AWS_clean
 import AWS.AWS_core as AWS_core
-import vm, covert
+import vm, covert, plumbing
 
 class test_results:
     def __init__(self, name=None):
@@ -68,12 +68,12 @@ def test_ip_cidr(printouts=True):
     # Such a simple tehcnical test.
     out = True
     gold = ['123.456.7.8', '123.456.7.8/32', '123.456.7.0/24', '123.456.0.0/16', '123.0.0.0/8', '0.0.0.0/0']
-    green = AWS_query.enclosing_cidrs('123.456.7.8')
+    green = plumbing.enclosing_cidrs('123.456.7.8')
     out = out and gold==green
     if printouts and not gold==green:
         print('Gold vs green:', [gold[i]+' '+green[i] for i in range(len(gold))])
     gold = ['555.444.3.0/24', '555.444.0.0/16', '555.0.0.0/8', '0.0.0.0/0']
-    green = AWS_query.enclosing_cidrs('555.444.3.0/24')
+    green = plumbing.enclosing_cidrs('555.444.3.0/24')
     out = out and gold==green
     if printouts and not gold==green:
         print('Gold vs green:', [gold[i]+' '+green[i] for i in range(len(gold))])
@@ -151,7 +151,8 @@ def test_assoc_query(printouts=True):
         raise Exception('So few resources that this test cannot be trusted.')
     if link_count<12:
         raise Exception('Too few links between resources.')
-
+    if printouts:
+        print('Total number of connections:', link_count)
     # Test reciprocity:
     reverse_link_map = {} #Also {id:[resources]}
     for orig_id in link_map.keys():
