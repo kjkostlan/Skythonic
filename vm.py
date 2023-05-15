@@ -234,20 +234,26 @@ def update_Apt(instance_id, printouts=True):
             print(f'Rebooting {instance_id} as part of the "apt update" process')
         ec2c.reboot_instances(InstanceIds=[instance_id])
 
-    return Ireport([tubo],[]) # TODO: error reporting here instead of empty list.
+    return Ireport([tubo],[]), lambda: print('TODO: test update_Apt') # TODO: error reporting here instead of empty list.
 
 def install_Ping(instance_id, printouts=True):
     # Ping is not installed with the minimal linux.
     #https://www.atlantic.net/vps-hosting/how-to-install-and-use-the-ping-command-in-linux/
-    cmds = ['sudo apt-get install iputils-ping', 'ping', 'echo done']
+    cmds = ['sudo apt-get install iputils-ping', 'echo done']
     tubo = patient_ssh_pipe(instance_id, printouts=printouts)
     _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
 
     errs = []
     if 'not found' in str(tubo.history_contents):
         errs.append('Ping produces a not found eror.')
 
-    return Ireport([tubo], errs)
+    def _test():
+        tubo = patient_ssh_pipe(instance_id, printouts=True)
+        _cmd_list_fixed_prompt(tubo, ['ping', 'echo done'], _default_prompts(), lambda cmd:32.0)
+        tubo.close()
+
+    return Ireport([tubo], errs), _test
 
 def install_Skythonic(instance_id, remote_root_folder, printouts=True):
     # Installs the *local* copy of Skythonic to the instance_id.
@@ -256,7 +262,13 @@ def install_Skythonic(instance_id, remote_root_folder, printouts=True):
         if file_io.dump_folder.split('/')[-1] in k:
             del file2contents[k]
     tubo, errs = send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
-    return Ireport([tubo], errs)
+
+    def _test():
+        tubo = patient_ssh_pipe(instance_id, printouts=True)
+        _cmd_list_fixed_prompt(tubo, ['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], _default_prompts(), lambda cmd:32.0)
+        tubo.close()
+
+    return Ireport([tubo], errs), _test
 
 def install_AWS(instance_id, user_name, region_name, printouts=True):
     # Installs and tests AWS+boto3 on a machine, raising Exceptions if the process fails.
@@ -277,7 +289,7 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
     print('Beginning installation. Should take about 5 min')
     t0 = time.time()
 
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts);
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
 
     null_prompts = {'Get:42':'', 'Unpacking awscli':'',
                     'Setting up fontconfig':'', 'Extracting templates from packages':'',
@@ -302,22 +314,26 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
     pip_cmds = ['python3 -m pip install boto3', 'pip install --upgrade awscli', 'pip install --upgrade botocore'] # Upgrades may avoid errors.
     _cmd_list_fixed_prompt(tubo, pip_cmds, line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
     tubo = _reset(tubo, full_restart=False)
-
-    test_cmd_fns = [['echo bash_test'],
-                    ['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'], ['echo python_boto3_test'],
-                    ['python3'], ['import boto3'], ["boto3.client('ec2').describe_vpcs()", "'Vpcs': [{'CidrBlock'"],
-                    ['quit()']]
-
-    errs = []
-    for pair in test_cmd_fns:
-        _out, _err, _ = tubo.API(pair[0], f_polls=None, dt_min=0.01, dt_max=1)
-        if len(pair)>1:
-            if pair[1] not in _out:
-                warn_txt = f'WARNING: Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.'
-                print(warn_txt) if printouts else ''
-                errs.append(warn_txt)
     tubo.close(); pipes.append(tubo)
+    def _test(printouts=True):
+        test_cmd_fns = [['echo bash_test'],
+                        ['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'], ['echo python_boto3_test'],
+                        ['python3'], ['import boto3'], ["boto3.client('ec2').describe_vpcs()", "'Vpcs': [{'CidrBlock'"],
+                        ['quit()']]
+        tubo = patient_ssh_pipe(instance_id, printouts=True)
+        errs = []
+        for pair in test_cmd_fns:
+            _out, _err, _ = tubo.API(pair[0], f_polls=None, dt_min=0.01, dt_max=1)
+            if len(pair)>1:
+                if pair[1] not in _out:
+                    warn_txt = f'WARNING: Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.'
+                    print(warn_txt) if printouts else ''
+                    errs.append(warn_txt)
+        tubo.close()
+        return errs
+
+    errs = _test(printouts=printouts)
     if printouts:
         t1 = time.time(); print('Elapsed time on installation (s):',t1-t0)
         print('Check the above test to ensure it works.')
-    return Ireport(pipes, errs)
+    return Ireport(pipes, errs), _test

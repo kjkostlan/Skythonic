@@ -6,24 +6,6 @@ ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
 
-def dplane(x, out=None):
-    # Flattens a nested dictionary into 2D: [key][index].
-    if type(x) is list or type(x) is tuple:
-        x = dict(zip(range(len(x)), x))
-    if type(x) is set:
-        x = dict(zip(x,x))
-    if out is None:
-        out = {}
-    _is_coll = lambda x: type(x) in [list, tuple, dict, set]
-    for k in x.keys():
-        if k not in out:
-            out[k] = []
-        if _is_coll(x[k]):
-            dplane(x[k], out)
-        else:
-            out[k].append(x[k])
-    return out
-
 def lingers(desc_or_id):
     #desc = AWS_format.id2obj(desc_or_id)
     #instance 'terminated' in str(m.get('State',None)) # Alternative way for machines.

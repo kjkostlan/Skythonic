@@ -65,12 +65,17 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    report = vm.update_Apt(inst_id)
-    report.append(vm.install_AWS(inst_id, user_name, region_name, printouts=True))
-    report.append(vm.install_Ping(inst_id, printouts=True))
-    report.append(vm.install_Skythonic(inst_id, '~/Skythonic', printouts=True))
-    covert.danger_copy_keys_to_vm(inst_id, '~/Skythonic')
+    report, t0 = vm.update_Apt(inst_id)
+    tests = [t0]
+    for x in [vm.install_AWS(inst_id, user_name, region_name, printouts=True), vm.install_Ping(inst_id, printouts=True),\
+              vm.install_Skythonic(inst_id, '~/Skythonic', printouts=True)]:
+        report.append(x[0])
+        tests.append(x[1])
+    print('BEGIN JUMBBOX INSTALL TESTS')
+    for t in tests:
+        t()
 
+    print('Check the above printouts for Apt update, AWS, Ping, and Skythonic intall.')
     print('Use this to ssh:', ssh_cmd)
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
     if len(report.errors)>0:
@@ -154,7 +159,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             raise e
 
     # Testing time:
-    jbox_id = AWS_format.obj2id(plumbing.flat_lookup('machine', 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+    jbox_id = AWS_format.obj2id(plumbing.flat_lookup(AWS_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
     print(f'Testing ssh ping from machine {jbox_id}')
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.

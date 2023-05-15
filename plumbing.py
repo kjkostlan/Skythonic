@@ -1,6 +1,24 @@
 # Simple nuts-and-bolts IP functions.
 import ipaddress
 
+def dplane(x, out=None):
+    # Flattens a nested dictionary into 2D: [key][index].
+    if type(x) is list or type(x) is tuple:
+        x = dict(zip(range(len(x)), x))
+    if type(x) is set:
+        x = dict(zip(x,x))
+    if out is None:
+        out = {}
+    _is_coll = lambda x: type(x) in [list, tuple, dict, set]
+    for k in x.keys():
+        if k not in out:
+            out[k] = []
+        if _is_coll(x[k]):
+            dplane(x[k], out)
+        else:
+            out[k].append(x[k])
+    return out
+
 def in_cidr(ip_address, cidr_block):
     if ip_address==cidr_block:
         return True
@@ -24,9 +42,8 @@ def enclosing_cidrs(ip_or_cidr):
     elif '/0' in ip_or_cidr:
         return [ip_or_cidr]
 
-def flat_lookup(rtype, k, v, assert_range=None):
+def flat_lookup(resc, k, v, assert_range=None):
     # Flat resource lokup. Not recommended for tags.
-    resc = get_resources(rtype)
     if assert_range is None:
         assert_range = [0, 1e100]
     elif type(assert_range) is int:

@@ -103,33 +103,35 @@ def create_once(rtype, name, printouts, **kwargs):
 
 def delete(desc_or_id):
     # Deletes an object (returns True if sucessful, False if object wasn't existing).
-    id = AWS_format.obj2id(desc_or_id)
+    the_id = AWS_format.obj2id(desc_or_id)
+    if the_id is None:
+        raise Exception('None ID')
 
-    if id.startswith('igw-'):
-        attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[id])['InternetGateways'][0]['Attachments']
+    if the_id.startswith('igw-'):
+        attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[the_id])['InternetGateways'][0]['Attachments']
         for attch in attchs: # Not sure if this is needed.
-            ec2c.detach_internet_gateway(InternetGatewayId=id, VpcId=attch['VpcId'])
-        ec2c.delete_internet_gateway(InternetGatewayId=id)
-    elif id.startswith('vpc-'):
-        ec2c.delete_vpc(VpcId=id)
-    elif id.startswith('subnet-'):
-        ec2c.delete_subnet(SubnetId=id)
-    elif id.startswith('key-'): #Only needs the name.
-        ec2c.delete_key_pair(KeyPairId=id)
-    elif id.startswith('sg-'):
-        ec2c.delete_security_group(GroupId=id)
-    elif id.startswith('rtb-'):
-        ec2c.delete_route_table(RouteTableId=id)
-    elif id.startswith('i-'):
+            ec2c.detach_internet_gateway(InternetGatewayId=the_id, VpcId=attch['VpcId'])
+        ec2c.delete_internet_gateway(InternetGatewayId=the_id)
+    elif the_id.startswith('vpc-'):
+        ec2c.delete_vpc(VpcId=the_id)
+    elif the_id.startswith('subnet-'):
+        ec2c.delete_subnet(SubnetId=the_id)
+    elif the_id.startswith('key-'): #Only needs the name.
+        ec2c.delete_key_pair(KeyPairId=the_id)
+    elif the_id.startswith('sg-'):
+        ec2c.delete_security_group(GroupId=the_id)
+    elif the_id.startswith('rtb-'):
+        ec2c.delete_route_table(RouteTableId=the_id)
+    elif the_id.startswith('i-'):
         stop_first = True
         if stop_first:
             try:
-                ec2c.stop_instances(InstanceIds=[id], Force=True)
+                ec2c.stop_instances(InstanceIds=[the_id], Force=True)
             except Exception as e:
                 if 'IncorrectInstanceState' not in str(e): # Common source of noise.
                     print('Warning: error on force-stop instance, will still proceed to terminate:',str(e))
-        ec2c.terminate_instances(InstanceIds=[id])
-    elif id.startswith('eipalloc-'): # These are addresses
+        ec2c.terminate_instances(InstanceIds=[the_id])
+    elif the_id.startswith('eipalloc-'): # These are addresses
         desc = AWS_format.id2obj(desc_or_id)
         f = ec2c.disassociate_address; kwargs = {}
         for k in ['AssociationId', 'PublicIp']:
@@ -142,9 +144,9 @@ def delete(desc_or_id):
         except Exception as e:
             print('Warning: cannot dissoc address, will still proceed with deletion anyway; err=', str(e))
         ec2c.release_address(AllocationId=desc['AllocationId'])
-    elif id.startswith('pcx-'):
-        ec2c.delete_vpc_peering_connection(VpcPeeringConnectionId=id)
-    elif id.startswith('AID'):
+    elif the_id.startswith('pcx-'):
+        ec2c.delete_vpc_peering_connection(VpcPeeringConnectionId=the_id)
+    elif the_id.startswith('AID'):
         uname = AWS_format.id2obj(desc_or_id)['UserName']
         policies = iam.list_attached_user_policies(UserName=uname)['AttachedPolicies']
         for p in policies:
@@ -154,10 +156,10 @@ def delete(desc_or_id):
             iam.delete_access_key(UserName=uname, AccessKeyId=k['AccessKeyId'])
         iam.delete_user(UserName=uname)
     else:
-        raise Exception('TODO: handle this case:', id)
+        raise Exception('TODO: handle this case:', the_id)
 
     try: # Some resources linger. Mark them with __deleted__.
-        add_tags(id, {'__deleted__':True})
+        add_tags(the_id, {'__deleted__':True})
     except Exception as e:
         if 'does not exist' in repr(e):
             return False
