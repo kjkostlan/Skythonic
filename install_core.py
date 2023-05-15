@@ -186,10 +186,8 @@ urls = [f'https://raw.githubusercontent.com/kjkostlan/Skythonic/{branch}/{fname}
 [os.unlink('./'+fname) if os.path.exists(fname) else None for fname in fnames]
 curl_cmds = [f'curl "{urls[i]}" -o "./{fnames[i]}"' for i in range(len(fnames))]
 [os.system(curl_cmd) for curl_cmd in curl_cmds]
-for fname in fnames:
-  if not os.path.exists(fname):
-    raise Exception(f'Curl did not grab file: {fname} (is curl installed?)')
-
+bad_fnames = list(filter(lambda fname: not os.path.exists(fname), fnames))
+print('WARNING: the curl bootstrap may have failed.') if len(bad_fnames)>0 else None
 print(f'Curled github bootstrap branch {branch} to folder {os.path.realpath(".")}; the GitHub curl requests may be a few minutes out of date.')
 import install_core # Now that the file has been created.
 install_core.install_git_fetch(branch=branch)
