@@ -36,7 +36,7 @@ def wait_and_attach_address(machine_id, address_id):
 
 def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC', key_name='BYOC_keypair'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
-    vpc_id = AWS_core.create_once('VPC', user_name+'_Service', True, CidrBlock='10.100.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
+    vpc_id = AWS_core.create_once('VPC', user_name+'_Service', True, CidrBlock='10.200.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsHostnames={'Value': True})
 
@@ -44,7 +44,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     AWS_core.assoc(vpc_id, webgate_id)
     routetable_id = AWS_core.create_once('rtable', user_name+'_'+basename+'_rtable', True, VpcId=vpc_id) # TODO: Use the default one.
     ec2c.create_route(RouteTableId=routetable_id, DestinationCidrBlock='0.0.0.0/0',GatewayId=webgate_id)
-    subnet_id = AWS_core.create_once('subnet',user_name+'_'+basename+'_subnet', True, CidrBlock='10.100.250.0/24', VpcId=vpc_id, AvailabilityZone=subnet_zone)
+    subnet_id = AWS_core.create_once('subnet',user_name+'_'+basename+'_subnet', True, CidrBlock='10.200.250.0/24', VpcId=vpc_id, AvailabilityZone=subnet_zone)
     AWS_core.assoc(routetable_id, subnet_id)
     securitygroup_id = AWS_core.create_once('securitygroup', user_name+'_'+basename+'_sGroup', True, GroupName='SSH-ONLY', Description='only allow SSH traffic', VpcId=vpc_id)
     try:
@@ -53,7 +53,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
         if 'already exists' not in repr(e):
             raise e
 
-    inst_id = simple_vm(user_name+'_'+basename+'_VM', '10.100.250.100', subnet_id, securitygroup_id, key_name)
+    inst_id = simple_vm(user_name+'_'+basename+'_VM', '10.200.250.100', subnet_id, securitygroup_id, key_name)
 
     addr = AWS_core.create_once('address', user_name+'_'+basename+'_address', True, Domain='vpc')
     wait_and_attach_address(inst_id, addr)
@@ -83,7 +83,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     return ssh_cmd, inst_id, report
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', subnet_zone='us-west-2c'):
-    vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.101.0.0/16')
+    vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsHostnames={'Value': True})
 
@@ -116,8 +116,8 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     routetable_id = AWS_core.create_once('rtable', new_vpc_name+'_rtable', True, VpcId=vpc_id)
 
     basenames = ['BYOC_web', 'BYOC_app', 'BYOC_db']
-    subnet_cidrs = ['10.101.101.0/24', '10.101.102.0/24', '10.101.103.0/24']
-    ips =          ['10.101.101.100',  '10.101.102.100',  '10.101.103.100']
+    subnet_cidrs = ['10.201.101.0/24', '10.201.102.0/24', '10.201.103.0/24']
+    ips =          ['10.201.101.100',  '10.201.102.100',  '10.201.103.100']
     inst_ids = []
     cmds = []
     for i in range(3):
@@ -129,7 +129,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         #https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html
         securitygroup_id = AWS_core.create_once('securitygroup', basenames[i]+'_sGroup', True, GroupName='From Hub'+basenames[i], Description='Allow Hub Ip cidr', VpcId=vpc_id)
         try:
-            ec2c.authorize_security_group_ingress(GroupId=securitygroup_id, CidrIp='10.100.0.0/16', IpProtocol='-1', FromPort=22, ToPort=22)
+            ec2c.authorize_security_group_ingress(GroupId=securitygroup_id, CidrIp='10.200.0.0/16', IpProtocol='-1', FromPort=22, ToPort=22)
         except Exception as e:
             if 'already exists' not in repr(e):
                 raise e
@@ -146,14 +146,14 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
 
     print("Creating route on hub rtable id:", jbox_rtable_id)
     try:
-        ec2c.create_route(RouteTableId=jbox_rtable_id, DestinationCidrBlock='10.101.0.0/16',GatewayId=peering_id)
+        ec2c.create_route(RouteTableId=jbox_rtable_id, DestinationCidrBlock='10.201.0.0/16',GatewayId=peering_id)
     except Exception as e:
         if 'already exists' not in repr(e):
             raise e
 
     print("Creating route on Spoke1 rtable id:", routetable_id)
     try:
-        ec2c.create_route(RouteTableId=routetable_id, DestinationCidrBlock='10.100.0.0/16',GatewayId=peering_id)
+        ec2c.create_route(RouteTableId=routetable_id, DestinationCidrBlock='10.200.0.0/16',GatewayId=peering_id)
     except Exception as e:
         if 'already exists' not in repr(e):
             raise e
