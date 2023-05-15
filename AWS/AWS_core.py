@@ -12,7 +12,9 @@ try:
 except:
     logs = []
 
-def add_tags(desc_or_id, d):
+delete_user_input_check = [True] # Safety.
+
+def add_tags(desc_or_id, d, ignore_none_desc=False):
     #botocore.exceptions.ClientError: An error occurred (InvalidInstanceID.NotFound) when calling the CreateTags operation: The instance ID 'i-0fb7af9af917db726' does not exist
     tags = [{'Key':str(k),'Value':str(d[k])} for k in d.keys()]
     if type(desc_or_id) is dict:
@@ -23,13 +25,15 @@ def add_tags(desc_or_id, d):
             ec2c.create_tags(Tags=tags,Resources=[id])
     elif type(desc_or_id) is str:
         if desc_or_id.startswith('AID'): # Users arr handleded differently.
-            add_tags(AWS_format.id2obj(desc_or_id), d)
+            add_tags(AWS_format.id2obj(desc_or_id), d, ignore_none_desc)
         else:
             ec2c.create_tags(Tags=tags,Resources=[desc_or_id])
     else: # Actual objects, which are rarely worked with.
         if 'ec2.KeyPair' in str(type(desc_or_id)): # Random variations in the API...
-            add_tags(desc_or_id.key_pair_id, d)
+            add_tags(desc_or_id.key_pair_id, d, ignore_none_desc)
         else:
+            if desc_or_id is None and ignore_none_desc:
+                return # Race conditions when deleting things (probably).
             desc_or_id.create_tags(Tags=tags)
 
 def create(rtype0, name, **kwargs):
@@ -107,6 +111,13 @@ def delete(desc_or_id):
     if the_id is None:
         raise Exception('None ID')
 
+    if delete_user_input_check[0]:
+        x = input('Type "delete" to confirm this AND ALL FUTURE deletions for this Python session:').lower().strip()
+        if x=='delete':
+            delete_user_input_check[0] = False
+        else:
+            raise Exception('Once-per-session deletion confirmation denied by user.')
+
     if the_id.startswith('igw-'):
         attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[the_id])['InternetGateways'][0]['Attachments']
         for attch in attchs: # Not sure if this is needed.
@@ -159,7 +170,7 @@ def delete(desc_or_id):
         raise Exception('TODO: handle this case:', the_id)
 
     try: # Some resources linger. Mark them with __deleted__.
-        add_tags(the_id, {'__deleted__':True})
+        add_tags(the_id, {'__deleted__':True}, ignore_none_desc=True)
     except Exception as e:
         if 'does not exist' in repr(e):
             return False
