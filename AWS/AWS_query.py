@@ -39,7 +39,7 @@ def filtered_machines(filters): # For some reason describe_instances doesn't ret
         machines.extend(pack['Instances'])
     return machines
 
-def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
+def get_resources(which_types=None, ids=False, include_lingers=False):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
     # Will not find routes directly, but does find rtables.
     # Will not find tags directly; use get_by_tag.
@@ -76,7 +76,7 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
         for k, v in out.items():
             out[k] = AWS_format.obj2id(k)
 
-    if ignore_lingering_resources:
+    if not include_lingers:
         for k in out.keys():
             out[k] = list(filter(lambda x: not lingers(x), out[k]))
 
@@ -85,7 +85,7 @@ def get_resources(which_types=None, ids=False, ignore_lingering_resources=True):
 
     return out
 
-def get_by_tag(rtype, k, v): # Gets a given tag.
+def get_by_tag(rtype, k, v): # Returns None if no such resource exists.
     resc = get_resources(rtype)
     for r in resc:
         if AWS_format.tag_dict(r).get(k,None) == v:
@@ -106,8 +106,8 @@ def exists(desc_or_id):
             return False
         raise e
 
-def _default_custom():
-    dresc = {}; cresc = {}; resc = get_resources()
+def _default_custom(include_lingers):
+    dresc = {}; cresc = {}; resc = get_resources(include_lingers=include_lingers)
     for k in resc.keys():
         dresc[k] = []; cresc[k] = []
         for x in resc[k]:
@@ -121,18 +121,19 @@ def _default_custom():
                 cresc[k].append(x)
     return dresc, cresc
 
-def default_resources():
+def default_resources(include_lingers=False):
     # Resources which are part of the default loadout and really shouldn't be modified too much or deleted.
     # Some of these are created automatically upon creating custom resources and also get deleted automatically.
-    return _default_custom()[0]
+    return _default_custom(include_lingers)[0]
 
-def custom_resources():
+def custom_resources(include_lingers=False):
     # The opposite of default_resources()
-    return _default_custom()[1]
+    return _default_custom(include_lingers)[1]
 
-def what_needs_these(custom_only=False, include_empty=False): # What Ids depend on us for each Id. Depend on means can't delete.
-    # (It is messy to use the deps map).
-    x = custom_resources() if custom_only else get_resources()
+def what_needs_these(custom_only=False, include_empty=False, include_lingers=False):
+    # Map from resource id to what ids depend on said id.
+    # Resources can't be deleted untill all dependencies are deleted.
+    x = custom_resources(include_lingers=include_lingers) if custom_only else get_resources(include_lingers=include_lingers)
     out = {}
     def _add(a, b):
         if a not in out:

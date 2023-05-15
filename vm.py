@@ -20,7 +20,7 @@ def get_ip(x): # Address or machine.
         return x['PublicIp']
     if 'PublicIpAddress' in x:
         return x['PublicIpAddress']
-    raise Exception('Cannot find the ip for:'+AWS_format.obj2id(x))
+    raise Exception('Cannot find the ip for: '+AWS_format.obj2id(x))
 
 def update_vms_skythonic(diff):
     # Updates all skythonic files on VMs.

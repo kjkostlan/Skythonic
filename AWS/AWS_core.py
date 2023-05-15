@@ -104,13 +104,6 @@ def create_once(rtype, name, printouts, **kwargs):
 def delete(desc_or_id):
     # Deletes an object (returns True if sucessful, False if object wasn't existing).
     id = AWS_format.obj2id(desc_or_id)
-    try:
-        add_tags(id, {'__deleted__':True})
-    except Exception as e:
-        if 'does not exist' in repr(e):
-            return False
-        else:
-            raise e
 
     if id.startswith('igw-'):
         attchs = ec2c.describe_internet_gateways(InternetGatewayIds=[id])['InternetGateways'][0]['Attachments']
@@ -142,6 +135,8 @@ def delete(desc_or_id):
         for k in ['AssociationId', 'PublicIp']:
             if k in desc:
                 kwargs[k] = desc[k]
+        if len(kwargs)==2: # Bug that one can't specify both.
+            del kwargs['PublicIp']
         try:
             ec2c.disassociate_address(**kwargs)
         except Exception as e:
@@ -160,6 +155,15 @@ def delete(desc_or_id):
         iam.delete_user(UserName=uname)
     else:
         raise Exception('TODO: handle this case:', id)
+
+    try: # Some resources linger. Mark them with __deleted__.
+        add_tags(id, {'__deleted__':True})
+    except Exception as e:
+        if 'does not exist' in repr(e):
+            return False
+        else:
+            raise e
+
     return True
 
 def assoc(A, B, _swapped=False):

@@ -193,7 +193,7 @@ def test_assoc_query(printouts=True):
 def test_ssh_jumpbox(printouts=True):
     # Tests: A: is everything installed?
     #        B: Are the scp files actually copied over?
-    # (printotus will not print everything, only test failures)
+    # (printouts will not print everything, only test failures)
     out = test_results('weaker_jumpbox_tests')
     vm_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')
     if vm_desc is None:
@@ -234,37 +234,41 @@ def test_ssh_jumpbox(printouts=True):
 
     return out
 
-def test_new_machine_and_jumpbox():
+def test_new_machine_from_jumpbox(printouts=True):
     #Tests: A: Make a machine in the jumpbox and ssh to it.
     #       B: Make a machine OUTSIDE the jumpbox and ssh to it from the jumpbox.
     jump_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')
     if jump_desc is None:
         raise Exception('Cant find BYOC_jumpbox_VM to test on. Is it named differently or not set up?')
 
-    out = test_results('stronger_jumpbox_tests')
-    vm.install_Skythonic(jump_desc, '~/Skythonic', printouts=False)
+    jump_subnet_id = AWS_query.assocs(jump_desc,'subnet')[0]
+    jump_sgroup_id = AWS_query.assocs(jump_desc,'sgroup')[0]
+    private_ip = '10.100.250.111' # Must be in the subnet cidr, but different from any machines.
+    jump_cidr = AWS_format.id2obj(jump_subnet_id)['CidrBlock']
+    if not plumbing.in_cidr(private_ip, jump_cidr):
+        raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')
+    new_key_name = 'testing_vm_key_name'
+    new_vm_name = 'testing_vm'
+    addr_name = 'testing_address'
 
-    # First just test non-jumpbox vm:
-    vm_name = 'testing_vm'
-    subnet_id = AWS_format.obj2id(AWS_query.get_by_name('subnet','BYOC'+'_'+'jumpbox'+'_subnet'))
-    if subnet_id is None:
-        raise Exception('Cannot find subnet')
-    securitygroup_id = AWS_format.obj2id(AWS_query.get_by_name('sgroup','BYOC'+'_'+'jumpbox'+'_sGroup'))
-    if securitygroup_id is None:
-        raise Exception('Cannot find sgroup')
-    private_ip = '10.100.250.111' # Must be in the subnet cidr.
-    key_name = 'testing_vm_key_name'
-    inst_id = AWS_query.get_by_name('machine', vm_name)
-    if AWS_query.lingers(inst_id):
+    out = test_results('stronger_jumpbox_tests')
+    vm.install_Skythonic(jump_desc, '~/Skythonic', printouts=False) # Make sure installed, if not already.
+
+    def delete_new_stuff(): # Deletes the new stuff, if need be.
+        goners = [AWS_query.get_by_name('machine', new_vm_name), AWS_query.get_by_name('kpair', new_key_name),\
+                  AWS_query.get_by_name('address', addr_name)]
+        goners = list(filter(lambda x: x is not None, goners))
+        AWS_clean.power_delete(goners)
+
+    delete_new_stuff()
+    if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', new_vm_name)):
         print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')
-        inst_id = None
-    if inst_id is None:
-        inst_id = AWS_format.obj2id(AWS_setup.simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name))
-        addr = AWS_core.create_once('address', 'testing_address', True, Domain='vpc')
-        AWS_setup.wait_and_attach_address(inst_id, addr)
-    else:
-        print('inst Tags:', AWS_format.tag_dict(inst_id))
-        addr = AWS_query.get_by_name('address', 'testing_address')
+
+    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(new_vm_name, private_ip, jump_subnet_id, jump_sgroup_id, new_key_name))
+    addr = AWS_core.create_once('address', 'testing_address', printouts, Domain='vpc')
+    AWS_setup.wait_and_attach_address(inst_id, addr)
+
+    #Test A: Make a machine in the jumpbox and ssh to it.
     try:
         tubo = vm.patient_ssh_pipe(inst_id, printouts=False)
     except Exception as e:
@@ -274,8 +278,8 @@ def test_new_machine_and_jumpbox():
         else:
             raise e
 
-    AWS_core.delete(inst_id)
-    AWS_clean.dep_check_delete(addr, xdeps=None)
-    #AWS_core.delete(addr)
+    #Test B: Make a machine OUTSIDE the jumpbox and ssh to it from the jumpbox.
+    #TODO
 
-    #Test A: Make a machine in the jumpbox and ssh to it.
+    delete_new_stuff()
+    return False
