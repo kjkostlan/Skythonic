@@ -103,7 +103,6 @@ def ssh_cmd(instance_id, join_arguments=False):
         return ' '.join(out)
     else:
         return out
-    # TODO: /home/cloudshell-user/.ssh/known_hosts
 
 def ssh_pipe(instance_id, timeout=8, printouts=True):
     # Returns a MessyPipe which can be interacted with. Don't forget to close() it.
@@ -198,8 +197,14 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
 
     return out, tubo
 
+def restart_vm(instance_id):
+    if type(instance_id) is list or type(instance_id) is tuple: # Many at once should be faster in parallel?
+        instance_ids = []
+    else:
+        instance_ids = [AWS_format.obj2id(instance_id)]
+    ec2c.reboot_instances(InstanceIds=instance_ids)
 
-##########################Installation tools####################################
+########################Installation of packages################################
 
 class Ireport: # Installation report.
     def __init__(self, pipes, errors):
@@ -221,14 +226,13 @@ def _super_advanced_linux_shell(tubo):
         tubo.update()
     return tubo.API('random_bashing_done')
 
-def update_Apt(instance_id, printouts=True):
+def update_Apt(instance_id, printouts=True, full_restart_here=True): # Restarting may reduce the error rate.
     # Update the apt, which can help.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo foo', 'echo bar', 'echo baz']#, 'sudo dpkg --configure -a']#, anti_massive_interaction]
     tubo = patient_ssh_pipe(instance_id, printouts=printouts)
     _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:64.0)
     tubo.close()
-    full_restart_here = True #Inconsistent where errors sometimes happen.
     if full_restart_here:
         if printouts:
             print(f'Rebooting {instance_id} as part of the "apt update" process')
@@ -248,27 +252,152 @@ def install_Ping(instance_id, printouts=True):
     if 'not found' in str(tubo.history_contents):
         errs.append('Ping produces a not found eror.')
 
-    def _test():
-        tubo = patient_ssh_pipe(instance_id, printouts=True)
+    def _test(printouts=True):
+        tubo = patient_ssh_pipe(instance_id, printouts=printouts)
         _cmd_list_fixed_prompt(tubo, ['ping', 'echo done'], _default_prompts(), lambda cmd:32.0)
         tubo.close()
 
     return Ireport([tubo], errs), _test
 
-def install_Skythonic(instance_id, remote_root_folder, printouts=True):
-    # Installs the *local* copy of Skythonic to the instance_id.
-    file2contents = file_io.folder_load('.', allowed_extensions='.py')
-    for k in list(file2contents.keys()):
-        if file_io.dump_folder.split('/')[-1] in k:
-            del file2contents[k]
-    tubo, errs = send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
+def install_mysqlClient(instance_id, printouts=True):
+    cmds = ['sudo apt install mysql-client',
+            'echo done']
+    tubo = patient_ssh_pipe(inst_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
 
-    def _test():
-        tubo = patient_ssh_pipe(instance_id, printouts=True)
-        _cmd_list_fixed_prompt(tubo, ['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], _default_prompts(), lambda cmd:32.0)
-        tubo.close()
+    errs = []
+    if 'not found' in str(tubo.history_contents):
+        errs.append('Ping produces a not found eror.')
+
+    def _test(printouts=True):
+        print('TODO: Test mwsqlClient install')
 
     return Ireport([tubo], errs), _test
+
+def install_netTools(inst_id, printouts=True):
+    cmds = ['sudo apt install net-tools',
+            'echo done']
+    tubo = patient_ssh_pipe(inst_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
+
+    errs = []
+    if 'not found' in str(tubo.history_contents):
+        errs.append('Ping produces a not found eror.')
+
+    def _test(printouts=True):
+        print('TODO: Test netTools install')
+
+    return Ireport([tubo], errs), _test
+
+def install_netcat(inst_id, printouts=True):
+    cmds = ['sudo apt install netcat',
+            'echo done']
+    tubo = patient_ssh_pipe(inst_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
+
+    errs = []
+    if 'not found' in str(tubo.history_contents):
+        errs.append('Ping produces a not found eror.')
+
+    def _test(printouts=True):
+        print('TODO: Test netcat install')
+
+    return Ireport([tubo], errs), _test
+
+def install_vim(inst_id, printouts=True):
+    cmds = ['sudo apt install vim',
+            'echo done']
+    tubo = patient_ssh_pipe(inst_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
+
+    errs = []
+    if 'not found' in str(tubo.history_contents):
+        errs.append('Ping produces a not found eror.')
+
+    def _test(printouts=True):
+        print('TODO: Test vim install')
+
+    return Ireport([tubo], errs), _test
+
+def install_apache(inst_id, printouts=True):
+    cmds = ['sudo apt install apache2 libcgi-session-perl',
+            'sudo systemctl enable apache2',
+            'cd /etc/apache2/mods-enabled',
+            'ln -s ../mods-available/ cgi.load cgi.load',
+            'ln -s ../mods-available/ ssl.conf ssl.conf',
+            'ln -s ../mods-available/ ssl.load ssl.load',
+            'ln -s ../mods-available/ socache_shmcb.load',
+            'cd /etc/apache2/sites-enabled',
+            'cd /etc/apache2/sites-enabled',
+            'ln -s ../sites-available/default-ssl.conf default-ssl.conf',
+            'echo done']
+    tubo = patient_ssh_pipe(inst_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
+
+    errs = []
+
+    def _test(printouts=True):
+        print('TODO: Test apache install')
+
+    return Ireport([tubo], errs), _test
+
+def install_tcpdump(inst_id, printouts=True):
+    cmds = ['sudo apt install tcpdump',
+            'echo done']
+    tubo = patient_ssh_pipe(inst_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
+
+    errs = []
+    if 'not found' in str(tubo.history_contents):
+        errs.append('Ping produces a not found eror.')
+
+    def _test(printouts=True):
+        print('TODO: Test tcpdump install')
+
+    return Ireport([tubo], errs), _test
+
+def install_iputilsPing(inst_id, printouts=True):
+    cmds = ['sudo apt install iputils-ping',
+            'echo done']
+    tubo = patient_ssh_pipe(inst_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
+    tubo.close()
+
+    errs = []
+    if 'not found' in str(tubo.history_contents):
+        errs.append('Ping produces a not found eror.')
+
+    def _test(printouts=True):
+        print('TODO: Test iputils-ping install')
+
+    return Ireport([tubo], errs), _test
+
+def install_python3(instance_id, printouts=True):
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install python3-pip', 'sudo apt-get install python-is-python3'],\
+                           _default_prompts(), lambda cmd:64 if 'install' in cmd else 12.0)
+    def _test():
+        test_cmd_fns = [['echo bash_test'],
+                        ['python3'], ['print(id)','<built-in function id>'],
+                        ['quit()']]
+        tubo = patient_ssh_pipe(instance_id, printouts=True)
+        errs = []
+        for pair in test_cmd_fns:
+            _out, _err, _ = tubo.API(pair[0], f_polls=None, dt_min=0.01, dt_max=1)
+            if len(pair)>1:
+                if pair[1] not in _out:
+                    warn_txt = f'WARNING: Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.'
+                    print(warn_txt) if printouts else ''
+                    errs.append(warn_txt)
+        tubo.close()
+        return errs
+    return Ireport(pipes, errs), _test
 
 def install_AWS(instance_id, user_name, region_name, printouts=True):
     # Installs and tests AWS+boto3 on a machine, raising Exceptions if the process fails.
@@ -304,9 +433,6 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
 
     tubo = _reset(tubo, full_restart=False)
 
-    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install python3-pip'], line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
-    tubo = _reset(tubo, full_restart=False)
-
     _cmd_list_fixed_prompt(tubo, ['aws configure'], line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
 
     # Discussion on vs 'pip3 install boto3' vs 'python3 -m pip install boto3':
@@ -337,3 +463,65 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
         t1 = time.time(); print('Elapsed time on installation (s):',t1-t0)
         print('Check the above test to ensure it works.')
     return Ireport(pipes, errs), _test
+
+###############Installation of our packages and configs#########################
+
+def install_Skythonic(instance_id, remote_root_folder, printouts=True):
+    # Installs the *local* copy of Skythonic to the instance_id.
+    file2contents = file_io.folder_load('.', allowed_extensions='.py')
+    for k in list(file2contents.keys()):
+        if file_io.dump_folder.split('/')[-1] in k:
+            del file2contents[k]
+    tubo, errs = send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
+
+    def _test():
+        tubo = patient_ssh_pipe(instance_id, printouts=True)
+        _cmd_list_fixed_prompt(tubo, ['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], _default_prompts(), lambda cmd:32.0)
+        tubo.close()
+
+    return Ireport([tubo], errs), _test
+
+def install_hostList(instance_id, printouts=True):
+    cmds = ['cd /etc', 'wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'mv hosts.txt hosts', 'echo jump > /etc/hostname']
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:8.0)
+    def _test(printouts=True):
+        print('TODO: test this.')
+    return Ireport([tubo], errs), _test
+
+def install_appServerCmds(instance_id, printouts=True):
+    cmds = ['cd /usr/local/bin',
+            'wget https://developmentserver.com/BYOC/Resources/addserver.txt',
+            'wget https://developmentserver.com/BYOC/Resources/addserver.pl.txt',
+            'wget https://developmentserver.com/BYOC/Resources/rmserver.txt',
+            'wget https://developmentserver.com/BYOC/Resources/rmserver.pl.txt',
+            'mv addserver.txt addserver',
+            'mv addserver.pl.txt addserver.pl',
+            'mv rmserver.txt rmserver',
+            'mv rmserver.pl.txt rmserver.pl',
+            'chmod a+x *',
+            'echo app1 > /etc/hostname']
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:8.0)
+    def _test(printouts=True):
+        print('TODO: test install_appServerCmds.')
+    return Ireport([tubo], errs), _test
+
+def install_webServerCmds(instance_id, printouts=True):
+    cmds = ['cd /var/www/html', 'wget https://developmentserver.com/BYOC/Resources/CiscoWorldLogo.jpg',
+            'wget https://developmentserver.com/BYOC/Resources/index.html.txt',
+            'mv index.html.tx index.html',
+            'cd /usr/lib/cgi-bin',
+            'wget https://developmentserver.com/BYOC/Resources/index.cgi.txt',
+            'wget https://developmentserver.com/BYOC/Resources/qr1.cgi.txt',
+            'mv index.cgi.txt index.cgi',
+            'mv qr1.cgi.txt qr1.cgi',
+            'chmod a+x *',
+            'a2enmod cgid',
+            'echo web1 >/etc/hostname',
+            'systemctl restart apache2']
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:8.0)
+    def _test(printouts=True):
+        print('TODO: test install_webServerCmds.')
+    return Ireport([tubo], errs), _test

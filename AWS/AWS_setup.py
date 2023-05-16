@@ -65,12 +65,21 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    report, t0 = vm.update_Apt(inst_id)
+    report, t0 = vm.update_Apt(inst_id, printouts=True, full_restart_here=False)
     tests = [t0]
-    for x in [vm.install_AWS(inst_id, user_name, region_name, printouts=True), vm.install_Ping(inst_id, printouts=True),\
-              vm.install_Skythonic(inst_id, '~/Skythonic', printouts=True)]:
+    for x in [vm.install_python3(inst_id, printouts=True),
+              vm.install_AWS(inst_id, user_name, region_name, printouts=True), vm.install_Ping(inst_id, printouts=True),\
+              vm.install_Skythonic(inst_id, '~/Skythonic', printouts=True),
+              vm.install_netTools(inst_id, printouts=True),
+              vm.install_netcat(inst-id, printouts=True),
+              vm.install_vim(inst_id, printouts=True),
+              vm.install_tcpdump(inst_id, printouts=True),
+              vm.install_iputilsPing(inst_id, printouts=True),
+              vm.install_hostList(inst_id, printouts=True)]:
         report.append(x[0])
         tests.append(x[1])
+    vm.restart_vm(inst_id)
+
     print('BEGIN JUMBBOX INSTALL TESTS')
     for t in tests:
         t()
@@ -80,13 +89,10 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
     if len(report.errors)>0:
         print('Possible errors:', report.errors)
+
     return ssh_cmd, inst_id, report
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', subnet_zone='us-west-2c'):
-    # TODO:
-    # apt update
-    # sudo apt-get install -y net-tools
-    # sudo apt-get install netcat.
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsHostnames={'Value': True})
@@ -140,12 +146,29 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         if i==0: # BYOC_web accepts https traffic from https (port 443).
             ec2c.authorize_security_group_ingress(GroupId=security_group_id, IpProtocol='tcp', FromPort=443, ToPort=443, CidrIp='0.0.0.0/0')
 
-        inst_ids.append(simple_vm(basenames[i], ips[i], subnet_id, securitygroup_id, key_name))
+        inst_id = simple_vm(basenames[i], ips[i], subnet_id, securitygroup_id, key_name)
+        inst_ids.append(inst_id)
 
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
         addr = AWS_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
         wait_and_attach_address(inst_ids[i], addr)
         cmds.append(vm.ssh_cmd(inst_ids[i], True))
+
+    for i in range(3):
+        inst_id = inst_ids[i]
+        vm.update_Apt(inst_id, printouts=True, full_restart_here=False)
+        vm.install_mysqlClient(inst_id, printouts=True)
+        vm.install_netTools(inst_id, printouts=True)
+        vm.install_netcat(inst-id, printouts=True)
+        vm.install_vim(inst_id, printouts=True)
+        vm.install_tcpdump(inst_id, printouts=True)
+        vm.install_iputilsPing(inst_id, printouts=True)
+    vm.install_appServerCmds(inst_ids[1])
+    vm.install_apache(inst_ids[0])
+    vm.install_webServerCmds(inst_ids[0])
+
+    print('Restarting the three new vms.')
+    vm.restart_vm(inst_ids)
 
     #The gateway is the VpcPeeringConnectionId
     peering_id = AWS_core.create_once('vpcpeer', 'BYOC_3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #AWS_core.assoc(jbox_vpc_id, vpc_id)
