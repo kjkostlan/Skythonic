@@ -57,6 +57,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
 
     addr = AWS_core.create_once('address', user_name+'_'+basename+'_address', True, Domain='vpc')
     wait_and_attach_address(inst_id, addr)
+    report, t0 = vm.update_Apt(inst_id, printouts=True, full_restart_here=False)
 
     ssh_cmd = vm.ssh_cmd(inst_id, True)
 
@@ -65,7 +66,6 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    report, t0 = vm.update_Apt(inst_id, printouts=True, full_restart_here=False)
     tests = [t0]
     for x in [vm.install_python3(inst_id, printouts=True),
               vm.install_AWS(inst_id, user_name, region_name, printouts=True), vm.install_Ping(inst_id, printouts=True),\
@@ -152,11 +152,11 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
         addr = AWS_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
         wait_and_attach_address(inst_ids[i], addr)
+        vm.update_Apt(inst_ids[i], printouts=True, full_restart_here=False)
         cmds.append(vm.ssh_cmd(inst_ids[i], True))
 
     for i in range(3):
         inst_id = inst_ids[i]
-        vm.update_Apt(inst_id, printouts=True, full_restart_here=False)
         vm.install_mysqlClient(inst_id, printouts=True)
         vm.install_netTools(inst_id, printouts=True)
         vm.install_netcat(inst-id, printouts=True)
