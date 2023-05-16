@@ -89,7 +89,7 @@ def laconic_wait(tubo, proc_name, timeout_seconds=24):
         if i==timeout_seconds-1 and printouts:
             print(f'WARNING: timeout on {proc_name}')
 
-def ssh_cmd(instance_id, join_arguments=False):
+def ssh_bash(instance_id, join_arguments=True):
     # Get the ssh cmd to use the key to enter instance_id.
     # Will get a warning: The authenticity can't be established; this warning is normal and is safe to yes if it is a VM you create in your account.
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
@@ -118,6 +118,10 @@ def patient_ssh_pipe(instance_id, printouts=True):
         raise Exception(f'The instance {instance_id} has been terminated and can never ever be used again.')
     ec2c.start_instances(InstanceIds=[instance_id])
     _err = lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e) # Not sure why the error.
+    try:
+        return ssh_pipe(instance_id, timeout=8, printouts=True)
+    except Exception as e:
+        print('Starting wait cycle because SSH not available this moment, error:', str(e))
     return eye_term.loop_try(lambda:ssh_pipe(instance_id, timeout=8, printouts=printouts),
                              _err , f'ssh waiting for {instance_id} to be ready.', delay=4)
 
@@ -199,7 +203,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
 
 def restart_vm(instance_id):
     if type(instance_id) is list or type(instance_id) is tuple: # Many at once should be faster in parallel?
-        instance_ids = []
+        instance_ids = [AWS_format.obj2id(iid) for iid in instance_id]
     else:
         instance_ids = [AWS_format.obj2id(instance_id)]
     ec2c.reboot_instances(InstanceIds=instance_ids)
