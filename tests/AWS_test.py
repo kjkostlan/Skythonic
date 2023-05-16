@@ -234,52 +234,71 @@ def test_ssh_jumpbox(printouts=True):
 
     return out
 
+def _new_machine(vm_id, jump_subnet_id, jump_sgroup_id, machine_name, kpair_name, private_ip):
+    #if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', machine_name, True)):
+    #    print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')
+    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(x['v'], x['i'], jump_subnet_id, jump_sgroup_id, kpair_name))
+    addr = AWS_core.create_once('address', x['a'], printouts, Domain='vpc')
+    AWS_setup.wait_and_attach_address(inst_id, addr)
+    return inst_id
+
+def _del_machine(machine_name, kpair_name, address_name):
+    goners = [AWS_query.get_by_name('machine', machine_name), AWS_query.get_by_name('kpair', address_name),\
+              AWS_query.get_by_name('address', address_name]
+    goners = list(filter(lambda x: x is not None, goners))
+    AWS_clean.power_delete(goners)
+
 def test_new_machine_from_jumpbox(printouts=True):
     #Tests: A: Make a machine in the jumpbox and ssh to it.
     #       B: Make a machine OUTSIDE the jumpbox and ssh to it from the jumpbox.
+    clean_up = False
     jump_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')
     if jump_desc is None:
         raise Exception('Cant find BYOC_jumpbox_VM to test on. Is it named differently or not set up?')
 
     jump_subnet_id = AWS_query.assocs(jump_desc,'subnet')[0]
     jump_sgroup_id = AWS_query.assocs(jump_desc,'sgroup')[0]
-    private_ip = '10.100.250.111' # Must be in the subnet cidr, but different from any machines.
     jump_cidr = AWS_format.id2obj(jump_subnet_id)['CidrBlock']
+
+    #TODO
     if not plumbing.in_cidr(private_ip, jump_cidr):
         raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')
-    new_key_name = 'testing_vm_key_name'
-    new_vm_name = 'testing_vm'
-    addr_name = 'testing_address'
+
+    def _new_machine(x):
+        if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', x['v'])):
+            print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')
+        if not plumbing.in_cidr(x['i'], jump_cidr):
+            raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')
+        inst_id = AWS_format.obj2id(AWS_setup.simple_vm(x['v'], x['i'], jump_subnet_id, jump_sgroup_id, x['k']))
+        addr = AWS_core.create_once('address', x['a'], printouts, Domain='vpc')
+        AWS_setup.wait_and_attach_address(inst_id, addr)
+        return inst_id
+
+    def _del_machine(x):
+        if not clean_up:
+            print('DEBUG mode no clean up.')
+            return
+        goners = [AWS_query.get_by_name('machine', x['v']), AWS_query.get_by_name('kpair', x['k']),\
+                  AWS_query.get_by_name('address', x['a'])]
+        goners = list(filter(lambda x: x is not None, goners))
+        AWS_clean.power_delete(goners)
 
     out = test_results('stronger_jumpbox_tests')
     vm.install_Skythonic(jump_desc, '~/Skythonic', printouts=False) # Make sure installed, if not already.
 
-    def delete_new_stuff(): # Deletes the new stuff, if need be.
-        goners = [AWS_query.get_by_name('machine', new_vm_name), AWS_query.get_by_name('kpair', new_key_name),\
-                  AWS_query.get_by_name('address', addr_name)]
-        goners = list(filter(lambda x: x is not None, goners))
-        AWS_clean.power_delete(goners)
+    x0 = {'k':'testing_vm_key_name','v':'testing_vm', 'a':'testing_address', 'i':'10.200.250.111'}
 
-    delete_new_stuff()
-    if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', new_vm_name)):
-        print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')
-
-    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(new_vm_name, private_ip, jump_subnet_id, jump_sgroup_id, new_key_name))
-    addr = AWS_core.create_once('address', 'testing_address', printouts, Domain='vpc')
-    AWS_setup.wait_and_attach_address(inst_id, addr)
-
-    #Test A: Make a machine in the jumpbox and ssh to it.
-    try:
-        tubo = vm.patient_ssh_pipe(inst_id, printouts=False)
-    except Exception as e:
-        if 'has been terminated' in str(e):
-            AWS_core.delete(inst_id)
-            raise Exception('Zombie machine has been deleted. Try running this again')
-        else:
-            raise e
+    #Test A: SSH to jumpbox; make a machine in the jumpbox; ssh to it.
+    _del_machine(x0)
+    TODO
+    inst_id = _new_machine(x0)
+    tubo = vm.patient_ssh_pipe(inst_id, printouts=False)
+    x = tubo.API('echo foo', f_polls=None, timeout=8.0, dt_min=0.001, dt_max=2.0)
+    print(tubo.blit())
+    _del_machine(x0)
 
     #Test B: Make a machine OUTSIDE the jumpbox and ssh to it from the jumpbox.
+    # (this will require copying keys).
     #TODO
 
-    delete_new_stuff()
     return False

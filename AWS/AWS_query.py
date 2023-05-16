@@ -67,14 +67,14 @@ def get_resources(which_types=None, ids=False, include_lingers=False):
 
     return out
 
-def get_by_tag(rtype, k, v): # Returns None if no such resource exists.
-    resc = get_resources(rtype)
+def get_by_tag(rtype, k, v, include_lingers=False): # Returns None if no such resource exists.
+    resc = get_resources(rtype, include_lingers)
     for r in resc:
         if AWS_format.tag_dict(r).get(k,None) == v:
             return r
 
-def get_by_name(rtype, name): # Convenience fn.
-    return get_by_tag(rtype, 'Name', name)
+def get_by_name(rtype, name, include_lingers=False): # Convenience fn.
+    return get_by_tag(rtype, 'Name', name, include_lingers)
 
 def exists(desc_or_id):
     the_id = AWS_format.obj2id(desc_or_id)

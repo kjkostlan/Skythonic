@@ -83,6 +83,10 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     return ssh_cmd, inst_id, report
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', subnet_zone='us-west-2c'):
+    # TODO:
+    # apt update
+    # sudo apt-get install -y net-tools
+    # sudo apt-get install netcat.
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsSupport={'Value': True})
     ec2c.modify_vpc_attribute(VpcId=vpc_id, EnableDnsHostnames={'Value': True})
@@ -129,10 +133,13 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         #https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html
         securitygroup_id = AWS_core.create_once('securitygroup', basenames[i]+'_sGroup', True, GroupName='From Hub'+basenames[i], Description='Allow Hub Ip cidr', VpcId=vpc_id)
         try:
-            ec2c.authorize_security_group_ingress(GroupId=securitygroup_id, CidrIp='10.200.0.0/16', IpProtocol='-1', FromPort=22, ToPort=22)
+            ec2c.authorize_security_group_ingress(GroupId=securitygroup_id, CidrIp='10.0.0.0/8', IpProtocol='-1', FromPort=22, ToPort=22)
         except Exception as e:
             if 'already exists' not in repr(e):
                 raise e
+        if i==0: # BYOC_web accepts https traffic from https (port 443).
+            ec2c.authorize_security_group_ingress(GroupId=security_group_id, IpProtocol='tcp', FromPort=443, ToPort=443, CidrIp='0.0.0.0/0')
+
         inst_ids.append(simple_vm(basenames[i], ips[i], subnet_id, securitygroup_id, key_name))
 
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
