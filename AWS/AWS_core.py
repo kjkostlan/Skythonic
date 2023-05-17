@@ -213,13 +213,12 @@ def disassoc(A, B, _swapped=False):
 dissoc = disassoc # For those familiar with Clojure...
 
 def our_vm_id():
-    # The instance_id of our machine.
-    # Returns None if in the cloud shell.
-    #https://www.educba.com/python-curl/
-    #https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#instance-metadata-ex-2
-    x = requests.get('http://169.254.169.254/latest/meta-data/ami-id').content.decode()
-    if 'Resource not found' in x:
+    # The instance_id of our machine; None if in the cloud shell.
+    x = requests.get('http://169.254.169.254/latest/meta-data/instance-id').content.decode().strip()
+
+    #x = requests.get('http://169.254.169.254/latest/meta-data/ami-id').content.decode().strip()
+    if 'i-' not in x or 'resource not found' in x.lower():
         return None
-    if not x.startswith('i-'):
-        raise Exception('Error in our_vm_id() fn.')
     return x
+    #stuff = ec2c.describe_instances(Filters=[{'Name': 'image-id','Values': [x]}])
+    #return stuff['Reservations'][0]['Instances'][0]['InstanceId']

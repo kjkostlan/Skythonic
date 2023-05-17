@@ -6,7 +6,6 @@ import paramiko, time, os
 import file_io
 import AWS.AWS_format as AWS_format
 import eye_term, covert
-import eye_term
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
@@ -466,8 +465,8 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
 
 ###############Installation of our packages and configs#########################
 
-def install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):
-    # Installs the *local* copy of Skythonic to the instance_id.
+def update_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):
+    # Updates skythonic with what is stored locally (on the machine calling this fn).
     file2contents = file_io.folder_load('.', allowed_extensions='.py')
     for k in list(file2contents.keys()):
         if file_io.dump_folder.split('/')[-1] in k:
@@ -478,8 +477,21 @@ def install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=T
         tubo = patient_ssh_pipe(instance_id, printouts=True)
         _cmd_list_fixed_prompt(tubo, ['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], _default_prompts(), lambda cmd:32.0)
         tubo.close()
-
     return Ireport([tubo], errs), _test
+
+def install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):
+    # Installs the *local* copy of Skythonic to the instance_id (does not use a GitFetch).
+    # Python must also be installed. Also installs paramiko since that's a dep of Skythonic.
+    cmds = ['pip install paramiko']
+    tubo0 = patient_ssh_pipe(instance_id, printouts=printouts)
+    _cmd_list_fixed_prompt(tubo0, cmds, _default_prompts(), lambda cmd:32.0)
+
+    def _test():
+        print('TODO: test')
+
+    update_skythonic(instance_id, remote_root_folder=remote_root_folder, printouts=printouts)
+
+    return Ireport([tubo0], errs), _test
 
 def install_hostList(instance_id, printouts=True):
     cmds = ['cd /etc', 'sudo wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'sudo mv -f hosts.txt hosts', "sudo sh -c 'echo jump > /etc/hostname'"]

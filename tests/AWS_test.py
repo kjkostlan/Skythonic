@@ -234,24 +234,24 @@ def test_ssh_jumpbox(printouts=True):
 
     return out
 
-def _new_machine(vm_id, jump_subnet_id, jump_sgroup_id, machine_name, kpair_name, private_ip):
+def _new_machine(jump_subnet_id, jump_sgroup_id, machine_name, kpair_name, address_name, private_ip, printouts):
     #if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', machine_name, True)):
     #    print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')
-    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(x['v'], x['i'], jump_subnet_id, jump_sgroup_id, kpair_name))
-    addr = AWS_core.create_once('address', x['a'], printouts, Domain='vpc')
+    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(machine_name, private_ip, jump_subnet_id, jump_sgroup_id, kpair_name))
+    addr = AWS_core.create_once('address', address_name, printouts, Domain='vpc')
     AWS_setup.wait_and_attach_address(inst_id, addr)
     return inst_id
 
 def _del_machine(machine_name, kpair_name, address_name):
     goners = [AWS_query.get_by_name('machine', machine_name), AWS_query.get_by_name('kpair', address_name),\
-              AWS_query.get_by_name('address', address_name]
+              AWS_query.get_by_name('address', address_name)]
     goners = list(filter(lambda x: x is not None, goners))
     AWS_clean.power_delete(goners)
 
 def test_new_machine_from_jumpbox(printouts=True):
     #Tests: A: Make a machine in the jumpbox and ssh to it.
     #       B: Make a machine OUTSIDE the jumpbox and ssh to it from the jumpbox.
-    clean_up = False
+    run_cleanups = False # Saves time, but set to true for a cleaner test.
     jump_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')
     if jump_desc is None:
         raise Exception('Cant find BYOC_jumpbox_VM to test on. Is it named differently or not set up?')
@@ -260,35 +260,60 @@ def test_new_machine_from_jumpbox(printouts=True):
     jump_sgroup_id = AWS_query.assocs(jump_desc,'sgroup')[0]
     jump_cidr = AWS_format.id2obj(jump_subnet_id)['CidrBlock']
 
-    #TODO
-    if not plumbing.in_cidr(private_ip, jump_cidr):
-        raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')
+    out = True
 
-    def _new_machine(x):
-        if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', x['v'])):
-            print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')
-        if not plumbing.in_cidr(x['i'], jump_cidr):
-            raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')
-        inst_id = AWS_format.obj2id(AWS_setup.simple_vm(x['v'], x['i'], jump_subnet_id, jump_sgroup_id, x['k']))
-        addr = AWS_core.create_once('address', x['a'], printouts, Domain='vpc')
-        AWS_setup.wait_and_attach_address(inst_id, addr)
-        return inst_id
-
-    def _del_machine(x):
-        if not clean_up:
-            print('DEBUG mode no clean up.')
-            return
-        goners = [AWS_query.get_by_name('machine', x['v']), AWS_query.get_by_name('kpair', x['k']),\
-                  AWS_query.get_by_name('address', x['a'])]
-        goners = list(filter(lambda x: x is not None, goners))
-        AWS_clean.power_delete(goners)
+    def _qu(x):
+        return "'"+x+"'"
+    def _get_code(x):
+        # exec this locally or ran via ssh on another machine:
+        new_code = f'AWS_test._new_machine({_qu(jump_subnet_id)}, {_qu(jump_sgroup_id)}, {_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])}, {_qu(x["private_ip"])}, {printouts})'
+        del_code = f'AWS_test._del_machine({_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])})'
+        out_new = 'import tests.AWS_test as AWS_test'+'\n'+new_code+'\n'
+        out_del = 'import tests.AWS_test as AWS_test'+'\n'+del_code+'\n'
+        return out_new, out_del
 
     out = test_results('stronger_jumpbox_tests')
-    vm.install_Skythonic(jump_desc, '~/Skythonic', printouts=False) # Make sure installed, if not already.
+    vm.update_Skythonic(jump_desc, '~/Skythonic', printouts=printouts)
 
-    x0 = {'k':'testing_vm_key_name','v':'testing_vm', 'a':'testing_address', 'i':'10.200.250.111'}
+    x0 = {'kpair_name':'testing_vm_key_name', 'vm_name':'testing_vm', 'address_name':'testing_address', 'private_ip':'10.200.250.111'}
+    #x1 = {'kpair_name':'exam_vm_key_name','vm_name':'exam_vm', 'address_name':'exam_address', 'private_ip':'10.200.250.111'}
+    for x in [x0]:
+        if not plumbing.in_cidr(x['private_ip'], jump_cidr):
+            raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')
+
+    if run_cleanups:
+        exec(_get_code[x0][1])
+
+    #Test 0: Query the ID of our machine in cloud shell (should be none) vs jumpbox:
+    cloud_shell_id = AWS_core.our_vm_id()
+    jump_id = AWS_format.obj2id(jump_desc)
+    tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)
+    tubo.API('echo begin_jumpVMid_test')
+    tubo.API('cd ~/Skythonic')
+    tubo.API('python3')#+_get_code(x0)[0])
+    tubo.API('import AWS.AWS_core as AWS_core')
+    jump_id_blabla = tubo.API('print(AWS_core.our_vm_id())')
+    tubo.API('quit()')
+    out = out and cloud_shell_id is None and jump_id in str(jump_id_blabla)
+    print('ID CHECK:', out)
+    return False
+
 
     #Test A: SSH to jumpbox; make a machine in the jumpbox; ssh to it.
+    tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)
+    tubo.API('echo begin_jumpVM_test')
+    tubo.API('cd ~/Skythonic')
+    tubo.API('python3')#+_get_code(x0)[0])
+    tubo.API(_get_code(x0)[0])
+
+    #for i in range(8):
+    #    time.sleep(1.0)
+
+    if run_cleanups:
+        exec(_get_code[x0][1])
+
+    return False
+
     _del_machine(x0)
     TODO
     inst_id = _new_machine(x0)
@@ -301,4 +326,4 @@ def test_new_machine_from_jumpbox(printouts=True):
     # (this will require copying keys).
     #TODO
 
-    return False
+    return False and run_cleanups

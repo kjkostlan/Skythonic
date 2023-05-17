@@ -1,0 +1,211 @@
+warning: CRLF will be replaced by LF in tests/AWS_test.py.
+The file will have its original line endings in your working directory
+[1mdiff --git a/AWS/AWS_core.py b/AWS/AWS_core.py[m
+[1mindex 45f18a2..a0b3f90 100644[m
+[1m--- a/AWS/AWS_core.py[m
+[1m+++ b/AWS/AWS_core.py[m
+[36m@@ -213,13 +213,12 @@[m [mdef disassoc(A, B, _swapped=False):[m
+ dissoc = disassoc # For those familiar with Clojure...[m
+ [m
+ def our_vm_id():[m
+[31m-    # The instance_id of our machine.[m
+[31m-    # Returns None if in the cloud shell.[m
+[31m-    #https://www.educba.com/python-curl/[m
+[31m-    #https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#instance-metadata-ex-2[m
+[31m-    x = requests.get('http://169.254.169.254/latest/meta-data/ami-id').content.decode()[m
+[31m-    if 'Resource not found' in x:[m
+[32m+[m[32m    # The instance_id of our machine; None if in the cloud shell.[m
+[32m+[m[32m    x = requests.get('http://169.254.169.254/latest/meta-data/instance-id').content.decode().strip()[m
+[32m+[m
+[32m+[m[32m    #x = requests.get('http://169.254.169.254/latest/meta-data/ami-id').content.decode().strip()[m
+[32m+[m[32m    if 'i-' not in x or 'resource not found' in x.lower():[m
+         return None[m
+[31m-    if not x.startswith('i-'):[m
+[31m-        raise Exception('Error in our_vm_id() fn.')[m
+     return x[m
+[32m+[m[32m    #stuff = ec2c.describe_instances(Filters=[{'Name': 'image-id','Values': [x]}])[m
+[32m+[m[32m    #return stuff['Reservations'][0]['Instances'][0]['InstanceId'][m
+[1mdiff --git a/eye_term.py b/eye_term.py[m
+[1mindex 8edc7e3..4daae30 100644[m
+[1m--- a/eye_term.py[m
+[1m+++ b/eye_term.py[m
+[36m@@ -144,6 +144,8 @@[m [mclass MessyPipe:[m
+             client = paramiko.SSHClient()[m
+             client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...[m
+             #print('Connecting paramiko SSH with these arguments:', proc_args)[m
+[32m+[m[32m            if not proc_args:[m
+[32m+[m[32m                proc_args['banner_timeout'] = 32 # Does this help?[m
+             client.connect(**proc_args) #password=passphrase) #proc_args['hostname'],[m
+             use_keepalive=True[m
+             if use_keepalive: #https://stackoverflow.com/questions/5402919/prevent-sftp-ssh-session-timeout-with-paramiko[m
+[1mdiff --git a/tests/AWS_test.py b/tests/AWS_test.py[m
+[1mindex 6621705..ab5fba7 100644[m
+[1m--- a/tests/AWS_test.py[m
+[1m+++ b/tests/AWS_test.py[m
+[36m@@ -234,24 +234,24 @@[m [mdef test_ssh_jumpbox(printouts=True):[m
+ [m
+     return out[m
+ [m
+[31m-def _new_machine(vm_id, jump_subnet_id, jump_sgroup_id, machine_name, kpair_name, private_ip):[m
+[32m+[m[32mdef _new_machine(jump_subnet_id, jump_sgroup_id, machine_name, kpair_name, address_name, private_ip, printouts):[m
+     #if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', machine_name, True)):[m
+     #    print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')[m
+[31m-    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(x['v'], x['i'], jump_subnet_id, jump_sgroup_id, kpair_name))[m
+[31m-    addr = AWS_core.create_once('address', x['a'], printouts, Domain='vpc')[m
+[32m+[m[32m    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(machine_name, private_ip, jump_subnet_id, jump_sgroup_id, kpair_name))[m
+[32m+[m[32m    addr = AWS_core.create_once('address', address_name, printouts, Domain='vpc')[m
+     AWS_setup.wait_and_attach_address(inst_id, addr)[m
+     return inst_id[m
+ [m
+ def _del_machine(machine_name, kpair_name, address_name):[m
+     goners = [AWS_query.get_by_name('machine', machine_name), AWS_query.get_by_name('kpair', address_name),\[m
+[31m-              AWS_query.get_by_name('address', address_name][m
+[32m+[m[32m              AWS_query.get_by_name('address', address_name)][m
+     goners = list(filter(lambda x: x is not None, goners))[m
+     AWS_clean.power_delete(goners)[m
+ [m
+ def test_new_machine_from_jumpbox(printouts=True):[m
+     #Tests: A: Make a machine in the jumpbox and ssh to it.[m
+     #       B: Make a machine OUTSIDE the jumpbox and ssh to it from the jumpbox.[m
+[31m-    clean_up = False[m
+[32m+[m[32m    run_cleanups = False # Saves time, but set to true for a cleaner test.[m
+     jump_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')[m
+     if jump_desc is None:[m
+         raise Exception('Cant find BYOC_jumpbox_VM to test on. Is it named differently or not set up?')[m
+[36m@@ -260,35 +260,60 @@[m [mdef test_new_machine_from_jumpbox(printouts=True):[m
+     jump_sgroup_id = AWS_query.assocs(jump_desc,'sgroup')[0][m
+     jump_cidr = AWS_format.id2obj(jump_subnet_id)['CidrBlock'][m
+ [m
+[31m-    #TODO[m
+[31m-    if not plumbing.in_cidr(private_ip, jump_cidr):[m
+[31m-        raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')[m
+[32m+[m[32m    out = True[m
+ [m
+[31m-    def _new_machine(x):[m
+[31m-        if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', x['v'])):[m
+[31m-            print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')[m
+[31m-        if not plumbing.in_cidr(x['i'], jump_cidr):[m
+[31m-            raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')[m
+[31m-        inst_id = AWS_format.obj2id(AWS_setup.simple_vm(x['v'], x['i'], jump_subnet_id, jump_sgroup_id, x['k']))[m
+[31m-        addr = AWS_core.create_once('address', x['a'], printouts, Domain='vpc')[m
+[31m-        AWS_setup.wait_and_attach_address(inst_id, addr)[m
+[31m-        return inst_id[m
+[31m-[m
+[31m-    def _del_machine(x):[m
+[31m-        if not clean_up:[m
+[31m-            print('DEBUG mode no clean up.')[m
+[31m-            return[m
+[31m-        goners = [AWS_query.get_by_name('machine', x['v']), AWS_query.get_by_name('kpair', x['k']),\[m
+[31m-                  AWS_query.get_by_name('address', x['a'])][m
+[31m-        goners = list(filter(lambda x: x is not None, goners))[m
+[31m-        AWS_clean.power_delete(goners)[m
+[32m+[m[32m    def _qu(x):[m
+[32m+[m[32m        return "'"+x+"'"[m
+[32m+[m[32m    def _get_code(x):[m
+[32m+[m[32m        # exec this locally or ran via ssh on another machine:[m
+[32m+[m[32m        new_code = f'AWS_test._new_machine({_qu(jump_subnet_id)}, {_qu(jump_sgroup_id)}, {_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])}, {_qu(x["private_ip"])}, {printouts})'[m
+[32m+[m[32m        del_code = f'AWS_test._del_machine({_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])})'[m
+[32m+[m[32m        out_new = 'import tests.AWS_test as AWS_test'+'\n'+new_code+'\n'[m
+[32m+[m[32m        out_del = 'import tests.AWS_test as AWS_test'+'\n'+del_code+'\n'[m
+[32m+[m[32m        return out_new, out_del[m
+ [m
+     out = test_results('stronger_jumpbox_tests')[m
+[31m-    vm.install_Skythonic(jump_desc, '~/Skythonic', printouts=False) # Make sure installed, if not already.[m
+[32m+[m[32m    vm.update_Skythonic(jump_desc, '~/Skythonic', printouts=printouts)[m
+[32m+[m
+[32m+[m[32m    x0 = {'kpair_name':'testing_vm_key_name', 'vm_name':'testing_vm', 'address_name':'testing_address', 'private_ip':'10.200.250.111'}[m
+[32m+[m[32m    #x1 = {'kpair_name':'exam_vm_key_name','vm_name':'exam_vm', 'address_name':'exam_address', 'private_ip':'10.200.250.111'}[m
+[32m+[m[32m    for x in [x0]:[m
+[32m+[m[32m        if not plumbing.in_cidr(x['private_ip'], jump_cidr):[m
+[32m+[m[32m            raise Exception(f'Private ip = {private_ip} not in Cidr = {jump_cidr}')[m
+[32m+[m
+[32m+[m[32m    if run_cleanups:[m
+[32m+[m[32m        exec(_get_code[x0][1])[m
+[32m+[m
+[32m+[m[32m    #Test 0: Query the ID of our machine in cloud shell (should be none) vs jumpbox:[m
+[32m+[m[32m    cloud_shell_id = AWS_core.our_vm_id()[m
+[32m+[m[32m    jump_id = AWS_format.obj2id(jump_desc)[m
+[32m+[m[32m    tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)[m
+[32m+[m[32m    tubo.API('echo begin_jumpVMid_test')[m
+[32m+[m[32m    tubo.API('cd ~/Skythonic')[m
+[32m+[m[32m    tubo.API('python3')#+_get_code(x0)[0])[m
+[32m+[m[32m    tubo.API('import AWS.AWS_core as AWS_core')[m
+[32m+[m[32m    jump_id_blabla = tubo.API('print(AWS_core.our_vm_id())')[m
+[32m+[m[32m    tubo.API('quit()')[m
+[32m+[m[32m    out = out and cloud_shell_id is None and jump_id in str(jump_id_blabla)[m
+[32m+[m[32m    print('ID CHECK:', out)[m
+[32m+[m[32m    return False[m
+ [m
+[31m-    x0 = {'k':'testing_vm_key_name','v':'testing_vm', 'a':'testing_address', 'i':'10.200.250.111'}[m
+ [m
+     #Test A: SSH to jumpbox; make a machine in the jumpbox; ssh to it.[m
+[32m+[m[32m    tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)[m
+[32m+[m[32m    tubo.API('echo begin_jumpVM_test')[m
+[32m+[m[32m    tubo.API('cd ~/Skythonic')[m
+[32m+[m[32m    tubo.API('python3')#+_get_code(x0)[0])[m
+[32m+[m[32m    tubo.API(_get_code(x0)[0])[m
+[32m+[m
+[32m+[m[32m    #for i in range(8):[m
+[32m+[m[32m    #    time.sleep(1.0)[m
+[32m+[m
+[32m+[m[32m    if run_cleanups:[m
+[32m+[m[32m        exec(_get_code[x0][1])[m
+[32m+[m
+[32m+[m[32m    return False[m
+[32m+[m
+     _del_machine(x0)[m
+     TODO[m
+     inst_id = _new_machine(x0)[m
+[36m@@ -301,4 +326,4 @@[m [mdef test_new_machine_from_jumpbox(printouts=True):[m
+     # (this will require copying keys).[m
+     #TODO[m
+ [m
+[31m-    return False[m
+[32m+[m[32m    return False and run_cleanups[m
+[1mdiff --git a/vm.py b/vm.py[m
+[1mindex afb7128..55ba410 100644[m
+[1m--- a/vm.py[m
+[1m+++ b/vm.py[m
+[36m@@ -6,7 +6,6 @@[m [mimport paramiko, time, os[m
+ import file_io[m
+ import AWS.AWS_format as AWS_format[m
+ import eye_term, covert[m
+[31m-import eye_term[m
+ import boto3[m
+ ec2r = boto3.resource('ec2')[m
+ ec2c = boto3.client('ec2')[m
+[36m@@ -466,8 +465,8 @@[m [mdef install_AWS(instance_id, user_name, region_name, printouts=True):[m
+ [m
+ ###############Installation of our packages and configs#########################[m
+ [m
+[31m-def install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):[m
+[31m-    # Installs the *local* copy of Skythonic to the instance_id.[m
+[32m+[m[32mdef update_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):[m
+[32m+[m[32m    # Updates skythonic with what is stored locally (on the machine calling this fn).[m
+     file2contents = file_io.folder_load('.', allowed_extensions='.py')[m
+     for k in list(file2contents.keys()):[m
+         if file_io.dump_folder.split('/')[-1] in k:[m
+[36m@@ -478,9 +477,22 @@[m [mdef install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=T[m
+         tubo = patient_ssh_pipe(instance_id, printouts=True)[m
+         _cmd_list_fixed_prompt(tubo, ['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], _default_prompts(), lambda cmd:32.0)[m
+         tubo.close()[m
+[31m-[m
+     return Ireport([tubo], errs), _test[m
+ [m
+[32m+[m[32mdef install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):[m
+[32m+[m[32m    # Installs the *local* copy of Skythonic to the instance_id (does not use a GitFetch).[m
+[32m+[m[32m    # Python must also be installed. Also installs paramiko since that's a dep of Skythonic.[m
+[32m+[m[32m    cmds = ['pip install paramiko'][m
+[32m+[m[32m    tubo0 = patient_ssh_pipe(instance_id, printouts=printouts)[m
+[32m+[m[32m    _cmd_list_fixed_prompt(tubo0, cmds, _default_prompts(), lambda cmd:32.0)[m
+[32m+[m
+[32m+[m[32m    def _test():[m
+[32m+[m[32m        print('TODO: test')[m
+[32m+[m
+[32m+[m[32m    update_skythonic(instance_id, remote_root_folder=remote_root_folder, printouts=printouts)[m
+[32m+[m
+[32m+[m[32m    return Ireport([tubo0], errs), _test[m
+[32m+[m
+ def install_hostList(instance_id, printouts=True):[m
+     cmds = ['cd /etc', 'sudo wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'sudo mv -f hosts.txt hosts', "sudo sh -c 'echo jump > /etc/hostname'"][m
+     tubo = patient_ssh_pipe(instance_id, printouts=printouts)[m
