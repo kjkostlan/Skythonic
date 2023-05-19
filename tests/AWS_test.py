@@ -1,4 +1,4 @@
-import time
+import time, sys
 import AWS.AWS_query as AWS_query
 import AWS.AWS_setup as AWS_setup
 import AWS.AWS_format as AWS_format
@@ -262,15 +262,14 @@ def test_new_machine_from_jumpbox(printouts=True):
 
     out = True
 
+    AWS_test = sys.modules['tests.AWS_test'] #Import ourselves!
     def _qu(x):
         return "'"+x+"'"
     def _get_code(x):
         # exec this locally or ran via ssh on another machine:
         new_code = f'AWS_test._new_machine({_qu(jump_subnet_id)}, {_qu(jump_sgroup_id)}, {_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])}, {_qu(x["private_ip"])}, {printouts})'
         del_code = f'AWS_test._del_machine({_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])})'
-        out_new = 'import tests.AWS_test as AWS_test'+'\n'+new_code+'\n'
-        out_del = 'import tests.AWS_test as AWS_test'+'\n'+del_code+'\n'
-        return out_new, out_del
+        return new_code, del_code
 
     out = test_results('stronger_jumpbox_tests')
     vm.update_Skythonic(jump_desc, '~/Skythonic', printouts=printouts)
@@ -284,27 +283,58 @@ def test_new_machine_from_jumpbox(printouts=True):
     if run_cleanups:
         exec(_get_code[x0][1])
 
+    def _start_py_code(msg):
+        return ['echo '+msg, 'cd ~/Skythonic', 'python3']
+
+    def _import_code():
+        return ['import AWS.AWS_core as AWS_core', 'import vm', 'import AWS.AWS_query as AWS_query', 'import tests.AWS_test as AWS_test']
+
+    #Test A: SSH to jumpbox; make a machine in the jumpbox; ssh to it from jumpbox.
+    print('MILESTONE HERE: About to delete machine from shell if it exists')
+    exec(_get_code(x0)[1])
+
+    print('MILESTONE HERE: About to make machine from shell')
+    exec(_get_code(x0)[0]) # DEBUG.
+    print('MILESTONE HERE: About to make machine (again) from shell should be idempotent')
+    exec(_get_code(x0)[0]) # DEBUG.
+
+    print('MILESTONE HERE: About to delete machine from shell')
+    exec(_get_code(x0)[1]) # DEBUG.
+
+    print('MILESTONE HERE: About to ssh and remake the machine from the shell')
+    #exec(_get_code(x0)[1])
+
+    tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)
+    [tubo.API(l) for l in _start_py_code('test vm ssh jmake')+_import_code()]
+    tubo.API('print("MILESTONE HERE: About to make the machine from the jumpbox")')
+    tubo.API(_get_code(x0)[0], timeout=96) # Long term TODO: easy nested APIs.
+    tubo.API(f"test_desc = AWS_query.get_by_name('machine', {_qu(x0['vm_name'])})")
+    tubo.API('print("ABOUT TO GO DEEPER")')
+    tubo.API('tubo = vm.patient_ssh_pipe(test_desc, printouts=False)') # Nested pipes.
+    tubo.API('tubo.API("tmp=$(curl http://169.254.169.254/latest/meta-data/instance-id)")') # Bash query.
+    test_id_blabla = tubo.API('tubo.API("echo $tmp")')
+    test_id_gold = AWS_format.obj2id(AWS_query.get_by_name('machine', x0['vm_name']))
+    out = out and test_id_gold in str(test_id_blabla)
+
+    #test_id_blabla = [tubo.API(f'tubo.API({_qu(l)})') for l in _start_py_code('test vm deeper lev')+_import_code()+['print(AWS_core.our_vm_id())']][-1]
+    #print('test id bla bla bla:', test_id_blabla)
+    # Note: we do not test jumpbox to cloud shell file xfer b/c ssh to cloud shell is a bit esoteric.
+
+    if run_cleanups:
+        exec(_get_code(x0)[1])
+    print('test_id_blabla:', test_id_blabla)
+    return False and run_cleanups
+
     #Test 0: Query the ID of our machine in cloud shell (should be none) vs jumpbox:
     cloud_shell_id = AWS_core.our_vm_id()
     jump_id = AWS_format.obj2id(jump_desc)
     tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)
-    tubo.API('echo begin_jumpVMid_test')
-    tubo.API('cd ~/Skythonic')
-    tubo.API('python3')#+_get_code(x0)[0])
-    tubo.API('import AWS.AWS_core as AWS_core')
+    [tubo.API(l) for l in _start_py_code('test vm ssh ID0')+_import_code()]
     jump_id_blabla = tubo.API('print(AWS_core.our_vm_id())')
     tubo.API('quit()')
     out = out and cloud_shell_id is None and jump_id in str(jump_id_blabla)
     print('ID CHECK:', out)
     return False
-
-
-    #Test A: SSH to jumpbox; make a machine in the jumpbox; ssh to it.
-    tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)
-    tubo.API('echo begin_jumpVM_test')
-    tubo.API('cd ~/Skythonic')
-    tubo.API('python3')#+_get_code(x0)[0])
-    tubo.API(_get_code(x0)[0])
 
     #for i in range(8):
     #    time.sleep(1.0)

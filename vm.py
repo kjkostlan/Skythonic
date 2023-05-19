@@ -116,21 +116,28 @@ def patient_ssh_pipe(instance_id, printouts=True):
     if in_state == 'terminated':
         raise Exception(f'The instance {instance_id} has been terminated and can never ever be used again.')
     ec2c.start_instances(InstanceIds=[instance_id])
-    _err = lambda e: 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e) # Not sure why the error.
-    try:
-        return ssh_pipe(instance_id, timeout=8, printouts=True)
-    except Exception as e:
-        print('Starting wait cycle because SSH not available this moment, error:', str(e))
-    return eye_term.loop_try(lambda:ssh_pipe(instance_id, timeout=8, printouts=printouts),
-                             _err , f'ssh waiting for {instance_id} to be ready.', delay=4)
 
-def ez_ssh_cmds(instance_id, bash_cmds, timeout=8, f_polls=None, printouts=True):
+    def _err(e):
+        if 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e):
+            return True
+        if 'Error reading SSH protocol banner' in str(e):
+            # This is a more serious error where we throw our hands up and just restart the machine.
+            if printouts:
+                print('The dreaded banner error. Restarting and hope for the best!')
+            ec2c.reboot_instances(InstanceIds=[instance_id])
+            return True
+        return False # Unrecognized errors are thrown.
+
+    return eye_term.loop_try(lambda:ssh_pipe(instance_id, timeout=8, printouts=printouts),
+                             _err , f'ssh waiting for {instance_id} to be ready.' if printouts else '', delay=4)
+
+def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
     # f_poll can be a list 1:1 with bash_cmds but this usage is better dealt with paired_ssh_cmds.
     #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
     #https://stackoverflow.com/questions/59252659/ssh-using-python-via-private-keys
     #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
-    tubo = ssh_pipe(instance_id, timeout=timeout, printouts=printouts)
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
     _out, _err, _ = tubo.multi_API(bash_cmds, f_polls=f_polls)
     tubo.close()
     if printouts:
@@ -141,6 +148,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # None contents are deleted.
     # Both local or non-local paths allowed.
     # Automatically creates folders.
+    instance_id = AWS_format.obj2id(instance_id)
     if printouts:
         print(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
     instance_id = AWS_format.obj2id(instance_id)
@@ -436,7 +444,7 @@ def install_AWS(instance_id, user_name, region_name, printouts=True):
 
     # Discussion on vs 'pip3 install boto3' vs 'python3 -m pip install boto3':
         #https://stackoverflow.com/questions/59997065/pip-python-normal-site-packages-is-not-writeable
-    pip_cmds = ['python3 -m pip install boto3', 'pip install --upgrade awscli', 'pip install --upgrade botocore'] # Upgrades may avoid errors.
+    pip_cmds = ['python3 -m pip install boto3 --break-system-packages', 'pip install --upgrade awscli --break-system-packages', 'pip install --upgrade botocore --break-system-packages'] # Upgrades may avoid errors.
     _cmd_list_fixed_prompt(tubo, pip_cmds, line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
     tubo = _reset(tubo, full_restart=False)
     tubo.close(); pipes.append(tubo)
@@ -482,16 +490,16 @@ def update_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=Tr
 def install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):
     # Installs the *local* copy of Skythonic to the instance_id (does not use a GitFetch).
     # Python must also be installed. Also installs paramiko since that's a dep of Skythonic.
-    cmds = ['pip install paramiko']
+    cmds = ['pip install paramiko --break-system-packages']
     tubo0 = patient_ssh_pipe(instance_id, printouts=printouts)
     _cmd_list_fixed_prompt(tubo0, cmds, _default_prompts(), lambda cmd:32.0)
 
     def _test():
         print('TODO: test')
 
-    update_skythonic(instance_id, remote_root_folder=remote_root_folder, printouts=printouts)
+    update_Skythonic(instance_id, remote_root_folder=remote_root_folder, printouts=printouts)
 
-    return Ireport([tubo0], errs), _test
+    return Ireport([tubo0], []), _test
 
 def install_hostList(instance_id, printouts=True):
     cmds = ['cd /etc', 'sudo wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'sudo mv -f hosts.txt hosts', "sudo sh -c 'echo jump > /etc/hostname'"]

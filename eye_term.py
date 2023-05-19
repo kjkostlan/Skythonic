@@ -21,9 +21,9 @@ def loop_try(f, f_catch, msg, delay=4):
         except Exception as e:
             if f_catch(e):
                 if callable(msg):
-                    print(msg())
-                else:
-                    print(msg)
+                    msg = msg()
+                if len(msg)>0:
+                    print('Loop try ('+str(e)+') '+msg)
             else:
                 raise e
         time.sleep(delay)
