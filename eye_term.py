@@ -7,6 +7,26 @@
 #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
 import time, re, os, sys, threading
 
+try:
+    log_pipes # All logs go here.
+except:
+    log_pipes = []
+
+def termstr(cmds, _out, _err):
+    # Prints it in a format that is easier to read.
+    # For realtime printouts the printouts option should be used instead.
+    pieces = []
+    for i in range(len(_out)):
+        c = cmds[i] if type(cmds[i]) is str else cmds[i][0]
+        pieces.append('→'+c+'←')
+        pieces.append(_out[i])
+        if _err is not None:
+            pieces.append(_err[i])
+    txt = '\n'.join(pieces)
+    txt = txt.replace('\r\n','\n')
+    txt = txt.replace('\n\n','\n')
+    return txt
+
 def quoteless(the_path):
     # Quotes prevent the nice convienent ~ and * syntax of directories.
     # So escaping spaces helps.
@@ -78,6 +98,7 @@ class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
     def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False):
         self.proc_type = proc_type
+        self.proc_args = proc_args
         self.send_f = None # Send strings OR bytes.
         self.stdout_f = None # Returns an empty bytes if there is nothing to get.
         self.stderr_f = None
@@ -92,9 +113,18 @@ class MessyPipe:
         self.history_contents = ['',''] # Includes history.
         self.cmd_history = []
         self.combined_contents = '' # Better approximation to the printout combining out and err.
+        self.close = None
+        self.closed = False
 
         _to_str = lambda x: x if type(x) is str else x.decode()
         _to_bytes = lambda x: x if type(x) is bytes else x.encode()
+
+        def _mk_close_fn(f):
+            def _tmp(self, x):
+                log_pipes.append(self)
+                self.closed = True
+                f()
+            return _tmp
 
         if proc_type == 'shell':
             #https://stackoverflow.com/questions/375427/a-non-blocking-read-on-a-subprocess-pipe-in-python/4896288#4896288
@@ -134,7 +164,7 @@ class MessyPipe:
             t.start()
             self.stdout_f = lambda: bytes(stdout_store.pop_all()) if return_bytes else ''.join(stdout_store.pop_all())
             self.stderr_f = lambda: bytes(stderr_store.pop_all()) if return_bytes else ''.join(stderr_store.pop_all())
-            self.close = p.kill
+            self.close = _mk_close_fn(p.kill)
         elif proc_type == 'ssh':
             #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
             #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
@@ -172,10 +202,12 @@ class MessyPipe:
                 self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, channel.recv_stderr)
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
-            self.close = client.close
-            self.API('echo ssh_session_begin')
+            self.close = _mk_close_fn(client.close)
+            #self.API('echo ssh_session_begin')
         else: # TODO: more kinds of pipes.
             raise Exception('proc_type must be "shell" or "ssh"')
+
+        self.remake = lambda self: MessyPipe(self.proc_type, self.proc_args, self.printouts, return_bytes, use_file_objs)
 
     def blit(self, include_history=True):
         # Mash the output and error togetehr.
@@ -220,6 +252,8 @@ class MessyPipe:
     def send(self, txt, include_newline=True, suppress_input_prints=False):
         # The non-blocking operation.
         #https://stackoverflow.com/questions/6203653/how-do-you-execute-multiple-commands-in-a-single-session-in-paramiko-python
+        if self.closed:
+            raise Exception('The pipe has been closed and cannot accept commands; use pipe.remake() to get a new, open pipe.')
         self.cmd_history.append(txt)
         if self.printouts and not suppress_input_prints:
             if self.color=='linux':
@@ -293,21 +327,6 @@ class MessyPipe:
         #    ended_list = [False, False] # TODO: fix this.
         #    return len(list(filter(lambda x: x, ended_list)))==len(ended_list)
         return False # TODO: maybe once in a while there are pipes that are provably closable.
-
-def termstr(cmds, _out, _err):
-    # Prints it in a format that is easier to read.
-    # For realtime printouts the printouts option should be used instead.
-    pieces = []
-    for i in range(len(_out)):
-        c = cmds[i] if type(cmds[i]) is str else cmds[i][0]
-        pieces.append('→'+c+'←')
-        pieces.append(_out[i])
-        if _err is not None:
-            pieces.append(_err[i])
-    txt = '\n'.join(pieces)
-    txt = txt.replace('\r\n','\n')
-    txt = txt.replace('\n\n','\n')
-    return txt
 
 ##################Expect-like tools, but with more granularity##################
 

@@ -73,6 +73,17 @@ def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
 
 def _default_prompts():
     # Default line end prompts and the needed input (str or function of the pipe).
+
+    def _super_advanced_linux_shell(tubo):
+        # What button do you press to continue?
+        import random
+        for i in range(256): # We are getting frusterated...
+            chs = ['\033[1A','\033[1B','\033[1C','\033[1D','o','O','y','Y','\n']
+            ch = random.choice(chs)
+            tubo.send(ch, suppress_input_prints=True, include_newline=False)
+            tubo.update()
+        return tubo.API('random_bashing_done')
+
     return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
             'continue connecting (yes/no)?':'Y',
             'Which services should be restarted?':_super_advanced_linux_shell} # Newfangled menu.
@@ -217,39 +228,109 @@ def restart_vm(instance_id):
 
 ########################Installation of packages################################
 
-class Ireport: # Installation report.
-    def __init__(self, pipes, errors):
-        self.pipes = pipes
-        self.errors = errors
-    def append(self, append_this):
-        self.pipes = self.pipes+append_this.pipes
-        self.errors = self.errors+append_this.errors
-    def error_free(self):
-        return len(self.errors)==0
+def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
+    if type(inst_or_pipe) is eye_term.MessyPipe:
+        if inst_or_pipe.closed:
+            return inst_or_pipe.remake()
+        return inst_or_pipe
+    return patient_ssh_pipe(inst_or_pipe, printouts=printouts)
 
-def _super_advanced_linux_shell(tubo):
-    # It breaks automation scripts. But why should it?
-    import random
-    for i in range(256): # We are getting frusterated...
-        chs = ['\033[1A','\033[1B','\033[1C','\033[1D','o','O','y','Y','\n']
-        ch = random.choice(chs)
-        tubo.send(ch, suppress_input_prints=True, include_newline=False)
-        tubo.update()
-    return tubo.API('random_bashing_done')
-
-def update_Apt(instance_id, printouts=True, full_restart_here=True): # Restarting may reduce the error rate.
-    # Update the apt, which can help.
+def update_Apt(inst_or_pipe, printouts=True):
+    # Updating apt with a restart seems to be the most robust option.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
-    cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo foo', 'echo bar', 'echo baz']#, 'sudo dpkg --configure -a']#, anti_massive_interaction]
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
+    cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo done']
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+    x0 = tubo.blit()
     _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:64.0)
-    tubo.close()
-    if full_restart_here:
-        if printouts:
-            print(f'Rebooting {instance_id} as part of the "apt update" process')
-        ec2c.reboot_instances(InstanceIds=[instance_id])
 
-    return Ireport([tubo],[]), lambda: print('TODO: test update_Apt') # TODO: error reporting here instead of empty list.
+    # Verification of installation:
+    x1 = tubo.blit(); x = x1[len(x0):]
+    if 'Reading state information... Done'.lower() not in x.lower():
+        raise Exception('Installation test failure: update_Apt')
+
+    if type(inst_or_pipe) is eye_term.MessyPipe:
+        tubo.close(); eye_term.log_pipes.append(tubo)
+    else:
+        return tubo
+
+    #if full_restart_here:
+    #    if printouts:
+    #        print(f'Rebooting {instance_id} as part of the "apt update" process')
+    #    ec2c.reboot_instances(InstanceIds=[instance_id])
+
+def ez_apt_package(inst_or_pipe, package_name, printouts=True, timeout=64):
+    # Installation.
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+    def _core_fn(tubo):
+        tubo = _to_pipe(tubo, printouts=printouts)
+        x0 = tubo.blit()
+        _cmd_list_fixed_prompt(tubo, [f'sudo apt install {package_name}', f'dpkg -s {package_name}'], _default_prompts(), lambda cmd:timeout)
+        x1 = tubo.blit(); x = x1[len(x0):]
+        return x
+    def _err_fn(x):
+        if 'install ok installed' in x:
+            return False
+        elif 'Unable to locate package' in x:
+            return True
+        else:
+            raise Exception(f'Unable to confirm installation of {package_name}')
+
+    x = _core_fn(tubo)
+    if not _err_fn(x):
+        return tubo
+    if printouts:
+        print('Cant find, maybe we need an apt update?')
+    tubo = update_Apt(tubo, printouts)
+    if not _err_fn(x):
+        return tubo
+    if printouts:
+        print('Cant find, maybe we need an apt update?')
+    tubo = update_Apt(tubo, printouts)
+    if not _err_fn(x):
+        return tubo
+    if type(inst_or_pipe) is str or type(inst_or_pipe) is dict:
+        print('Maybe a restart after an apt-update will help.')
+        tubo.close()
+        restart_vm(inst_or_pipe)
+        tubo = tubo.remake()
+        if not _err_fn(x):
+            return tubo
+        raise Exception(f'Even after a restart, the package {package_name} cannot be found.')
+    raise Exception(f'The package {package_name} cannot be found, we cant restart without knowning the instance_id.')
+
+def ez_pip_package(inst_or_pipe, package_name, printouts=True, break_sys_packages='polite', timeout=64):
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+    x0 = tubo.blit()
+    powstr = ' --break-system-packages' if break_sys_packages.lower()=='yes' else ''
+    _cmd_list_fixed_prompt(tubo, [f'pip install {package_name}'+powstr], _default_prompts(), lambda cmd:timeout)
+    x1 = tubo.blit(); x = x1[len(x0):]
+
+    if printouts and break_sys_packages.lower() == 'yes':
+        print('WARNING: using --break-system-packages option')
+    if 'Successfully installed '+package_name in x or 'Requirement already satisfied' in x:
+        pass
+    elif "Command 'pip' not found" in x or 'pip: command not found' in x:
+        tubo = ez_apt_package(tubo, 'python3-pip', printouts=printouts, timeout=timeout)
+        tubo = ez_apt_package(tubo, 'python-is-python3', printouts=printouts, timeout=timeout)
+    elif 'No matching distribution found for '+package_name in x:
+        raise Exception(f'No matching pip for {package_name}')
+    elif '--break-system-packages' in x and 'This environment is externally managed' in x and break_sys_packages.lower() != 'yes':
+        if break_sys_packages == 'polite':
+            ez_pip_package(inst_or_pipe, package_name, printouts=printouts, break_sys_packages='yes', timeout=timeout)
+        elif not break_sys_packages or break_sys_packages.lower() == 'no' or break_sys_packages.lower() == 'deny' or break_sys_packages.lower() == 'forbidden':
+            raise Exception('Externally managed env error and break_sys_packages arg set to "forbidden"')
+    else:
+        raise Exception(f'Cannot verify installation for: {}')
+
+    if type(inst_or_pipe) is eye_term.MessyPipe:
+        tubo.close()
+    return tubo
+
+def install_package(instance_id, package_name, printouts=True):
+
+    #TODO
+
+    TODO
 
 def install_Ping(instance_id, printouts=True):
     # Ping is not installed with the minimal linux.
