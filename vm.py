@@ -114,11 +114,12 @@ def ssh_bash(instance_id, join_arguments=True):
     else:
         return out
 
-def ssh_pipe(instance_id, timeout=8, printouts=True):
-    # Returns a MessyPipe which can be interacted with. Don't forget to close() it.
+def ssh_pipe_kwargs(instance_id, timeout=8, printouts=True):
+    # Splat into into MessyPipe.
     username = 'ubuntu'; hostname = get_ip(instance_id) #username@hostname
     key_filename = covert.get_key(instance_id)[1]
-    return eye_term.MessyPipe('ssh', {'username':username,'hostname':hostname, 'timeout':timeout, 'key_filename':key_filename}, printouts)
+    return {'proc_type':'ssh', 'proc_args':{'username':username,'hostname':hostname, 'timeout':timeout, 'key_filename':key_filename},\
+            'printouts':printouts, 'machine_id':instance_id}
 
 def patient_ssh_pipe(instance_id, printouts=True):
     # Ensures it is started and waites in a loop.
@@ -128,7 +129,9 @@ def patient_ssh_pipe(instance_id, printouts=True):
         raise Exception(f'The instance {instance_id} has been terminated and can never ever be used again.')
     ec2c.start_instances(InstanceIds=[instance_id])
 
-    def _err(e):
+    kwargs = ssh_pipe_kwargs(instance_id, timeout=8, printouts=printouts)
+
+    def _err_catch(e):
         if 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e):
             return True
         if 'Error reading SSH protocol banner' in str(e):
@@ -139,8 +142,7 @@ def patient_ssh_pipe(instance_id, printouts=True):
             return True
         return False # Unrecognized errors are thrown.
 
-    return eye_term.loop_try(lambda:ssh_pipe(instance_id, timeout=8, printouts=printouts),
-                             _err , f'ssh waiting for {instance_id} to be ready.' if printouts else '', delay=4)
+    return eye_term.MessyPipe(f_loop_catch=_err_catch, **kwargs)
 
 def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
@@ -197,7 +199,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
 
     file_io.power_delete(tmp_dump)
     print('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
-    return tubo, []
+    return tubo
 
 def download_remote_file(instance_id, remote_path, local_dest_folder=None, printouts=True, bin_mode=False):
     # Downalods to a local path or simply returns the file contents.
@@ -235,36 +237,36 @@ def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
         return inst_or_pipe
     return patient_ssh_pipe(inst_or_pipe, printouts=printouts)
 
-def update_Apt(inst_or_pipe, printouts=True):
+def update_apt(inst_or_pipe, printouts=True):
     # Updating apt with a restart seems to be the most robust option.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo done']
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     x0 = tubo.blit()
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:64.0)
+    #if prompts is None: # No need to have this as an actual argument.
+    prompts = _default_prompts()
+    _cmd_list_fixed_prompt(tubo, cmds, prompts, lambda cmd:64.0)
 
     # Verification of installation:
     x1 = tubo.blit(); x = x1[len(x0):]
     if 'Reading state information... Done'.lower() not in x.lower():
-        raise Exception('Installation test failure: update_Apt')
+        raise Exception('update_apt has failed for some reason.')
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
         tubo.close(); eye_term.log_pipes.append(tubo)
     else:
         return tubo
 
-    #if full_restart_here:
-    #    if printouts:
-    #        print(f'Rebooting {instance_id} as part of the "apt update" process')
-    #    ec2c.reboot_instances(InstanceIds=[instance_id])
-
-def ez_apt_package(inst_or_pipe, package_name, printouts=True, timeout=64):
+def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=True):
     # Installation.
+    # TODO: Use "sudo dpkg --configure -a" when needed.
+    if prompts is None:
+        prompts = _default_prompts()
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     def _core_fn(tubo):
         tubo = _to_pipe(tubo, printouts=printouts)
         x0 = tubo.blit()
-        _cmd_list_fixed_prompt(tubo, [f'sudo apt install {package_name}', f'dpkg -s {package_name}'], _default_prompts(), lambda cmd:timeout)
+        _cmd_list_fixed_prompt(tubo, [f'sudo apt install {package_name}', 'echo testing_install', f'dpkg -s {package_name}'], prompts, lambda cmd:timeout)
         x1 = tubo.blit(); x = x1[len(x0):]
         return x
     def _err_fn(x):
@@ -280,29 +282,31 @@ def ez_apt_package(inst_or_pipe, package_name, printouts=True, timeout=64):
         return tubo
     if printouts:
         print('Cant find, maybe we need an apt update?')
-    tubo = update_Apt(tubo, printouts)
+    tubo = update_apt(tubo, printouts)
     if not _err_fn(x):
         return tubo
     if printouts:
         print('Cant find, maybe we need an apt update?')
-    tubo = update_Apt(tubo, printouts)
+    tubo = update_apt(tubo, printouts)
     if not _err_fn(x):
         return tubo
-    if type(inst_or_pipe) is str or type(inst_or_pipe) is dict:
-        print('Maybe a restart after an apt-update will help.')
-        tubo.close()
-        restart_vm(inst_or_pipe)
-        tubo = tubo.remake()
-        if not _err_fn(x):
-            return tubo
-        raise Exception(f'Even after a restart, the package {package_name} cannot be found.')
+    print('Maybe a restart after an apt-update will help.')
+    tubo.close()
+    restart_vm(tubo.proc_args.machine_id)
+    tubo = tubo.remake()
+    if not _err_fn(x):
+        return tubo
+    if 'sudo dpkg --configure -a" when needed' in tubo.blit():
+        raise Exception('TODO: figure out when to use sudo dpkg --configure -a which seems to be needed')
     raise Exception(f'The package {package_name} cannot be found, we cant restart without knowning the instance_id.')
 
-def ez_pip_package(inst_or_pipe, package_name, printouts=True, break_sys_packages='polite', timeout=64):
+def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', timeout=64, prompts=None, printouts=True):
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     x0 = tubo.blit()
     powstr = ' --break-system-packages' if break_sys_packages.lower()=='yes' else ''
-    _cmd_list_fixed_prompt(tubo, [f'pip install {package_name}'+powstr], _default_prompts(), lambda cmd:timeout)
+    if prompts is None:
+        prompts = _default_prompts()
+    _cmd_list_fixed_prompt(tubo, [f'pip install {package_name}'+powstr], prompts, lambda cmd:timeout)
     x1 = tubo.blit(); x = x1[len(x0):]
 
     if printouts and break_sys_packages.lower() == 'yes':
@@ -310,110 +314,52 @@ def ez_pip_package(inst_or_pipe, package_name, printouts=True, break_sys_package
     if 'Successfully installed '+package_name in x or 'Requirement already satisfied' in x:
         pass
     elif "Command 'pip' not found" in x or 'pip: command not found' in x:
-        tubo = ez_apt_package(tubo, 'python3-pip', printouts=printouts, timeout=timeout)
-        tubo = ez_apt_package(tubo, 'python-is-python3', printouts=printouts, timeout=timeout)
+        tubo = ez_apt_package(tubo, 'python3-pip', timeout=timeout, printouts=printouts)
+        tubo = ez_apt_package(tubo, 'python-is-python3', timeout=timeout, printouts=printouts)
     elif 'No matching distribution found for '+package_name in x:
         raise Exception(f'No matching pip for {package_name}')
     elif '--break-system-packages' in x and 'This environment is externally managed' in x and break_sys_packages.lower() != 'yes':
         if break_sys_packages == 'polite':
-            ez_pip_package(inst_or_pipe, package_name, printouts=printouts, break_sys_packages='yes', timeout=timeout)
+            ez_pip_package(inst_or_pipe, package_name, printouts=printouts, break_sys_packages='yes', timeout=timeout, prompts=prompts)
         elif not break_sys_packages or break_sys_packages.lower() == 'no' or break_sys_packages.lower() == 'deny' or break_sys_packages.lower() == 'forbidden':
             raise Exception('Externally managed env error and break_sys_packages arg set to "forbidden"')
     else:
         raise Exception(f'Cannot verify installation for: {}')
 
-    if type(inst_or_pipe) is eye_term.MessyPipe:
+    if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
     return tubo
 
-def install_package(instance_id, package_name, printouts=True):
+def _test_pair(tubo, cmds, expected, prompts=None, printouts=True):
+    t_cmds = t[0]; t_results = t[1]
+    if prompts is None:
+        prompts = _default_prompts()
+    for i in range(2):
+        if i==1:
+            if printouts:
+                print('Maybe a restart will help.')
+            tubo.close(); restart_vm(tubo.proc_args.machine_id)
+            tubo = tubo.remake()
+            raise Exception(f'Even after a restart, the package {package_name} does not work properly.')
+        elif i==1:
+            raise Exception('Cannot (a restart may or may not help; pass in an instance_id instead of a pipe to do so).')
+        x0 = tubo.blit()
+        tubo = _cmd_list_fixed_prompt(tubo, t_cmds, prompts, lambda cmd:timeout)
+        x1 = tubo.blit(); x = x1[len(x0):]
+        if len(filter(lambda r: r not in x, t_results)) == 0:
+            break # All test results in.
+        if i==1:
+            raise Exception(f'Even after a restart, this test failed.')
+    return tubo
 
-    #TODO
+def install_package(inst_or_pipe, package_name, package_manager, printouts=True):
+    # Includes configuration for common packages; package_manager = 'apt' or 'pip'
+    ### Per-package configurations:
+    renames = {'ping':'iputils-ping','apache':'apache2', 'python':'python3-pip', 'python3':'python3-pip',
+               'aws':'awscli'}
 
-    TODO
-
-def install_Ping(instance_id, printouts=True):
-    # Ping is not installed with the minimal linux.
-    #https://www.atlantic.net/vps-hosting/how-to-install-and-use-the-ping-command-in-linux/
-    cmds = ['sudo apt-get install iputils-ping', 'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
-
-    errs = []
-    if 'not found' in str(tubo.history_contents):
-        errs.append('Ping produces a not found eror.')
-
-    def _test(printouts=True):
-        tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-        _cmd_list_fixed_prompt(tubo, ['ping', 'echo done'], _default_prompts(), lambda cmd:32.0)
-        tubo.close()
-
-    return Ireport([tubo], errs), _test
-
-def install_mysqlClient(instance_id, printouts=True):
-    cmds = ['sudo apt install mysql-client',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
-
-    errs = []
-    def _test(printouts=True):
-        print('TODO: Test mwsqlClient install')
-
-    return Ireport([tubo], errs), _test
-
-def install_netTools(instance_id, printouts=True):
-    cmds = ['sudo apt install net-tools',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
-
-    errs = []
-    if 'not found' in str(tubo.history_contents):
-        errs.append('Ping produces a not found eror.')
-
-    def _test(printouts=True):
-        print('TODO: Test netTools install')
-
-    return Ireport([tubo], errs), _test
-
-def install_netcat(instance_id, printouts=True):
-    cmds = ['sudo apt install netcat',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
-
-    errs = []
-    if 'not found' in str(tubo.history_contents):
-        errs.append('Ping produces a not found eror.')
-
-    def _test(printouts=True):
-        print('TODO: Test netcat install')
-
-    return Ireport([tubo], errs), _test
-
-def install_vim(instance_id, printouts=True):
-    cmds = ['sudo apt install vim',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
-
-    errs = []
-    if 'not found' in str(tubo.history_contents):
-        errs.append('Ping produces a not found eror.')
-
-    def _test(printouts=True):
-        print('TODO: Test vim install')
-
-    return Ireport([tubo], errs), _test
-
-def install_apache(instance_id, printouts=True):
-    cmds = ['sudo apt install apache2 libcgi-session-perl',
+    xtra_cmds = {}
+    xtra_cmds['apache2'] = ['sudo apt install libcgi-session-perl',
             'sudo systemctl enable apache2',
             'cd /etc/apache2/mods-enabled',
             'sudo ln -s ../mods-available/cgi.load cgi.load',
@@ -421,212 +367,149 @@ def install_apache(instance_id, printouts=True):
             'sudo ln -s ../mods-available/ssl.load ssl.load',
             'sudo ln -s ../mods-available/socache_shmcb.load socache_shmcb.load',
             'cd /etc/apache2/sites-enabled',
-            'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
+            'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
+    xtra_cmds['python3-pip'] = ['sudo apt-get install python-is-python3']
+    xtra_cmds['aws-cli'] = ['aws configure']
 
-    errs = []
+    xtra_code = {}
+    xtra_code['aws-cli'] = lambda tubo: ez_pip_package(tubo, 'boto3', printouts=True, break_sys_packages='polite', timeout=64)
 
-    def _test(printouts=True):
-        print('TODO: Test apache install')
+    timeouts = {'aws-cli':128, 'python3-pip':128}
+    timeout = timeouts.get(package_name, 64)
 
-    return Ireport([tubo], errs), _test
+    tests = {}
+    tests['iputils-ping'] = [['ping localhost'],['0% packet loss']]
+    tests['apache2'] = [['sudo service apache2 start', 'curl -k http://localhost', 'sudo service apache2 stop'], ['<div class="section_header">', 'Apache2']]
+    tests['python3-pip'] = [['python3', 'print(id)', 'quit()'],['<built-in function id>']]
+    twsts['aws-cli'] = [['aws ec2 describe-vpcs --output text',
+                         'python3', 'import boto3', "boto3.client('ec2').describe_vpcs()", 'quit()']]
 
-def install_tcpdump(instance_id, printouts=True):
-    cmds = ['sudo apt install tcpdump',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
+    extra_prompts = {}
 
-    errs = []
-    if 'not found' in str(tubo.history_contents):
-        errs.append('Ping produces a not found eror.')
+    package_name = renames.get(package_name.lower(), package_name.lower()) # Lowercase, 0-9 -+ only.
+    if package_name=='aws-cli': # This one requires using boto3 so is buried in this conditional.
+        print('aws-cli is a HEAVY installation. Should take about 5 min.')
+        region_name = boto3.session.Session().region_name
+        publicAWS_key, privateAWS_key = covert.get_key(user_id)
+        # The null prompts (empty string) may help to keep ssh alive:
+        extra_prompts['aws-cli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+                                    'region name':region_name, 'output format':'json',
+                                    'Get:42':'', 'Unpacking awscli':'',
+                                    'Setting up fontconfig':'', 'Extracting templates from packages':'',
+                                    'Unpacking libaom3:amd64':''}
 
-    def _test(printouts=True):
-        print('TODO: Test tcpdump install')
+    ### Core installation:
+    package_name = package_name.lower().replace('-','_')
+    package_name = renames.get(package_name, package_name) # Lowercase, 0-9 -+ only.
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+    prompts = {**_default_prompts(), **extra_prompts.get(package_name,{})}
 
-    return Ireport([tubo], errs), _test
+    package_manager = package_manager.lower().replace('pip3','pip')
+    if package_manager not in ['apt','pip']:
+        raise Exception('Package manager must be "apt" or "pip".')
+    if package_manager=='apt':
+        tubo = ez_apt_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
+    elif package_manager=='pip':
+        tubo = ez_pip_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
 
-def install_iputilsPing(instance_id, printouts=True):
-    cmds = ['sudo apt install iputils-ping',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:32.0)
-    tubo.close()
+    xtra = xtra_cmds.get(package_name,None)
+    if xtra is not None:
+        tubo = _cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), _default_prompts(), lambda cmd:timeout)
+    f = xtra_code.get(package_name, None)
+    if f is not None:
+        tubo = f(tubo)
 
-    errs = []
-    if 'not found' in str(tubo.history_contents):
-        errs.append('Ping produces a not found eror.')
+    t = tests.get(package_name, None)
+    if t is None:
+        if printouts:
+            print(f'Warning: no does-it-work test for {package_name}')
+    else:
+        t_cmds = t[0]; t_results = t[1]
+        tubo = _test_pair(tubo, cmds, expected, prompts=None, printouts=True)
 
-    def _test(printouts=True):
-        print('TODO: Test iputils-ping install')
-
-    return Ireport([tubo], errs), _test
-
-def install_python3(instance_id, printouts=True):
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install python3-pip', 'sudo apt-get install python-is-python3'],\
-                           _default_prompts(), lambda cmd:64 if 'install' in cmd else 12.0)
-    def _test():
-        test_cmd_fns = [['echo bash_test'],
-                        ['python3'], ['print(id)','<built-in function id>'],
-                        ['quit()']]
-        tubo = patient_ssh_pipe(instance_id, printouts=True)
-        errs = []
-        for pair in test_cmd_fns:
-            _out, _err, _ = tubo.API(pair[0], f_polls=None, dt_min=0.01, dt_max=1)
-            if len(pair)>1:
-                if pair[1] not in _out:
-                    warn_txt = f'WARNING: Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.'
-                    print(warn_txt) if printouts else ''
-                    errs.append(warn_txt)
+    if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
-        return errs
-    return Ireport([tubo], []), _test
-
-def install_AWS(instance_id, user_name, region_name, printouts=True):
-    # Installs and tests AWS+boto3 on a machine, raising Exceptions if the process fails.
-    # user_name is NOT the vm's user_name.
-    instance_id = AWS_format.obj2id(instance_id)
-    user_id = covert.user_dangerkey(user_name)
-    publicAWS_key, privateAWS_key = covert.get_key(user_id)
-    pipes = []
-
-    def _reset(tubo, full_restart):
-        tubo.close(); pipes.append(tubo)
-        if full_restart:
-            print('Rebooting machine: '+instance_id)
-            ec2c.reboot_instances(InstanceIds=[instance_id])
-        tubo1 = patient_ssh_pipe(instance_id, printouts=printouts)
-        return tubo1
-
-    print('Beginning installation. Should take about 5 min')
-    t0 = time.time()
-
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-
-    null_prompts = {'Get:42':'', 'Unpacking awscli':'',
-                    'Setting up fontconfig':'', 'Extracting templates from packages':'',
-                    'Unpacking libaom3:amd64':''}
-    aws_prompts = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
-                   'region name':region_name, 'output format':'json'}
-    line_end_prompts = {**_default_prompts(), **null_prompts, **aws_prompts}
-
-    _cmd_list_fixed_prompt(tubo, ['sudo apt-get install awscli'], _default_prompts(), lambda cmd:64 if 'install' in cmd else 12.0)
-    if "sudo dpkg --configure -a" in str(tubo.history_contents): # Error condition and one-time fix.
-        _cmd_list_fixed_prompt(tubo, ['sudo dpkg --configure -a', 'sudo apt-get install awscli'], _default_prompts(), lambda cmd:64 if 'install' in cmd else 12.0)
-
-    tubo = _reset(tubo, full_restart=False)
-
-    _cmd_list_fixed_prompt(tubo, ['aws configure'], line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
-
-    # Discussion on vs 'pip3 install boto3' vs 'python3 -m pip install boto3':
-        #https://stackoverflow.com/questions/59997065/pip-python-normal-site-packages-is-not-writeable
-    pip_cmds = ['python3 -m pip install boto3 --break-system-packages', 'pip install --upgrade awscli --break-system-packages', 'pip install --upgrade botocore --break-system-packages'] # Upgrades may avoid errors.
-    _cmd_list_fixed_prompt(tubo, pip_cmds, line_end_prompts, lambda cmd:64 if 'install' in cmd else 12.0)
-    tubo = _reset(tubo, full_restart=False)
-    tubo.close(); pipes.append(tubo)
-    def _test(printouts=True):
-        test_cmd_fns = [['echo bash_test'],
-                        ['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'], ['echo python_boto3_test'],
-                        ['python3'], ['import boto3'], ["boto3.client('ec2').describe_vpcs()", "'Vpcs': [{'CidrBlock'"],
-                        ['quit()']]
-        tubo = patient_ssh_pipe(instance_id, printouts=True)
-        errs = []
-        for pair in test_cmd_fns:
-            _out, _err, _ = tubo.API(pair[0], f_polls=None, dt_min=0.01, dt_max=1)
-            if len(pair)>1:
-                if pair[1] not in _out:
-                    warn_txt = f'WARNING: Command {pair[0]} expected to have {pair[1]} in its output which wasnt found. Either a change to the API or an installation error.'
-                    print(warn_txt) if printouts else ''
-                    errs.append(warn_txt)
-        tubo.close()
-        return errs
-
-    errs = _test(printouts=printouts)
-    if printouts:
-        t1 = time.time(); print('Elapsed time on installation (s):',t1-t0)
-        print('Check the above test to ensure it works.')
-    return Ireport(pipes, errs), _test
+    return tubo
 
 ###############Installation of our packages and configs#########################
 
-def update_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):
-    # Updates skythonic with what is stored locally (on the machine calling this fn).
+def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=True):
+    #Updates skythonic with what is stored locally (on the machine calling this fn).
+    # Basically the same as install_custom_package(inst_or_pipe, skythonic) but with no testing.
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+
     file2contents = file_io.folder_load('.', allowed_extensions='.py')
     for k in list(file2contents.keys()):
         if file_io.dump_folder.split('/')[-1] in k:
             del file2contents[k]
-    tubo, errs = send_files(instance_id, file2contents, remote_root_folder, printouts=printouts)
+    tubo = send_files(tubo.proc_args.machine_id, file2contents, remote_root_folder, printouts=printouts)
+    return tubo
 
-    def _test():
-        tubo = patient_ssh_pipe(instance_id, printouts=True)
-        _cmd_list_fixed_prompt(tubo, ['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], _default_prompts(), lambda cmd:32.0)
-        tubo.close()
-    return Ireport([tubo], errs), _test
+def install_custom_package(inst_or_pipe, package_name, printouts=True):
+    # Install packages which we make.
+    # We choose the folders here.
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+    package_name = package_name.lower().replace('_','-')
+    file2contents = {}
+    dest_folder = ''
+    test_pair = None
+    extra_prompts = {}
+    cmd_list = None
+    xtra_code = None
 
-def install_Skythonic(instance_id, remote_root_folder='~/Skythonic', printouts=True):
-    # Installs the *local* copy of Skythonic to the instance_id (does not use a GitFetch).
-    # Python must also be installed. Also installs paramiko since that's a dep of Skythonic.
-    cmds = ['pip install paramiko --break-system-packages']
-    tubo0 = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo0, cmds, _default_prompts(), lambda cmd:32.0)
+    ### Per package information:
+    if package_name == 'skythonic': # Local copy.
+        file2contents = file_io.folder_load('.', allowed_extensions='.py')
+        for k in list(file2contents.keys()):
+            if file_io.dump_folder.split('/')[-1] in k:
+                del file2contents[k]
+        dest_folder = '~/Skythonic'
+        test_pair = [['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], ['module']]
+        xtra_code = lambda tubo: ez_pip_package(tubo, 'paramiko', printouts=printouts, break_sys_packages='polite', timeout=64)
+    elif package_name=='host-list':
+        dest_folder = '/etc'
+        cmd_list = [f'cd {dest_folder}', 'sudo wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'sudo mv -f hosts.txt hosts', f"sudo sh -c 'echo jump > {dest_folder}/hostname'"]
+    elif package_name=='app-server':
+        cmds_list = ['cd /usr/local/bin',
+                     'sudo wget https://developmentserver.com/BYOC/Resources/addserver.txt',
+                     'sudo wget https://developmentserver.com/BYOC/Resources/addserver.pl.txt',
+                     'sudo wget https://developmentserver.com/BYOC/Resources/rmserver.txt',
+                     'sudo wget https://developmentserver.com/BYOC/Resources/rmserver.pl.txt',
+                     'sudo mv addserver.txt addserver',
+                     'sudo mv addserver.pl.txt addserver.pl',
+                     'sudo mv rmserver.txt rmserver',
+                     'sudo mv rmserver.pl.txt rmserver.pl',
+                     'sudo chmod a+x *',
+                     "sudo sh -c 'echo app1 > /etc/hostname'"]
+    elif package_name=='web-server':
+        cmds_list = ['cd /var/www/html', 'sudo wget https://developmentserver.com/BYOC/Resources/CiscoWorldLogo.jpg',
+                     'sudo wget https://developmentserver.com/BYOC/Resources/index.html.txt',
+                     'sudo mv index.html.tx index.html',
+                     'cd /usr/lib/cgi-bin',
+                     'sudo wget https://developmentserver.com/BYOC/Resources/index.cgi.txt',
+                     'sudo wget https://developmentserver.com/BYOC/Resources/qr1.cgi.txt',
+                     'sudo mv index.cgi.txt index.cgi',
+                     'sudo mv qr1.cgi.txt qr1.cgi',
+                     'sudo chmod a+x *',
+                     'sudo a2enmod cgid',
+                     "sudo sh -c 'echo web1 >/etc/hostname'",
+                     'sudo systemctl restart apache2',
+                     'systemctl status apache2.service --no-pager',
+                     'sudo apachectl configtest',
+                     'journalctl -xeu apache2.service --no-pager',
+                     'echo done']
+    else:
+        raise Exception(f'Unrecognized custom package {package_name}')
 
-    def _test():
-        print('TODO: test')
+    ### Core installation:
+    if file2contents is not None:
+        send_files(tubo.proc_args.machine_id, file2contents, remote_root_folder=dest_folder, printouts=printouts)
+    prompts = {**_default_prompts(), **extra_prompts}
+    if cmd_list is not None:
+        tubo = _cmd_list_fixed_prompt(tubo, cmd_list, tubo, lambda cmd:timeout)
+    if xtra_code is not None:
+        tubo = xtra_code(tubo)
+    if test_pair is not None:
+        tubo = _test_pair(tubo, test_pair[0], test_pair[1], prompts=None, printouts=True)
 
-    update_Skythonic(instance_id, remote_root_folder=remote_root_folder, printouts=printouts)
-
-    return Ireport([tubo0], []), _test
-
-def install_hostList(instance_id, printouts=True):
-    cmds = ['cd /etc', 'sudo wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'sudo mv -f hosts.txt hosts', "sudo sh -c 'echo jump > /etc/hostname'"]
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:8.0)
-    def _test(printouts=True):
-        print('TODO: test this.')
-    return Ireport([tubo], []), _test
-
-def install_appServerCmds(instance_id, printouts=True):
-    cmds = ['cd /usr/local/bin',
-            'sudo wget https://developmentserver.com/BYOC/Resources/addserver.txt',
-            'sudo wget https://developmentserver.com/BYOC/Resources/addserver.pl.txt',
-            'sudo wget https://developmentserver.com/BYOC/Resources/rmserver.txt',
-            'sudo wget https://developmentserver.com/BYOC/Resources/rmserver.pl.txt',
-            'sudo mv addserver.txt addserver',
-            'sudo mv addserver.pl.txt addserver.pl',
-            'sudo mv rmserver.txt rmserver',
-            'sudo mv rmserver.pl.txt rmserver.pl',
-            'sudo chmod a+x *',
-            "sudo sh -c 'echo app1 > /etc/hostname'"]
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:8.0)
-    def _test(printouts=True):
-        print('TODO: test install_appServerCmds.')
-    return Ireport([tubo], []), _test
-
-def install_webServerCmds(instance_id, printouts=True):
-    cmds = ['cd /var/www/html', 'sudo wget https://developmentserver.com/BYOC/Resources/CiscoWorldLogo.jpg',
-            'sudo wget https://developmentserver.com/BYOC/Resources/index.html.txt',
-            'sudo mv index.html.tx index.html',
-            'cd /usr/lib/cgi-bin',
-            'sudo wget https://developmentserver.com/BYOC/Resources/index.cgi.txt',
-            'sudo wget https://developmentserver.com/BYOC/Resources/qr1.cgi.txt',
-            'sudo mv index.cgi.txt index.cgi',
-            'sudo mv qr1.cgi.txt qr1.cgi',
-            'sudo chmod a+x *',
-            'sudo a2enmod cgid',
-            "sudo sh -c 'echo web1 >/etc/hostname'",
-            'sudo systemctl restart apache2',
-            'systemctl status apache2.service --no-pager',
-            'sudo apachectl configtest',
-            'journalctl -xeu apache2.service --no-pager',
-            'echo done']
-    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    _cmd_list_fixed_prompt(tubo, cmds, _default_prompts(), lambda cmd:8.0)
-    def _test(printouts=True):
-        print('TODO: test install_webServerCmds.')
-    return Ireport([tubo], []), _test
+    return tubo

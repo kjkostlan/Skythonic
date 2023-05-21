@@ -96,7 +96,7 @@ class ThreadSafeList():
 
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
-    def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False):
+    def _init_core(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False):
         self.proc_type = proc_type
         self.proc_args = proc_args
         self.send_f = None # Send strings OR bytes.
@@ -208,6 +208,13 @@ class MessyPipe:
             raise Exception('proc_type must be "shell" or "ssh"')
 
         self.remake = lambda self: MessyPipe(self.proc_type, self.proc_args, self.printouts, return_bytes, use_file_objs)
+
+    def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False, f_loop_catch=None):
+        f = lambda: self._init_core(self, proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs)
+        if f_loop_catch is None: # No attempt at bieng patient.
+            return f()
+        else:
+            return eye_term.loop_try(f, f_loop_catch , f'Waiting for pipe to be setup' if printouts else '', delay=4)
 
     def blit(self, include_history=True):
         # Mash the output and error togetehr.

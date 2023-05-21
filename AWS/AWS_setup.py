@@ -67,30 +67,16 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
         region_name = region_name[0:-1]
 
     tests = [t0]
-    for x in [vm.install_python3(inst_id, printouts=True),
-              vm.install_AWS(inst_id, user_name, region_name, printouts=True), vm.install_Ping(inst_id, printouts=True),\
-              vm.install_Skythonic(inst_id, '~/Skythonic', printouts=True),
-              vm.install_netTools(inst_id, printouts=True),
-              vm.install_netcat(inst_id, printouts=True),
-              vm.install_vim(inst_id, printouts=True),
-              vm.install_tcpdump(inst_id, printouts=True),
-              vm.install_iputilsPing(inst_id, printouts=True),
-              vm.install_hostList(inst_id, printouts=True)]:
-        report.append(x[0])
-        tests.append(x[1])
+    tubo = vm.install_package(inst_id, 'python3', 'apt', printouts=True)
+    for pk_name in ['aws', 'net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
+        tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
+    for pk_name in ['skythonic', 'host-list']:
+        tubo = vm.install_custom_package(tubo, pk_name, printouts=True)
     vm.restart_vm(inst_id)
 
-    print('BEGIN JUMBBOX INSTALL TESTS')
-    for t in tests:
-        t()
+    print('Installation and basic tests of aws done.')
 
-    print('Check the above printouts for Apt update, AWS, Ping, and Skythonic intall.')
-    print('Use this to ssh:', ssh_bash)
-    print('[Yes past the security warning (safe to do in this particular case) and ~. to leave ssh session.]')
-    if len(report.errors)>0:
-        print('Possible errors:', report.errors)
-
-    return ssh_bash, inst_id, report
+    return ssh_bash, inst_id
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', subnet_zone='us-west-2c'):
     vpc_id = AWS_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
@@ -165,15 +151,18 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
 
     for i in range(3):
         inst_id = inst_ids[i]
-        vm.install_mysqlClient(inst_id, printouts=True)
+
+        tubo = vm.install_package(inst_id, 'mysql-client', 'apt', printouts=True)
+        for pk_name in ['net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
+            tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
         vm.install_netTools(inst_id, printouts=True)
         vm.install_netcat(inst_id, printouts=True)
         vm.install_vim(inst_id, printouts=True)
         vm.install_tcpdump(inst_id, printouts=True)
         vm.install_iputilsPing(inst_id, printouts=True)
-    vm.install_appServerCmds(inst_ids[1])
-    vm.install_apache(inst_ids[0])
-    vm.install_webServerCmds(inst_ids[0])
+    vm.install_custom_package(inst_ids[1], 'app-server')
+    vm.install_package(inst_ids[0], 'apache', 'apt')
+    vm.install_custom_package(inst_ids[0], 'web-server')
 
     #The gateway is the VpcPeeringConnectionId
     peering_id = AWS_core.create_once('vpcpeer', 'BYOC_3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #AWS_core.assoc(jbox_vpc_id, vpc_id)
