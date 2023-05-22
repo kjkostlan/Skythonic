@@ -222,6 +222,8 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     return out, tubo
 
 def restart_vm(instance_id):
+    if instance_id is None:
+        raise Exception('None instance.')
     if type(instance_id) is list or type(instance_id) is tuple: # Many at once should be faster in parallel?
         instance_ids = [AWS_format.obj2id(iid) for iid in instance_id]
     else:
@@ -240,6 +242,8 @@ def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
 def update_apt(inst_or_pipe, printouts=True):
     # Updating apt with a restart seems to be the most robust option.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
+    if inst_or_pipe is None:
+        raise Exception('None instance/pipe')
     cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo done']
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     x0 = tubo.blit()
@@ -255,8 +259,7 @@ def update_apt(inst_or_pipe, printouts=True):
     if type(inst_or_pipe) is eye_term.MessyPipe:
         tubo.close()
         eye_term.log_pipes.append(tubo)
-    else:
-        return tubo
+    return tubo
 
 def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=True):
     # Installation.
@@ -356,6 +359,8 @@ def _test_pair(tubo, cmds, expected, prompts=None, printouts=True):
 def install_package(inst_or_pipe, package_name, package_manager, printouts=True):
     # Includes configuration for common packages; package_manager = 'apt' or 'pip'
     ### Per-package configurations:
+    if inst_or_pipe is None:
+        raise Exception('None instance/pipe')
     renames = {'ping':'iputils-ping','apache':'apache2', 'python':'python3-pip', 'python3':'python3-pip',
                'aws':'awscli'}
 
@@ -400,7 +405,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
                                     'Unpacking libaom3:amd64':''}
 
     ### Core installation:
-    package_name = package_name.lower().replace('-','_')
+    package_name = package_name.lower().replace('_','-')
     package_name = renames.get(package_name, package_name) # Lowercase, 0-9 -+ only.
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     prompts = {**_default_prompts(), **extra_prompts.get(package_name,{})}
@@ -426,7 +431,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
             print(f'Warning: no does-it-work test for {package_name}')
     else:
         t_cmds = t[0]; t_results = t[1]
-        tubo = _test_pair(tubo, cmds, expected, prompts=None, printouts=True)
+        tubo = _test_pair(tubo, t_cmds, t_results, prompts=None, printouts=True)
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()

@@ -113,7 +113,7 @@ class MessyPipe:
         self.history_contents = ['',''] # Includes history.
         self.cmd_history = []
         self.combined_contents = '' # Better approximation to the printout combining out and err.
-        self.close = None
+        self._close = None
         self.closed = False
         self.machine_id = None # Optional user data.
 
@@ -121,7 +121,7 @@ class MessyPipe:
         _to_bytes = lambda x: x if type(x) is bytes else x.encode()
 
         def _mk_close_fn(f):
-            def _tmp(self, x):
+            def _tmp(self):
                 log_pipes.append(self)
                 self.closed = True
                 f()
@@ -165,7 +165,7 @@ class MessyPipe:
             t.start()
             self.stdout_f = lambda: bytes(stdout_store.pop_all()) if return_bytes else ''.join(stdout_store.pop_all())
             self.stderr_f = lambda: bytes(stderr_store.pop_all()) if return_bytes else ''.join(stderr_store.pop_all())
-            self.close = _mk_close_fn(p.kill)
+            self._close = _mk_close_fn(p.kill)
         elif proc_type == 'ssh':
             #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
             #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
@@ -203,12 +203,16 @@ class MessyPipe:
                 self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, channel.recv_stderr)
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
-            self.close = _mk_close_fn(client.close)
+            self._close = _mk_close_fn(client.close)
             #self.API('echo ssh_session_begin')
         else: # TODO: more kinds of pipes.
             raise Exception('proc_type must be "shell" or "ssh"')
 
-        self.remake = lambda self: MessyPipe(self.proc_type, self.proc_args, self.printouts, return_bytes, use_file_objs)
+        def _remake(self):
+            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, return_bytes, use_file_objs)
+            out.machine_id = self.machine_id
+            return out
+        self._remake = _remake
 
     def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False, f_loop_catch=None):
         f = lambda: self._init_core(proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs)
@@ -329,12 +333,19 @@ class MessyPipe:
             polls_info.append(poll_info)
         return outputs, errs, polls_info
 
+    def close(self):
+        self._close(self)
+
     def sure_of_EOF(self):
         # Only if we are sure! Not all that useful since it isn't often triggered.
             #https://stackoverflow.com/questions/35266753/paramiko-python-module-hangs-at-stdout-read
         #    ended_list = [False, False] # TODO: fix this.
         #    return len(list(filter(lambda x: x, ended_list)))==len(ended_list)
         return False # TODO: maybe once in a while there are pipes that are provably closable.
+
+    def remake(self):
+        # If closed, opens a new pipe to the same settings and returns it.
+        return self._remake(self)
 
 ##################Expect-like tools, but with more granularity##################
 
