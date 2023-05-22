@@ -1,3 +1,4 @@
+#Tests of AWS bsic querying and resource creation/deletion.
 import time, sys
 import AWS.AWS_query as AWS_query
 import AWS.AWS_setup as AWS_setup

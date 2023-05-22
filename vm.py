@@ -1,4 +1,4 @@
-# Tools for keeping track of virtual machines, such as the login keys.
+# Tools for keeping track of virtual machines, such as the login keys
 # See: https://stackoverflow.com/questions/51026026/how-to-pass-private-key-as-text-to-ssh
 # Don't forget the chmod 600 on the keys!
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
@@ -23,8 +23,7 @@ def get_ip(x): # Address or machine.
 
 def update_vms_skythonic(diff):
     # Updates all skythonic files on VMs.
-    # Diff can be a partial or full update.
-    print('Warning: TODO: implement VM updates.')
+    print('Warning: TODO: implement this auto-update Skythonic function.')
 
 try: # Precompute.
     _imgs
@@ -114,14 +113,13 @@ def ssh_bash(instance_id, join_arguments=True):
     else:
         return out
 
-def ssh_pipe_kwargs(instance_id, timeout=8, printouts=True):
+def ssh_proc_args(instance_id):
     # Splat into into MessyPipe.
     username = 'ubuntu'; hostname = get_ip(instance_id) #username@hostname
     key_filename = covert.get_key(instance_id)[1]
-    return {'proc_type':'ssh', 'proc_args':{'username':username,'hostname':hostname, 'timeout':timeout, 'key_filename':key_filename},\
-            'printouts':printouts, 'machine_id':instance_id}
+    return{'username':username,'hostname':hostname, 'key_filename':key_filename}
 
-def patient_ssh_pipe(instance_id, printouts=True):
+def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False, use_file_objs=False):
     # Ensures it is started and waites in a loop.
     instance_id = AWS_format.obj2id(instance_id)
     in_state = AWS_format.id2obj(instance_id)['State']['Name']
@@ -129,7 +127,7 @@ def patient_ssh_pipe(instance_id, printouts=True):
         raise Exception(f'The instance {instance_id} has been terminated and can never ever be used again.')
     ec2c.start_instances(InstanceIds=[instance_id])
 
-    kwargs = ssh_pipe_kwargs(instance_id, timeout=8, printouts=printouts)
+    pargs = ssh_proc_args(instance_id)
 
     def _err_catch(e):
         if 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e):
@@ -142,7 +140,9 @@ def patient_ssh_pipe(instance_id, printouts=True):
             return True
         return False # Unrecognized errors are thrown.
 
-    return eye_term.MessyPipe(f_loop_catch=_err_catch, **kwargs)
+    out = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs, f_loop_catch=_err_catch)
+    out.machine_id = instance_id
+    return out
 
 def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
@@ -253,7 +253,8 @@ def update_apt(inst_or_pipe, printouts=True):
         raise Exception('update_apt has failed for some reason.')
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
-        tubo.close(); eye_term.log_pipes.append(tubo)
+        tubo.close()
+        eye_term.log_pipes.append(tubo)
     else:
         return tubo
 
@@ -292,7 +293,7 @@ def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printou
         return tubo
     print('Maybe a restart after an apt-update will help.')
     tubo.close()
-    restart_vm(tubo.proc_args.machine_id)
+    restart_vm(tubo.machine_id)
     tubo = tubo.remake()
     if not _err_fn(x):
         return tubo
@@ -324,7 +325,7 @@ def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', time
         elif not break_sys_packages or break_sys_packages.lower() == 'no' or break_sys_packages.lower() == 'deny' or break_sys_packages.lower() == 'forbidden':
             raise Exception('Externally managed env error and break_sys_packages arg set to "forbidden"')
     else:
-        raise Exception(f'Cannot verify installation for: {}')
+        raise Exception(f'Cannot verify pip installation for: {package_name}')
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
@@ -338,7 +339,7 @@ def _test_pair(tubo, cmds, expected, prompts=None, printouts=True):
         if i==1:
             if printouts:
                 print('Maybe a restart will help.')
-            tubo.close(); restart_vm(tubo.proc_args.machine_id)
+            tubo.close(); restart_vm(tubo.machine_id)
             tubo = tubo.remake()
             raise Exception(f'Even after a restart, the package {package_name} does not work properly.')
         elif i==1:
@@ -381,7 +382,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
     tests['iputils-ping'] = [['ping localhost'],['0% packet loss']]
     tests['apache2'] = [['sudo service apache2 start', 'curl -k http://localhost', 'sudo service apache2 stop'], ['<div class="section_header">', 'Apache2']]
     tests['python3-pip'] = [['python3', 'print(id)', 'quit()'],['<built-in function id>']]
-    twsts['aws-cli'] = [['aws ec2 describe-vpcs --output text',
+    tests['aws-cli'] = [['aws ec2 describe-vpcs --output text',
                          'python3', 'import boto3', "boto3.client('ec2').describe_vpcs()", 'quit()']]
 
     extra_prompts = {}
@@ -442,7 +443,7 @@ def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=T
     for k in list(file2contents.keys()):
         if file_io.dump_folder.split('/')[-1] in k:
             del file2contents[k]
-    tubo = send_files(tubo.proc_args.machine_id, file2contents, remote_root_folder, printouts=printouts)
+    tubo = send_files(tubo.machine_id, file2contents, remote_root_folder, printouts=printouts)
     return tubo
 
 def install_custom_package(inst_or_pipe, package_name, printouts=True):
@@ -503,7 +504,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
 
     ### Core installation:
     if file2contents is not None:
-        send_files(tubo.proc_args.machine_id, file2contents, remote_root_folder=dest_folder, printouts=printouts)
+        send_files(tubo.machine_id, file2contents, remote_root_folder=dest_folder, printouts=printouts)
     prompts = {**_default_prompts(), **extra_prompts}
     if cmd_list is not None:
         tubo = _cmd_list_fixed_prompt(tubo, cmd_list, tubo, lambda cmd:timeout)

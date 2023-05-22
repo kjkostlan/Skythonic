@@ -1,4 +1,4 @@
-# (This could be a mini project)
+# TODO: Make a mini project (and remove all aws code).
 # Shell is centered around a human seeing things, and it feeds streams.
 # The human often has to respond mid stream with "y" to continue, for example, or timeout if things are taking too long.
 # Programming languages, on the other hand, are sequential at thier core (often with tools to multitask).
@@ -115,6 +115,7 @@ class MessyPipe:
         self.combined_contents = '' # Better approximation to the printout combining out and err.
         self.close = None
         self.closed = False
+        self.machine_id = None # Optional user data.
 
         _to_str = lambda x: x if type(x) is str else x.decode()
         _to_bytes = lambda x: x if type(x) is bytes else x.encode()
@@ -210,11 +211,11 @@ class MessyPipe:
         self.remake = lambda self: MessyPipe(self.proc_type, self.proc_args, self.printouts, return_bytes, use_file_objs)
 
     def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False, f_loop_catch=None):
-        f = lambda: self._init_core(self, proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs)
+        f = lambda: self._init_core(proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs)
         if f_loop_catch is None: # No attempt at bieng patient.
             return f()
         else:
-            return eye_term.loop_try(f, f_loop_catch , f'Waiting for pipe to be setup' if printouts else '', delay=4)
+            return loop_try(f, f_loop_catch , f'Waiting for pipe to be setup' if printouts else '', delay=4)
 
     def blit(self, include_history=True):
         # Mash the output and error togetehr.

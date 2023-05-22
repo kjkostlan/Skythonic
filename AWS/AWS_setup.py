@@ -1,4 +1,4 @@
-# Tools to set up some common kinds of resources
+# Tools to set up common machines and simple networks.
 import boto3
 import AWS.AWS_core as AWS_core
 import AWS.AWS_query as AWS_query
@@ -57,7 +57,6 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
 
     addr = AWS_core.create_once('address', user_name+'_'+basename+'_address', True, Domain='vpc')
     wait_and_attach_address(inst_id, addr)
-    report, t0 = vm.update_Apt(inst_id, printouts=True, full_restart_here=True)
 
     ssh_bash = vm.ssh_bash(inst_id, True)
 
@@ -66,7 +65,6 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    tests = [t0]
     tubo = vm.install_package(inst_id, 'python3', 'apt', printouts=True)
     for pk_name in ['aws', 'net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
         tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
