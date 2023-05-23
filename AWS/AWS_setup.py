@@ -66,7 +66,8 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
         region_name = region_name[0:-1]
 
     tubo = vm.install_package(inst_id, 'python3', 'apt', printouts=True)
-    for pk_name in ['aws', 'net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
+    tubo = vm.install_package(tubo, 'aws', 'apt', printouts=True, user_name=user_name)
+    for pk_name in ['net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
         tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
     for pk_name in ['skythonic', 'host-list']:
         tubo = vm.install_custom_package(tubo, pk_name, printouts=True)

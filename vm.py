@@ -53,17 +53,17 @@ def ubuntu_aim_image():
 ###############################Command line#####################################
 
 def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
-    def check_line(_tubo, txt):
+    def _check_line(_tubo, txt):
         lline = eye_term.last_line(_tubo)
         if len(txt)<6: # Heuristic.
             return lline.strip().endswith(txt)
         else:
             return txt in lline
-    line_end_poll = lambda _tubo: check_line(_tubo, '$') or check_line(_tubo, '>')
+    line_end_poll = lambda _tubo: _check_line(_tubo, '$') or _check_line(_tubo, '>')
     f_polls = {'_vanilla':line_end_poll}
 
     for k in response_map.keys():
-        f_polls[k] = lambda _tubo, txt=k: check_line(_tubo, txt)
+        f_polls[k] = lambda _tubo, txt=k: _check_line(_tubo, txt)
     for cmd in cmds:
         _out, _err, poll_info = tubo.API(cmd, f_polls, timeout=timeout_f(cmd))
         if 'awscli not found' in str(_err): # TODO: handle this error.
@@ -254,7 +254,7 @@ def _test_pair(tubo, t_cmds, expected, prompts=None, printouts=True, timeout=12)
                 bprint('Maybe a restart will help.')
             tubo.close(); restart_vm(tubo.machine_id)
             tubo = tubo.remake()
-            raise Exception(f'Even after a restart, the package {package_name} does not work properly.')
+            raise Exception(f'Even after a restart, the package does not work properly.')
         elif i==1:
             raise Exception('Cannot (a restart may or may not help; pass in an instance_id instead of a pipe to do so).')
         x0 = tubo.blit()
@@ -361,8 +361,9 @@ def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', time
         tubo.close()
     return tubo
 
-def install_package(inst_or_pipe, package_name, package_manager, printouts=True):
+def install_package(inst_or_pipe, package_name, package_manager, printouts=True, **kwargs):
     # Includes configuration for common packages; package_manager = 'apt' or 'pip'
+    # kwargs is needed sometimes.
     ### Per-package configurations:
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
@@ -380,30 +381,33 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
             'cd /etc/apache2/sites-enabled',
             'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
     xtra_cmds['python3-pip'] = ['sudo apt-get install python-is-python3']
-    xtra_cmds['aws-cli'] = ['aws configure']
+    xtra_cmds['awscli'] = ['aws configure']
 
     xtra_code = {}
-    xtra_code['aws-cli'] = lambda tubo: ez_pip_package(tubo, 'boto3', printouts=True, break_sys_packages='polite', timeout=64)
+    xtra_code['awscli'] = lambda tubo: ez_pip_package(tubo, 'boto3', printouts=True, break_sys_packages='polite', timeout=64)
 
-    timeouts = {'aws-cli':128, 'python3-pip':128}
+    timeouts = {'awscli':128, 'python3-pip':128}
     timeout = timeouts.get(package_name, 64)
 
     tests = {}
     tests['iputils-ping'] = [['ping -c 1 localhost'],['0% packet loss']]
     tests['apache2'] = [['sudo service apache2 start', 'curl -k http://localhost', 'sudo service apache2 stop'], ['<div class="section_header">', 'Apache2']]
     tests['python3-pip'] = [['python3', 'print(id)', 'quit()'],['<built-in function id>']]
-    tests['aws-cli'] = [['aws ec2 describe-vpcs --output text',
-                         'python3', 'import boto3', "boto3.client('ec2').describe_vpcs()", 'quit()']]
+    tests['awscli'] = [['aws ec2 describe-vpcs --output text',
+                         'python3', 'import boto3', "boto3.client('ec2').describe_vpcs()", 'quit()'],
+                       ['CIDRBLOCKASSOCIATIONSET', "'Vpcs': [{'CidrBlock'"]]
 
     extra_prompts = {}
 
     package_name = renames.get(package_name.lower(), package_name.lower()) # Lowercase, 0-9 -+ only.
-    if package_name=='aws-cli': # This one requires using boto3 so is buried in this conditional.
-        bprint('aws-cli is a HEAVY installation. Should take about 5 min.')
+    if package_name=='awscli': # This one requires using boto3 so is buried in this conditional.
+        bprint('awscli is a HEAVY installation. Should take about 5 min.')
         region_name = boto3.session.Session().region_name
+        user_id = covert.user_dangerkey(kwargs['user_name'])
         publicAWS_key, privateAWS_key = covert.get_key(user_id)
+
         # The null prompts (empty string) may help to keep ssh alive:
-        extra_prompts['aws-cli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+        extra_prompts['awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
                                     'region name':region_name, 'output format':'json',
                                     'Get:42':'', 'Unpacking awscli':'',
                                     'Setting up fontconfig':'', 'Extracting templates from packages':'',
@@ -424,7 +428,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
         tubo = ez_pip_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
     xtra = xtra_cmds.get(package_name,None)
     if xtra is not None:
-        tubo = _cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), _default_prompts(), lambda cmd:timeout)
+        tubo = _cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), prompts, lambda cmd:timeout)
 
     f = xtra_code.get(package_name, None)
     if f is not None:
