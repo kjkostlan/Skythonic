@@ -11,6 +11,7 @@ try:
     log_pipes # All logs go here.
 except:
     log_pipes = []
+    rm_ctrl_chars_default = False
 
 def termstr(cmds, _out, _err):
     # Prints it in a format that is easier to read.
@@ -104,7 +105,7 @@ class MessyPipe:
         self.stderr_f = None
         self._streams = None # Mainly used for debugging.
         self.color = 'linux'
-        self.remove_control_chars = False # **Only on printing** Messier but should prevent terminal upsets.
+        self.remove_control_chars = rm_ctrl_chars_default # **Only on printing** Messier but should prevent terminal upsets.
         self.printouts = printouts # True when debugging.
         self.t0 = time.time() # Time since last clear.
         self.t1 = time.time() # Time of last sucessful read.
@@ -211,6 +212,7 @@ class MessyPipe:
         def _remake(self):
             out = MessyPipe(self.proc_type, self.proc_args, self.printouts, return_bytes, use_file_objs)
             out.machine_id = self.machine_id
+            out.remove_control_chars = self.remove_control_chars
             return out
         self._remake = _remake
 

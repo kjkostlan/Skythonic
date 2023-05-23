@@ -10,6 +10,11 @@ import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 
+def bprint(*txt):
+    # Use our own color to make things more clear.
+    txt = ' '.join([str(t) for t in txt])
+    print('\033[94m'+txt+'\033[0m', end='')
+
 def get_ip(x): # Address or machine.
     if type(x) is str and '.' in x: # Actually an ip address.
         return x
@@ -23,7 +28,7 @@ def get_ip(x): # Address or machine.
 
 def update_vms_skythonic(diff):
     # Updates all skythonic files on VMs.
-    print('Warning: TODO: implement this auto-update Skythonic function.')
+    bprint('Warning: TODO: implement this auto-update Skythonic function.')
 
 try: # Precompute.
     _imgs
@@ -69,6 +74,7 @@ def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
                 _,_, poll_info = tubo.API(txt, f_polls, timeout=timeout_f(cmd))
             else:
                 txt(tubo); break
+    return tubo
 
 def _default_prompts():
     # Default line end prompts and the needed input (str or function of the pipe).
@@ -96,7 +102,7 @@ def laconic_wait(tubo, proc_name, timeout_seconds=24):
         if 'foobar foobaz' in tubo.blit(True):
             break
         if i==timeout_seconds-1 and printouts:
-            print(f'WARNING: timeout on {proc_name}')
+            bprint(f'WARNING: timeout on {proc_name}')
 
 def ssh_bash(instance_id, join_arguments=True):
     # Get the ssh cmd to use the key to enter instance_id.
@@ -135,7 +141,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False, use_file_o
         if 'Error reading SSH protocol banner' in str(e):
             # This is a more serious error where we throw our hands up and just restart the machine.
             if printouts:
-                print('The dreaded banner error. Restarting and hope for the best!')
+                bprint('The dreaded banner error. Restarting and hope for the best!')
             ec2c.reboot_instances(InstanceIds=[instance_id])
             return True
         return False # Unrecognized errors are thrown.
@@ -154,7 +160,7 @@ def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
     _out, _err, _ = tubo.multi_API(bash_cmds, f_polls=f_polls)
     tubo.close()
     if printouts:
-        print('\nWe closed the SSH\n')
+        bprint('\nWe closed the SSH\n')
     return _out, _err, tubo
 
 def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
@@ -163,7 +169,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # Automatically creates folders.
     instance_id = AWS_format.obj2id(instance_id)
     if printouts:
-        print(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
+        bprint(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
     instance_id = AWS_format.obj2id(instance_id)
     ez_ssh_cmds(instance_id,[f'mkdir -p {eye_term.quoteless(remote_root_folder)}'], printouts=printouts)
 
@@ -198,7 +204,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     laconic_wait(tubo, 'scp upload '+instance_id, timeout_seconds=24)
 
     file_io.power_delete(tmp_dump)
-    print('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
+    bprint('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
     return tubo
 
 def download_remote_file(instance_id, remote_path, local_dest_folder=None, printouts=True, bin_mode=False):
@@ -238,6 +244,27 @@ def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
             return inst_or_pipe.remake()
         return inst_or_pipe
     return patient_ssh_pipe(inst_or_pipe, printouts=printouts)
+
+def _test_pair(tubo, t_cmds, expected, prompts=None, printouts=True, timeout=12):
+    if prompts is None:
+        prompts = _default_prompts()
+    for i in range(2):
+        if i==1:
+            if printouts:
+                bprint('Maybe a restart will help.')
+            tubo.close(); restart_vm(tubo.machine_id)
+            tubo = tubo.remake()
+            raise Exception(f'Even after a restart, the package {package_name} does not work properly.')
+        elif i==1:
+            raise Exception('Cannot (a restart may or may not help; pass in an instance_id instead of a pipe to do so).')
+        x0 = tubo.blit()
+        tubo = _cmd_list_fixed_prompt(tubo, t_cmds, prompts, lambda cmd:timeout)
+        x1 = tubo.blit(); x = x1[len(x0):]
+        if len(list(filter(lambda r: r not in x, expected))) == 0:
+            break # All test results are hit.
+        if i==1:
+            raise Exception(f'Even after a restart, this test failed.')
+    return tubo
 
 def update_apt(inst_or_pipe, printouts=True):
     # Updating apt with a restart seems to be the most robust option.
@@ -285,16 +312,16 @@ def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printou
     if not _err_fn(x):
         return tubo
     if printouts:
-        print('Cant find, maybe we need an apt update?')
+        bprint('Cant find, maybe we need an apt update?')
     tubo = update_apt(tubo, printouts)
     if not _err_fn(x):
         return tubo
     if printouts:
-        print('Cant find, maybe we need an apt update?')
+        bprint('Cant find, maybe we need an apt update?')
     tubo = update_apt(tubo, printouts)
     if not _err_fn(x):
         return tubo
-    print('Maybe a restart after an apt-update will help.')
+    bprint('Maybe a restart after an apt-update will help.')
     tubo.close()
     restart_vm(tubo.machine_id)
     tubo = tubo.remake()
@@ -314,7 +341,7 @@ def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', time
     x1 = tubo.blit(); x = x1[len(x0):]
 
     if printouts and break_sys_packages.lower() == 'yes':
-        print('WARNING: using --break-system-packages option')
+        bprint('WARNING: using --break-system-packages option')
     if 'Successfully installed '+package_name in x or 'Requirement already satisfied' in x:
         pass
     elif "Command 'pip' not found" in x or 'pip: command not found' in x:
@@ -334,35 +361,13 @@ def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', time
         tubo.close()
     return tubo
 
-def _test_pair(tubo, cmds, expected, prompts=None, printouts=True):
-    t_cmds = t[0]; t_results = t[1]
-    if prompts is None:
-        prompts = _default_prompts()
-    for i in range(2):
-        if i==1:
-            if printouts:
-                print('Maybe a restart will help.')
-            tubo.close(); restart_vm(tubo.machine_id)
-            tubo = tubo.remake()
-            raise Exception(f'Even after a restart, the package {package_name} does not work properly.')
-        elif i==1:
-            raise Exception('Cannot (a restart may or may not help; pass in an instance_id instead of a pipe to do so).')
-        x0 = tubo.blit()
-        tubo = _cmd_list_fixed_prompt(tubo, t_cmds, prompts, lambda cmd:timeout)
-        x1 = tubo.blit(); x = x1[len(x0):]
-        if len(filter(lambda r: r not in x, t_results)) == 0:
-            break # All test results in.
-        if i==1:
-            raise Exception(f'Even after a restart, this test failed.')
-    return tubo
-
 def install_package(inst_or_pipe, package_name, package_manager, printouts=True):
     # Includes configuration for common packages; package_manager = 'apt' or 'pip'
     ### Per-package configurations:
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
     renames = {'ping':'iputils-ping','apache':'apache2', 'python':'python3-pip', 'python3':'python3-pip',
-               'aws':'awscli'}
+               'aws':'awscli', 'netcat':'netcat-openbsd'}
 
     xtra_cmds = {}
     xtra_cmds['apache2'] = ['sudo apt install libcgi-session-perl',
@@ -384,7 +389,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
     timeout = timeouts.get(package_name, 64)
 
     tests = {}
-    tests['iputils-ping'] = [['ping localhost'],['0% packet loss']]
+    tests['iputils-ping'] = [['ping -c 1 localhost'],['0% packet loss']]
     tests['apache2'] = [['sudo service apache2 start', 'curl -k http://localhost', 'sudo service apache2 stop'], ['<div class="section_header">', 'Apache2']]
     tests['python3-pip'] = [['python3', 'print(id)', 'quit()'],['<built-in function id>']]
     tests['aws-cli'] = [['aws ec2 describe-vpcs --output text',
@@ -394,7 +399,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
 
     package_name = renames.get(package_name.lower(), package_name.lower()) # Lowercase, 0-9 -+ only.
     if package_name=='aws-cli': # This one requires using boto3 so is buried in this conditional.
-        print('aws-cli is a HEAVY installation. Should take about 5 min.')
+        bprint('aws-cli is a HEAVY installation. Should take about 5 min.')
         region_name = boto3.session.Session().region_name
         publicAWS_key, privateAWS_key = covert.get_key(user_id)
         # The null prompts (empty string) may help to keep ssh alive:
@@ -417,22 +422,20 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True)
         tubo = ez_apt_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
     elif package_manager=='pip':
         tubo = ez_pip_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
-
     xtra = xtra_cmds.get(package_name,None)
     if xtra is not None:
         tubo = _cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), _default_prompts(), lambda cmd:timeout)
+
     f = xtra_code.get(package_name, None)
     if f is not None:
         tubo = f(tubo)
-
     t = tests.get(package_name, None)
     if t is None:
         if printouts:
-            print(f'Warning: no does-it-work test for {package_name}')
+            bprint(f'Warning: no does-it-work test for {package_name}')
     else:
         t_cmds = t[0]; t_results = t[1]
         tubo = _test_pair(tubo, t_cmds, t_results, prompts=None, printouts=True)
-
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
     return tubo
@@ -462,6 +465,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
     extra_prompts = {}
     cmd_list = None
     xtra_code = None
+    timeout = 12
 
     ### Per package information:
     if package_name == 'skythonic': # Local copy.
@@ -512,7 +516,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
         send_files(tubo.machine_id, file2contents, remote_root_folder=dest_folder, printouts=printouts)
     prompts = {**_default_prompts(), **extra_prompts}
     if cmd_list is not None:
-        tubo = _cmd_list_fixed_prompt(tubo, cmd_list, tubo, lambda cmd:timeout)
+        tubo = _cmd_list_fixed_prompt(tubo, cmd_list, prompts, lambda cmd:timeout)
     if xtra_code is not None:
         tubo = xtra_code(tubo)
     if test_pair is not None:
