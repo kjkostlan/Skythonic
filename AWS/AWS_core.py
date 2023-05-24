@@ -112,7 +112,7 @@ def delete(desc_or_id):
         raise Exception('None ID')
 
     if delete_user_input_check[0]:
-        x = input('Type "delete" to confirm this AND ALL FUTURE deletions for this Python session:').lower().strip()
+        x = input('\033[95mType "delete" to confirm this AND ALL FUTURE deletions for this Python session:\033[0m').lower().strip()
         if x=='delete':
             delete_user_input_check[0] = False
         else:

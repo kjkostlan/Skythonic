@@ -53,6 +53,7 @@ def ubuntu_aim_image():
 ###############################Command line#####################################
 
 def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
+    x0 = tubo.blit()
     def _check_line(_tubo, txt):
         lline = eye_term.last_line(_tubo)
         if len(txt)<6: # Heuristic.
@@ -74,7 +75,8 @@ def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
                 _,_, poll_info = tubo.API(txt, f_polls, timeout=timeout_f(cmd))
             else:
                 txt(tubo); break
-    return tubo
+    x1 = tubo.blit(); x = x1[len(x0):]
+    return tubo, x
 
 def _default_prompts():
     # Default line end prompts and the needed input (str or function of the pipe).
@@ -245,6 +247,17 @@ def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
         return inst_or_pipe
     return patient_ssh_pipe(inst_or_pipe, printouts=printouts)
 
+def _restart_parent(tubo):
+    tubo.close()
+    t0 = time.time()
+    restart_vm(tubo.machine_id)
+    time.sleep(1.5)
+    tubo = tubo.remake()
+    t1 = time.time()
+    if t1-t0 < 8:
+        raise Exception(f'The restart happened too fast ({t1-t0} s), maybe it was short-circuted?')
+    return tubo
+
 def _test_pair(tubo, t_cmds, expected, prompts=None, printouts=True, timeout=12):
     if prompts is None:
         prompts = _default_prompts()
@@ -252,14 +265,11 @@ def _test_pair(tubo, t_cmds, expected, prompts=None, printouts=True, timeout=12)
         if i==1:
             if printouts:
                 bprint('Maybe a restart will help.')
-            tubo.close(); restart_vm(tubo.machine_id)
-            tubo = tubo.remake()
+            tubo = _restart_parent(tubo)
             raise Exception(f'Even after a restart, the package does not work properly.')
         elif i==1:
             raise Exception('Cannot (a restart may or may not help; pass in an instance_id instead of a pipe to do so).')
-        x0 = tubo.blit()
-        tubo = _cmd_list_fixed_prompt(tubo, t_cmds, prompts, lambda cmd:timeout)
-        x1 = tubo.blit(); x = x1[len(x0):]
+        tubo, x = _cmd_list_fixed_prompt(tubo, t_cmds, prompts, lambda cmd:timeout)
         if len(list(filter(lambda r: r not in x, expected))) == 0:
             break # All test results are hit.
         if i==1:
@@ -271,7 +281,7 @@ def update_apt(inst_or_pipe, printouts=True):
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
-    cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade', 'echo done']
+    cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade']
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     x0 = tubo.blit()
     #if prompts is None: # No need to have this as an actual argument.
@@ -288,48 +298,44 @@ def update_apt(inst_or_pipe, printouts=True):
         eye_term.log_pipes.append(tubo)
     return tubo
 
+def verify_apt_package(inst_or_pipe, package_name, timeout=8, printouts=True):
+    # Have we installed a package?
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+    tubo, x = _cmd_list_fixed_prompt(tubo, [f'dpkg -s {package_name}'], _default_prompts(), lambda cmd:timeout)
+    return tubo, 'install ok installed' in x
+
 def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=True):
     # Installation.
     # TODO: Use "sudo dpkg --configure -a" when needed.
+    #verify_apt_package(inst_or_pipe, package_name, printouts=True)
     if prompts is None:
         prompts = _default_prompts()
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     def _core_fn(tubo):
-        tubo = _to_pipe(tubo, printouts=printouts)
-        x0 = tubo.blit()
-        _cmd_list_fixed_prompt(tubo, [f'sudo apt install {package_name}', 'echo testing_install', f'dpkg -s {package_name}'], prompts, lambda cmd:timeout)
-        x1 = tubo.blit(); x = x1[len(x0):]
-        return x
-    def _err_fn(x):
-        if 'install ok installed' in x:
-            return False
-        elif 'Unable to locate package' in x:
-            return True
+        tubo, x = _cmd_list_fixed_prompt(tubo, [f'sudo apt install {package_name}'], prompts, lambda cmd:timeout)
+        if 'sudo dpkg --configure -a" when needed' in x:
+            raise Exception('TODO: figure out when to use sudo dpkg --configure -a which seems to be needed')
+        if 'Unable to locate package' in x or 'has no installation candidate' in x:
+            err = '404'
         else:
-            raise Exception(f'Unable to confirm installation of {package_name}')
+            tubo, is_installed = verify_apt_package(tubo, package_name, printouts=printouts)
+            err = None if is_installed else 'AFK'
+        return tubo, err
 
-    x = _core_fn(tubo)
-    if not _err_fn(x):
-        return tubo
-    if printouts:
-        bprint('Cant find, maybe we need an apt update?')
-    tubo = update_apt(tubo, printouts)
-    if not _err_fn(x):
-        return tubo
-    if printouts:
-        bprint('Cant find, maybe we need an apt update?')
-    tubo = update_apt(tubo, printouts)
-    if not _err_fn(x):
-        return tubo
-    bprint('Maybe a restart after an apt-update will help.')
-    tubo.close()
-    restart_vm(tubo.machine_id)
-    tubo = tubo.remake()
-    if not _err_fn(x):
-        return tubo
-    if 'sudo dpkg --configure -a" when needed' in tubo.blit():
-        raise Exception('TODO: figure out when to use sudo dpkg --configure -a which seems to be needed')
-    raise Exception(f'The package {package_name} cannot be found, we cant restart without knowning the instance_id.')
+    for o in range(2):
+        tubo, err = _core_fn(tubo)
+        if err is None:
+            return tubo
+        if err == 'AFK':
+            raise Exception('The package seemed to install, but installagion cant be verified')
+        if o==1:
+            raise Exception('Even after an update-apt + restart the package cannot be found.')
+        if printouts:
+            bprint(f'Cant find, {package_name} maybe we need an apt update + restart?')
+        tubo = update_apt(tubo, printouts)
+        tubo = _restart_parent(tubo)
+
+    return tubo
 
 def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', timeout=64, prompts=None, printouts=True):
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
@@ -337,8 +343,7 @@ def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', time
     powstr = ' --break-system-packages' if break_sys_packages.lower()=='yes' else ''
     if prompts is None:
         prompts = _default_prompts()
-    _cmd_list_fixed_prompt(tubo, [f'pip install {package_name}'+powstr], prompts, lambda cmd:timeout)
-    x1 = tubo.blit(); x = x1[len(x0):]
+    tubo, x = _cmd_list_fixed_prompt(tubo, [f'pip install {package_name}'+powstr], prompts, lambda cmd:timeout)
 
     if printouts and break_sys_packages.lower() == 'yes':
         bprint('WARNING: using --break-system-packages option')
@@ -428,7 +433,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True,
         tubo = ez_pip_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
     xtra = xtra_cmds.get(package_name,None)
     if xtra is not None:
-        tubo = _cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), prompts, lambda cmd:timeout)
+        tubo, x = _cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), prompts, lambda cmd:timeout)
 
     f = xtra_code.get(package_name, None)
     if f is not None:
@@ -478,7 +483,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
             if file_io.dump_folder.split('/')[-1] in k:
                 del file2contents[k]
         dest_folder = '~/Skythonic'
-        test_pair = [['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()' ,'echo done'], ['module']]
+        test_pair = [['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()'], ['module']]
         xtra_code = lambda tubo: ez_pip_package(tubo, 'paramiko', printouts=printouts, break_sys_packages='polite', timeout=64)
     elif package_name=='host-list':
         dest_folder = '/etc'
@@ -510,8 +515,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
                      'sudo systemctl restart apache2',
                      'systemctl status apache2.service --no-pager',
                      'sudo apachectl configtest',
-                     'journalctl -xeu apache2.service --no-pager',
-                     'echo done']
+                     'journalctl -xeu apache2.service --no-pager']
     else:
         raise Exception(f'Unrecognized custom package {package_name}')
 
@@ -520,7 +524,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
         send_files(tubo.machine_id, file2contents, remote_root_folder=dest_folder, printouts=printouts)
     prompts = {**_default_prompts(), **extra_prompts}
     if cmd_list is not None:
-        tubo = _cmd_list_fixed_prompt(tubo, cmd_list, prompts, lambda cmd:timeout)
+        tubo, x = _cmd_list_fixed_prompt(tubo, cmd_list, prompts, lambda cmd:timeout)
     if xtra_code is not None:
         tubo = xtra_code(tubo)
     if test_pair is not None:

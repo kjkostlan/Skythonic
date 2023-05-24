@@ -145,7 +145,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
         addr = AWS_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
         wait_and_attach_address(inst_ids[i], addr)
-        vm.update_Apt(inst_ids[i], printouts=True, full_restart_here=True)
+        #vm.update_apt(inst_ids[i], printouts=True, full_restart_here=True)
         cmds.append(vm.ssh_bash(inst_ids[i], True))
 
     for i in range(3):
@@ -154,11 +154,6 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         tubo = vm.install_package(inst_id, 'mysql-client', 'apt', printouts=True)
         for pk_name in ['net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
             tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
-        vm.install_netTools(inst_id, printouts=True)
-        vm.install_netcat(inst_id, printouts=True)
-        vm.install_vim(inst_id, printouts=True)
-        vm.install_tcpdump(inst_id, printouts=True)
-        vm.install_iputilsPing(inst_id, printouts=True)
     vm.install_custom_package(inst_ids[1], 'app-server')
     vm.install_package(inst_ids[0], 'apache', 'apt')
     vm.install_custom_package(inst_ids[0], 'web-server')

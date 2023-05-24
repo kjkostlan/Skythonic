@@ -50,12 +50,14 @@ def loop_try(f, f_catch, msg, delay=4):
         time.sleep(delay)
 
 def remove_control_chars(txt, label=True):
+    # They have a powerful compression effect that can prevent newlines from ever bieng printed again.
     for cix in list(range(32))+[127]:
-        if cix not in [9, 10]:
+        if cix not in [9, 10]: # [9, 10] = [\t, \n]
             if label:
                 txt = txt.replace(chr(cix),'֍'+hex(cix)+'֍')
             else:
                 txt = txt.replace(chr(cix),'')
+    txt = txt.replace('[', '֍') # Removes bash control chars.
     return txt
 
 def utf8_one_char(read_bytes_fn):
@@ -117,6 +119,8 @@ class MessyPipe:
         self._close = None
         self.closed = False
         self.machine_id = None # Optional user data.
+        self._use_file_objs = use_file_objs
+        self._return_bytes = return_bytes
 
         _to_str = lambda x: x if type(x) is str else x.decode()
         _to_bytes = lambda x: x if type(x) is bytes else x.encode()
@@ -210,7 +214,7 @@ class MessyPipe:
             raise Exception('proc_type must be "shell" or "ssh"')
 
         def _remake(self):
-            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, return_bytes, use_file_objs)
+            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, self._return_bytes, self._use_file_objs, self.f_loop_catch)
             out.machine_id = self.machine_id
             out.remove_control_chars = self.remove_control_chars
             return out
@@ -218,6 +222,7 @@ class MessyPipe:
 
     def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False, f_loop_catch=None):
         f = lambda: self._init_core(proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs)
+        self.f_loop_catch = f_loop_catch
         if f_loop_catch is None: # No attempt at bieng patient.
             return f()
         else:
@@ -347,6 +352,10 @@ class MessyPipe:
 
     def remake(self):
         # If closed, opens a new pipe to the same settings and returns it.
+        if self.f_loop_catch is None: # No attempt at bieng patient.
+            return self._remake(self)
+        else:
+            return loop_try(self._remake(self), self.f_loop_catch , f'Waiting for pipe to be remade' if self.printouts else '', delay=4)
         return self._remake(self)
 
 ##################Expect-like tools, but with more granularity##################
