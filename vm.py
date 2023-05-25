@@ -300,7 +300,9 @@ def verify_apt_package(inst_or_pipe, package_name, timeout=8, printouts=True):
     # Have we installed a package?
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     tubo, x = _cmd_list_fixed_prompt(tubo, [f'dpkg -s {package_name}'], _default_prompts(), lambda cmd:timeout)
-    return tubo, 'install ok installed' in x or 'install ok unpacked' in x
+    verify = 'install ok installed' in x or 'install ok unpacked' in x
+    falsify = 'is not installed' in x
+    return tubo, True if verify else (False if falsify else None)
 
 def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=True):
     # Installation.
@@ -327,7 +329,7 @@ def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printou
             err = 'DEP'
         if err is None:
             tubo, is_installed = verify_apt_package(tubo, package_name, printouts=printouts)
-            err = None if is_installed else 'AFK'
+            err = None if is_installed else ('AFK' if is_installed is None else 'FAIL')
         return tubo, err
 
     for o in range(2):
