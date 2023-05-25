@@ -104,13 +104,16 @@ def pipe_loop(tubo): # For ever watching... untill the thread gets closed.
     dt0 = 0.001
     dt1 = 2.0
     dt = dt0
-    while not self.closed:
-        n = tubo.update()
-        if n==0:
-            dt = dt0
-        else:
-            dt = min(dt*2, dt1)
-        time.sleep(dt)
+    while not tubo.closed:
+        try:
+            n = tubo.update()
+            if n==0:
+                dt = dt0
+            else:
+                dt = min(dt*2, dt1)
+            time.sleep(dt)
+        except Exception as e:
+            tubo.loop_err = e
 
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
@@ -124,21 +127,14 @@ class MessyPipe:
         self.color = 'linux'
         self.remove_control_chars = rm_ctrl_chars_default # **Only on printing** Messier but should prevent terminal upsets.
         self.printouts = printouts # True when debugging.
-        self._return_bytes = return_bytes
+        self.return_bytes = return_bytes
         self._close = None
         self.closed = False
         self.machine_id = None # Optional user data.
         self.lock = threading.Lock()
-        self.loop_thread = threading.Thread(target=pipe_loop, args=(self))
-        self.loop_thread.daemon = True; self.loop_thread.start()
-
-        self.t0 = time.time() # Time since last clear.
-        self.t1 = time.time() # Time of last sucessful read.
-        self.poll_log = [] # Polling fns can put debug-useful info here.
-        self.contents = ['',''] # Output and error.
-        self.history_contents = ['',''] # Includes history.
-        self.cmd_history = []
-        self.combined_contents = '' # Better approximation to the printout combining out and err.
+        self.loop_thread = threading.Thread(target=pipe_loop, args=[self])
+        self.packets = [['<init>', b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()]] # Each command: [cmd, out, err, time0, time1]
+        self.loop_err = None
 
         _to_str = lambda x: x if type(x) is str else x.decode()
         _to_bytes = lambda x: x if type(x) is bytes else x.encode()
@@ -168,7 +164,7 @@ class MessyPipe:
                 raise Exception('For the shell, the type of proc args must be str, list, or dict.')
             def _read_loop(the_pipe, safe_list):
                 while True:
-                    safe_list.append(ord(the_pipe.read(1)) if return_bytes else utf8_one_char(the_pipe.read))
+                    safe_list.append(ord(the_pipe.read(1)) if self.return_bytes else utf8_one_char(the_pipe.read))
                 #for line in iter(out.readline, b''): # Could readline be better or is it prone to getting stuck?
                 #    safe_list.append(line)
                 #out.close()
@@ -215,30 +211,36 @@ class MessyPipe:
             def _get_elements(ready_fn, read_fn):
                 out = []
                 while ready_fn():
-                    out.append(ord(read_fn(1)) if return_bytes else utf8_one_char(read_fn))
-                return ''.join(out).encode() if return_bytes else ''.join(out)
+                    out.append(ord(read_fn(1)) if self.return_bytes else utf8_one_char(read_fn))
+                return ''.join(out).encode() if self.return_bytes else ''.join(out)
             self.stdout_f = lambda: _get_elements(channel.recv_ready, channel.recv)
             self.stderr_f = lambda: _get_elements(channel.recv_stderr_ready, channel.recv_stderr)
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
             self._close = _mk_close_fn(client.close)
-            while True:
-                try:
-                    self.API('echo ssh_session_begin', timeout=2.0) # This may prevent sending commands too early.
-                    break
-                except Exception as e:
-                    if 'API timeout' not in str(e):
-                        raise e
-                print('Waiting for ssh pipe to be ready for a simple bash cmd.')
         else: # TODO: more kinds of pipes.
             raise Exception('proc_type must be "shell" or "ssh"')
 
+        if self.stdout_f is None or self.stderr_f is None:
+            raise Exception('stdout_f and/or stderr_f not set.')
+
         def _remake(self):
-            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, self._return_bytes, self.f_loop_catch)
+            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, self.return_bytes, self.f_loop_catch)
             out.machine_id = self.machine_id
             out.remove_control_chars = self.remove_control_chars
             return out
         self._remake = _remake
+
+        self.update()
+        self.loop_thread.daemon = True; self.loop_thread.start() # This must only happen when the setup is complete.
+        while True:
+            try:
+                self.API('echo pipe_begin', timeout=2.0) # This may prevent sending commands too early.
+                break
+            except Exception as e:
+                if 'API timeout' not in str(e):
+                    raise e
+            print(f'Waiting for {proc_pipe} pipe to be ready for a simple bash cmd.')
 
     def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, f_loop_catch=None):
         f = lambda: self._init_core(proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes)
@@ -249,12 +251,13 @@ class MessyPipe:
             return loop_try(f, f_loop_catch , f'Waiting for pipe to be setup' if printouts else '', delay=4)
 
     def blit(self, include_history=True):
-        # Mash the output and error togetehr.
-        out = ''
-        if include_history:
-            out = ''.join(self.history_contents)
-        out = out + ''.join(self.contents)
-        return out
+        # Mash the output and error together.
+        with self.lock:
+            self.assert_no_loop_err()
+            if include_history:
+                return ''.join([pk[1]+pk[2] for pk in self.packets])
+            else:
+                return self.packets[-1][1]+self.packets[-1][2]
 
     def update(self): # Returns the len of the data.
         with self.lock:
@@ -271,90 +274,75 @@ class MessyPipe:
                     print(_boring_txt(_out), end='') # Newlines should be contained within the feed so there is no need to print them directly.
                 if len(_err)>0:
                     print(_boring_txt(_err), end='')
-            self.combined_contents = self.combined_contents+_out+_err
-            new_stuff = [_out, _err]
-            for i in range(len(new_stuff)):
-                if len(new_stuff[i])>0:
-                    self.t1 = time.time() # T1 is updated whenever we recieve anything.
-                    self.contents[i] = self.contents[i]+new_stuff[i]
+            if len(_out)+len(_err)>0:
+                self.packets[-1][1] = self.packets[-1][1]+_out
+                self.packets[-1][2] = self.packets[-1][2]+_err
+                self.packets[-1][4] = time.time()
             return len(_out)+len(_err)
 
-    def empty(self, remove_history=False):
-        self.t0 = time.time()
-        self.history_contents = [self.history_contents[i]+self.contents[i] for i in range(len(self.contents))]
-        self.contents = ['' for _ in self.contents]
-        self.combined_contents = ''
-        if remove_history:
-            self.history_contents = ['' for _ in self.history_contents]; self.cmd_history = []; self.poll_log = []
-
     def drought_len(self):
-        return time.time() - self.t1
+        # How long since neither stdout nor stderr spoke to us.
+        return time.time() - self.packets[-1][4]
 
     def send(self, txt, include_newline=True, suppress_input_prints=False):
         # The non-blocking operation.
         #https://stackoverflow.com/questions/6203653/how-do-you-execute-multiple-commands-in-a-single-session-in-paramiko-python
         if self.closed:
             raise Exception('The pipe has been closed and cannot accept commands; use pipe.remake() to get a new, open pipe.')
-        self.cmd_history.append(txt)
         if self.printouts and not suppress_input_prints:
             if self.color=='linux':
                 #https://stackoverflow.com/questions/287871/how-do-i-print-colored-text-to-the-terminal
                 print('\x1b[0;33;40m'+'→'+'\x1b[6;30;42m' +txt+'\x1b[0;33;40m'+'←'+'\x1b[0m')
             else:
                 print('→'+txt+'←')
+        self.packets.append([txt, b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()])
         self.send_f(txt, include_newline=include_newline)
 
-    def API(self, txt, f_polls=None, timeout=8.0, dt_min=0.001, dt_max=2.0):
+    def API(self, txt, f_polls=None, timeout=8.0):
         # Behaves like an API, returning out, err, and information about which polling fn suceeded.
         # Optional timeout if all polling fns fail.
         self.send(txt)
-        dt = dt_min
-        npoll0 = len(self.poll_log)
         if f_polls is None:
             f_polls = {'default':standard_is_done}
         elif callable(f_polls):
             f_polls = {'user':f_polls}
         elif type(f_polls) is list or type(f_polls) is tuple:
             f_polls = dict(zip(range(len(f_polls)), f_polls))
+
         which_poll=None
         while which_poll is None:
             for k in f_polls.keys():
                 if f_polls[k](self):
                     which_poll=k # Break out of the loop
                     break
-            time.sleep(dt)
-            dt = min(dt*1.414, dt_max)
+            time.sleep(0.1)
             td = self.drought_len()
             if self.printouts:
-                if td>6:
+                if td>min(6, 0.75*timeout):
                     if self.color=='linux':
                         # Colors: https://misc.flogisoft.com/bash/tip_colors_and_formatting
                         print('\x1b[0;33;40m'+f'{td} seconds has elapsed with dry pipes.'+'\x1b[0m')
                     else:
                         print(f'{td} seconds has elapsed with dry pipes.')
-            self.update()
             if timeout is not None and td>timeout:
-                self.poll_log.append({'API_timeout':True})
                 raise Exception(f'API timeout on cmd {txt}; ')
-        if len(self.poll_log)==npoll0:
-            #raise Exception('Debug mode to find fns which don't record properly, remove this raise in production:', f_poll)
-            self.poll_log.append({'f_poll forgot to append pipe.poll_log when it returned true':True})
 
-        self.poll_log[-1]['f'] = f_polls
-        self.poll_log[-1]['drought'] = self.drought_len()
-        self.poll_log[-1]['last_cmd'] = self.cmd_history[-1]
-        self.poll_log[-1]['combined_contents'] = self.combined_contents
-        out = self.contents.copy()
-        self.empty()
-        return out[0], out[1], which_poll
+        self.assert_no_loop_err()
 
-    def multi_API(self, cmds, f_polls=None, dt_min=0.0001, dt_max=1):
+        return self.packets[-1][1], self.packets[-1][2], which_poll
+
+    def assert_no_loop_err(self):
+        if self.loop_err:
+            print('Polling loop exception:')
+            raise self.loop_err
+
+    def multi_API(self, cmds, f_polls=None, timeout=8):
         # For simplier series of commands.
         # Returns output, errors. f_poll can be a list of fns 1:1 with cmds.
         outputs = []; errs = []; polls_info = []
         self.empty()
         for i in range(len(cmds)):
-            out, err, poll_info = self.API(cmds[i], f_polls=f_polls, dt_min=dt_min, dt_max=dt_max)
+            out, err, poll_info = self.API(cmds[i], f_polls=f_polls, timeout=timeout)
             outputs.append(out)
             errs.append(err)
             polls_info.append(poll_info)
@@ -396,7 +384,7 @@ def looks_like_prompt(line):
 
 def last_line(p):
     # Last non-empty line (empty if no such line exists).
-    txt = ''.join(p.contents) # Mash the out and err together.
+    txt = p.blit(include_history=False)
     lines = _non_empty_lines(txt)
     if len(lines)==0:
         return ''
@@ -412,15 +400,9 @@ def with_timeout(p, f, timeout=6, message=None, printouts=True):
         message = str(f)
     if f(p) or p.sure_of_EOF():
         x['reason'] = 'Detected '+str(message)
-        p.poll_log.append(x)
         return True
     if p.drought_len()>timeout:
-        msg1 = f'Warning: timeout of {timeout} exceeded for {message}.'
-        x['reason'] = msg1
-        if printouts:
-            print(msg1)
-        p.poll_log.append(x)
-        return True
+        raise Exception('Timeout')
     return False
 
 def basic_wait(p, timeout=1.25):
@@ -436,10 +418,11 @@ def basic_expect_fn(p, the_pattern, is_re=False, timeout=12, printouts=True):
 def standard_is_done(p):
     # A default works-most-of-the-time pipe dryness detector.
     # Will undergo a lot of tweaks that try to extract the spatial information.
+    txt = p.blit(include_history=False)
     if p.proc_type=='shell': #Sometimes they use empty lines!?
-        lines = p.combined_contents.replace('\r\n','\n').split('\n')
-        if len(p.combined_contents)>0 and len(lines[-1].strip()) == 0:
+        lines = txt.replace('\r\n','\n').split('\n')
+        if len(txt)>0 and len(lines[-1].strip()) == 0:
             return True
 
-    lines = _non_empty_lines(p.combined_contents)
+    lines = _non_empty_lines(txt)
     return len(lines)>0 and looks_like_prompt(lines[-1])
