@@ -36,6 +36,8 @@ def quoteless(the_path):
 def loop_try(f, f_catch, msg, delay=4):
     # Waiting for something? Keep looping untill it succedes!
     # Useful for some shell/concurrency operations.
+    if not callable(f):
+        raise Exception(f'{f} which is type {type(f)} is not a callable')
     while True:
         try:
             return f()
@@ -44,12 +46,12 @@ def loop_try(f, f_catch, msg, delay=4):
                 if callable(msg):
                     msg = msg()
                 if len(msg)>0:
-                    print('Loop try ('+str(e)+') '+msg)
+                    print('Loop try ('+'\033[90m'+str(e)+'\033[0m'+') '+msg)
             else:
                 raise e
         time.sleep(delay)
 
-def remove_control_chars(txt, label=True):
+def remove_control_chars(txt, label=True, rm_bash_escapes=False):
     # They have a powerful compression effect that can prevent newlines from ever bieng printed again.
     for cix in list(range(32))+[127]:
         if cix not in [9, 10]: # [9, 10] = [\t, \n]
@@ -57,7 +59,8 @@ def remove_control_chars(txt, label=True):
                 txt = txt.replace(chr(cix),'֍'+hex(cix)+'֍')
             else:
                 txt = txt.replace(chr(cix),'')
-    txt = txt.replace('[', '֍') # Removes bash control chars.
+    if rm_bash_escapes:
+        txt = txt.replace('[', '֍') # Removes bash control chars.
     return txt
 
 def utf8_one_char(read_bytes_fn):
@@ -180,8 +183,8 @@ class MessyPipe:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
             #print('Connecting paramiko SSH with these arguments:', proc_args)
-            if not proc_args:
-                proc_args['banner_timeout'] = 32 # Does this help?
+            #if not proc_args:
+            #    proc_args['banner_timeout'] = 32 # Does this help?
             client.connect(**proc_args) #password=passphrase) #proc_args['hostname'],
             use_keepalive=True
             if use_keepalive: #https://stackoverflow.com/questions/5402919/prevent-sftp-ssh-session-timeout-with-paramiko
@@ -209,7 +212,14 @@ class MessyPipe:
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
             self._close = _mk_close_fn(client.close)
-            #self.API('echo ssh_session_begin')
+            while True:
+                try:
+                    self.API('echo ssh_session_begin', timeout=2.0) # This may prevent sending commands too early.
+                    break
+                except Exception as e:
+                    if 'API timeout' not in str(e):
+                        raise e
+                print('Waiting for ssh pipe to be ready for a simple bash cmd.')
         else: # TODO: more kinds of pipes.
             raise Exception('proc_type must be "shell" or "ssh"')
 
@@ -241,7 +251,7 @@ class MessyPipe:
         def _boring_txt(txt):
             txt = txt.replace('\r\n','\n')
             if self.remove_control_chars:
-                remove_control_chars(txt, True)
+                txt = remove_control_chars(txt, True)
             return txt
         _out = self.stdout_f()
         _err = self.stderr_f()
@@ -298,7 +308,7 @@ class MessyPipe:
         while which_poll is None:
             for k in f_polls.keys():
                 if f_polls[k](self):
-                    which_poll=k
+                    which_poll=k # Break out of the loop
                     break
             time.sleep(dt)
             dt = min(dt*1.414, dt_max)
@@ -312,10 +322,8 @@ class MessyPipe:
                         print(f'{td} seconds has elapsed with dry pipes.')
             self.update()
             if timeout is not None and td>timeout:
-                if self.printouts:
-                    print(f'Warning: API_timeout on cmd {txt}; ')
                 self.poll_log.append({'API_timeout':True})
-                break
+                raise Exception(f'API timeout on cmd {txt}; ')
         if len(self.poll_log)==npoll0:
             #raise Exception('Debug mode to find fns which don't record properly, remove this raise in production:', f_poll)
             self.poll_log.append({'f_poll forgot to append pipe.poll_log when it returned true':True})
@@ -355,7 +363,7 @@ class MessyPipe:
         if self.f_loop_catch is None: # No attempt at bieng patient.
             return self._remake(self)
         else:
-            return loop_try(self._remake(self), self.f_loop_catch , f'Waiting for pipe to be remade' if self.printouts else '', delay=4)
+            return loop_try(lambda: self._remake(self), self.f_loop_catch , f'Waiting for pipe to be remade' if self.printouts else '', delay=4)
         return self._remake(self)
 
 ##################Expect-like tools, but with more granularity##################

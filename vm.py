@@ -50,7 +50,16 @@ def ubuntu_aim_image():
     imgs_sort = list(sorted(imgs,key=lambda d:d.get('CreationDate', '')))
     return imgs_sort[-1]['ImageId']
 
-###############################Command line#####################################
+###############################SSH and SCP######################################
+
+def ssh_err_catch(e):
+    # SSH errors can be frusterating.
+    if 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e):
+        return True
+    if 'Error reading SSH protocol banner' in str(e):
+        # May need a restart, but on the other hand restarts may cause this error.
+        return True
+    return False # Unrecognized errors are thrown.
 
 def _cmd_list_fixed_prompt(tubo, cmds, response_map, timeout_f):
     x0 = tubo.blit()
@@ -137,18 +146,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False, use_file_o
 
     pargs = ssh_proc_args(instance_id)
 
-    def _err_catch(e):
-        if 'Unable to connect to' in str(e) or 'timed out' in str(e) or 'encountered RSA key, expected OPENSSH key' in str(e) or 'Connection reset by peer' in str(e):
-            return True
-        if 'Error reading SSH protocol banner' in str(e):
-            # This is a more serious error where we throw our hands up and just restart the machine.
-            if printouts:
-                bprint('The dreaded banner error. Restarting and hope for the best!')
-            ec2c.reboot_instances(InstanceIds=[instance_id])
-            return True
-        return False # Unrecognized errors are thrown.
-
-    out = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs, f_loop_catch=_err_catch)
+    out = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs, f_loop_catch=ssh_err_catch)
     out.machine_id = instance_id
     return out
 
@@ -302,7 +300,7 @@ def verify_apt_package(inst_or_pipe, package_name, timeout=8, printouts=True):
     # Have we installed a package?
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     tubo, x = _cmd_list_fixed_prompt(tubo, [f'dpkg -s {package_name}'], _default_prompts(), lambda cmd:timeout)
-    return tubo, 'install ok installed' in x
+    return tubo, 'install ok installed' in x or 'install ok unpacked' in x
 
 def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=True):
     # Installation.
@@ -311,13 +309,23 @@ def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printou
     if prompts is None:
         prompts = _default_prompts()
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+
     def _core_fn(tubo):
-        tubo, x = _cmd_list_fixed_prompt(tubo, [f'sudo apt install {package_name}'], prompts, lambda cmd:timeout)
-        if 'sudo dpkg --configure -a" when needed' in x:
+        while True:
+            tubo, x = _cmd_list_fixed_prompt(tubo, [f'sudo apt install {package_name}'], prompts, lambda cmd:timeout)
+            if 'Unable to acquire the dpkg frontend lock' in x:
+                bprint('Frontend lock error; retrying.')
+                time.sleep(2.0)
+            break
+        x1 = x.replace('\n',' ').replace('\r','')
+        err = None
+        if 'sudo dpkg --configure -a" when needed' in x1:
             raise Exception('TODO: figure out when to use sudo dpkg --configure -a which seems to be needed')
-        if 'Unable to locate package' in x or 'has no installation candidate' in x:
+        if 'Unable to locate package' in x or 'has no installation candidate' in x1:
             err = '404'
-        else:
+        if 'Some packages could not be installed. This may mean that you have requested an impossible situation' in x1:
+            err = 'DEP'
+        if err is None:
             tubo, is_installed = verify_apt_package(tubo, package_name, printouts=printouts)
             err = None if is_installed else 'AFK'
         return tubo, err
@@ -327,9 +335,9 @@ def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printou
         if err is None:
             return tubo
         if err == 'AFK':
-            raise Exception('The package seemed to install, but installagion cant be verified')
+            raise Exception('The package seemed to install, but installation cant be verified')
         if o==1:
-            raise Exception('Even after an update-apt + restart the package cannot be found.')
+            raise Exception('Even after an update-apt + restart the package cannot be found/installed.')
         if printouts:
             bprint(f'Cant find, {package_name} maybe we need an apt update + restart?')
         tubo = update_apt(tubo, printouts)
@@ -414,6 +422,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True,
         # The null prompts (empty string) may help to keep ssh alive:
         extra_prompts['awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
                                     'region name':region_name, 'output format':'json',
+                                    'Geographic area':11, #11 = SystemV
                                     'Get:42':'', 'Unpacking awscli':'',
                                     'Setting up fontconfig':'', 'Extracting templates from packages':'',
                                     'Unpacking libaom3:amd64':''}
