@@ -97,7 +97,6 @@ def _default_prompts():
             chs = ['\033[1A','\033[1B','\033[1C','\033[1D','o','O','y','Y','\n']
             ch = random.choice(chs)
             tubo.send(ch, suppress_input_prints=True, include_newline=False)
-            tubo.update()
         return tubo.API('random_bashing_done')
 
     return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
@@ -109,7 +108,7 @@ def laconic_wait(tubo, proc_name, timeout_seconds=24):
     timeout_seconds = int(timeout_seconds)
     for i in range(timeout_seconds): # TODO: set the timeout based on the number/size of files.
         tubo.send('echo foo{bar,baz}')
-        time.sleep(1); tubo.update()
+        time.sleep(1)
         if 'foobar foobaz' in tubo.blit(True):
             break
         if i==timeout_seconds-1 and printouts:
@@ -285,6 +284,10 @@ def update_apt(inst_or_pipe, printouts=True):
     #if prompts is None: # No need to have this as an actual argument.
     prompts = _default_prompts()
     _cmd_list_fixed_prompt(tubo, cmds, prompts, lambda cmd:64.0)
+
+    # TODO:
+    #E: Could not get lock /var/lib/dpkg/lock-frontend - open (11: Resource temporarily unavailable)
+    #E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is another process using it?
 
     # Verification of installation:
     x1 = tubo.blit(); x = x1[len(x0):]

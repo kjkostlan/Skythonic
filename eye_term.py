@@ -5,7 +5,7 @@
 # *Of course* the 2023+ solution is AI, but this one should be fairly simple.
 #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
 #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
-import time, re, os, sys, threading
+import time, re, os, sys, threading, select
 
 try:
     log_pipes # All logs go here.
@@ -76,7 +76,7 @@ def utf8_one_char(read_bytes_fn):
                 raise e
             bytes = bytes+read_bytes_fn(1)
 
-class ThreadSafeList():
+class ThreadSafeList(): # TODO: deprecated.
     # Fill in a read loop on another thread and then use pop_all()
     # https://superfastpython.com/thread-safe-list/
     def __init__(self):
@@ -100,6 +100,18 @@ class ThreadSafeList():
             self._list = []
             return out
 
+def pipe_loop(tubo): # For ever watching... untill the thread gets closed.
+    dt0 = 0.001
+    dt1 = 2.0
+    dt = dt0
+    while not self.closed:
+        n = tubo.update()
+        if n==0:
+            dt = dt0
+        else:
+            dt = min(dt*2, dt1)
+        time.sleep(dt)
+
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
     def _init_core(self, proc_type, proc_args=None, printouts=True, return_bytes=False):
@@ -112,6 +124,14 @@ class MessyPipe:
         self.color = 'linux'
         self.remove_control_chars = rm_ctrl_chars_default # **Only on printing** Messier but should prevent terminal upsets.
         self.printouts = printouts # True when debugging.
+        self._return_bytes = return_bytes
+        self._close = None
+        self.closed = False
+        self.machine_id = None # Optional user data.
+        self.lock = threading.Lock()
+        self.loop_thread = threading.Thread(target=pipe_loop, args=(self))
+        self.loop_thread.daemon = True; self.loop_thread.start()
+
         self.t0 = time.time() # Time since last clear.
         self.t1 = time.time() # Time of last sucessful read.
         self.poll_log = [] # Polling fns can put debug-useful info here.
@@ -119,10 +139,6 @@ class MessyPipe:
         self.history_contents = ['',''] # Includes history.
         self.cmd_history = []
         self.combined_contents = '' # Better approximation to the printout combining out and err.
-        self._close = None
-        self.closed = False
-        self.machine_id = None # Optional user data.
-        self._return_bytes = return_bytes
 
         _to_str = lambda x: x if type(x) is str else x.decode()
         _to_bytes = lambda x: x if type(x) is bytes else x.encode()
@@ -158,21 +174,21 @@ class MessyPipe:
                 #out.close()
             p = subprocess.Popen(procX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=posix_mode) #bufsize=1, shell=True
 
-            def _send(x, include_newline=True):
-                x = _to_bytes(_to_str(x)+'\n' if include_newline else x)
-                p.stdin.write(x); p.stdin.flush() # Flushing seems to be needed.
-            self.send_f = _send
-            stdout_store = ThreadSafeList()
-            stderr_store = ThreadSafeList()
-            t = threading.Thread(target=_read_loop, args=(p.stdout, stdout_store))
-            t.daemon = True # thread dies with the program
-            t.start()
-            t = threading.Thread(target=_read_loop, args=(p.stderr, stderr_store))
-            t.daemon = True # thread dies with the program
-            t.start()
-            self.stdout_f = lambda: bytes(stdout_store.pop_all()) if return_bytes else ''.join(stdout_store.pop_all())
-            self.stderr_f = lambda: bytes(stderr_store.pop_all()) if return_bytes else ''.join(stderr_store.pop_all())
-            self._close = _mk_close_fn(p.kill)
+            def _stdouterr_f(is_err):
+                p_std = [p.stderr if is_err else p.stdout]
+                ready_to_read, _, _ = select.select([p_std], [], [], 0)
+                all_data = ''
+                if p_std in ready_to_read:
+                    all_data = p_std.read()
+                if type(all_data) is bytes and not self.return_bytes:
+                    all_data = all_data.decode('UTF-8')
+                if type(all_data) is not bytes and self.return_bytes:
+                    all_data = all_data.encode()
+                return all_data
+
+            self.stdout_f = lambda: _stdouterr_f(False)
+            self.stderr_f = lambda: _stdouterr_f(True)
+
         elif proc_type == 'ssh':
             #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
             #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
@@ -196,13 +212,13 @@ class MessyPipe:
                 x = _to_str(x)+('\n' if include_newline else '')
                 channel.send(x)
             self.send_f = _send
-            def _get_bytes(ready_fn, read_fn):
+            def _get_elements(ready_fn, read_fn):
                 out = []
                 while ready_fn():
                     out.append(ord(read_fn(1)) if return_bytes else utf8_one_char(read_fn))
                 return ''.join(out).encode() if return_bytes else ''.join(out)
-            self.stdout_f = lambda: _get_bytes(channel.recv_ready, channel.recv)
-            self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, channel.recv_stderr)
+            self.stdout_f = lambda: _get_elements(channel.recv_ready, channel.recv)
+            self.stderr_f = lambda: _get_elements(channel.recv_stderr_ready, channel.recv_stderr)
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
             self._close = _mk_close_fn(client.close)
@@ -240,26 +256,28 @@ class MessyPipe:
         out = out + ''.join(self.contents)
         return out
 
-    def update(self):
-        _out = None; _err = None
-        def _boring_txt(txt):
-            txt = txt.replace('\r\n','\n')
-            if self.remove_control_chars:
-                txt = remove_control_chars(txt, True)
-            return txt
-        _out = self.stdout_f()
-        _err = self.stderr_f()
-        if self.printouts:
-            if len(_out)>0:
-                print(_boring_txt(_out), end='') # Newlines should be contained within the feed so there is no need to print them directly.
-            if len(_err)>0:
-                print(_boring_txt(_err), end='')
-        self.combined_contents = self.combined_contents+_out+_err
-        new_stuff = [_out, _err]
-        for i in range(len(new_stuff)):
-            if len(new_stuff[i])>0:
-                self.t1 = time.time() # T1 is updated whenever we recieve anything.
-                self.contents[i] = self.contents[i]+new_stuff[i]
+    def update(self): # Returns the len of the data.
+        with self.lock:
+            _out = None; _err = None
+            def _boring_txt(txt):
+                txt = txt.replace('\r\n','\n')
+                if self.remove_control_chars:
+                    txt = remove_control_chars(txt, True)
+                return txt
+            _out = self.stdout_f()
+            _err = self.stderr_f()
+            if self.printouts:
+                if len(_out)>0:
+                    print(_boring_txt(_out), end='') # Newlines should be contained within the feed so there is no need to print them directly.
+                if len(_err)>0:
+                    print(_boring_txt(_err), end='')
+            self.combined_contents = self.combined_contents+_out+_err
+            new_stuff = [_out, _err]
+            for i in range(len(new_stuff)):
+                if len(new_stuff[i])>0:
+                    self.t1 = time.time() # T1 is updated whenever we recieve anything.
+                    self.contents[i] = self.contents[i]+new_stuff[i]
+            return len(_out)+len(_err)
 
     def empty(self, remove_history=False):
         self.t0 = time.time()
@@ -344,6 +362,7 @@ class MessyPipe:
 
     def close(self):
         self._close(self)
+        self.closed = True
 
     def sure_of_EOF(self):
         # Only if we are sure! Not all that useful since it isn't often triggered.
