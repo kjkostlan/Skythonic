@@ -136,7 +136,7 @@ def ssh_proc_args(instance_id):
     key_filename = covert.get_key(instance_id)[1]
     return{'username':username,'hostname':hostname, 'key_filename':key_filename}
 
-def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False, use_file_objs=False):
+def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     # Ensures it is started and waites in a loop.
     instance_id = AWS_format.obj2id(instance_id)
     in_state = AWS_format.id2obj(instance_id)['State']['Name']
@@ -146,7 +146,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False, use_file_o
 
     pargs = ssh_proc_args(instance_id)
 
-    out = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs, f_loop_catch=ssh_err_catch)
+    out = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes, f_loop_catch=ssh_err_catch)
     out.machine_id = instance_id
     return out
 

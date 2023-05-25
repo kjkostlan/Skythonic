@@ -102,7 +102,7 @@ class ThreadSafeList():
 
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
-    def _init_core(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False):
+    def _init_core(self, proc_type, proc_args=None, printouts=True, return_bytes=False):
         self.proc_type = proc_type
         self.proc_args = proc_args
         self.send_f = None # Send strings OR bytes.
@@ -122,7 +122,6 @@ class MessyPipe:
         self._close = None
         self.closed = False
         self.machine_id = None # Optional user data.
-        self._use_file_objs = use_file_objs
         self._return_bytes = return_bytes
 
         _to_str = lambda x: x if type(x) is str else x.decode()
@@ -192,23 +191,18 @@ class MessyPipe:
                 transport.set_keepalive(30)
             channel = client.invoke_shell()
             self._streams = channel
-            if use_file_objs:
-                TODO # This needs to be fixed or use_file_objs as a deprecated features.
-                channel.settimeout(0.125)
-                self._streams = [channel.makefile_stdin('wb'), channel.makefile('rb'), channel.makefile_stderr('rb')]#, channel.makefile('rb')]
-                [self.send_f, self.stdout_f, stlf.stderr_f] = [s.read for s in self._streams]
-            else:
-                def _send(x, include_newline=True):
-                    x = _to_str(x)+('\n' if include_newline else '')
-                    channel.send(x)
-                self.send_f = _send
-                def _get_bytes(ready_fn, read_fn):
-                    out = []
-                    while ready_fn():
-                        out.append(ord(read_fn(1)) if return_bytes else utf8_one_char(read_fn))
-                    return ''.join(out).encode() if return_bytes else ''.join(out)
-                self.stdout_f = lambda: _get_bytes(channel.recv_ready, channel.recv)
-                self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, channel.recv_stderr)
+
+            def _send(x, include_newline=True):
+                x = _to_str(x)+('\n' if include_newline else '')
+                channel.send(x)
+            self.send_f = _send
+            def _get_bytes(ready_fn, read_fn):
+                out = []
+                while ready_fn():
+                    out.append(ord(read_fn(1)) if return_bytes else utf8_one_char(read_fn))
+                return ''.join(out).encode() if return_bytes else ''.join(out)
+            self.stdout_f = lambda: _get_bytes(channel.recv_ready, channel.recv)
+            self.stderr_f = lambda: _get_bytes(channel.recv_stderr_ready, channel.recv_stderr)
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
             self._close = _mk_close_fn(client.close)
@@ -224,14 +218,14 @@ class MessyPipe:
             raise Exception('proc_type must be "shell" or "ssh"')
 
         def _remake(self):
-            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, self._return_bytes, self._use_file_objs, self.f_loop_catch)
+            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, self._return_bytes, self.f_loop_catch)
             out.machine_id = self.machine_id
             out.remove_control_chars = self.remove_control_chars
             return out
         self._remake = _remake
 
-    def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, use_file_objs=False, f_loop_catch=None):
-        f = lambda: self._init_core(proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes, use_file_objs=use_file_objs)
+    def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False, f_loop_catch=None):
+        f = lambda: self._init_core(proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes)
         self.f_loop_catch = f_loop_catch
         if f_loop_catch is None: # No attempt at bieng patient.
             return f()
