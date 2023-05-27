@@ -87,7 +87,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
 
     pargs = ssh_proc_args(instance_id)
     make_pipe_fn = lambda: eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes)
-    tubo = eye_term.pipelayer_ssh(make_pipe_fn, printouts=True)
+    tubo = eye_term.pipelayer_ssh(make_pipe_fn)
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: restart_vm(instance_id)
 
@@ -102,7 +102,7 @@ def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
     tubo = patient_ssh_pipe(instance_id, printouts=printouts)
     _out, _err, _ = tubo.multi_API(bash_cmds, f_polls=f_polls)
     tubo.close()
-    if printouts:
+    if tubo.printouts:
         bprint('\nWe closed the SSH\n')
     return _out, _err, tubo
 
@@ -172,26 +172,29 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
 
 ########################Installation of packages################################
 
-def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
+def _to_pipe(inst_or_pipe, printouts=None): # Idempotent.
     if type(inst_or_pipe) is eye_term.MessyPipe:
         if inst_or_pipe.closed:
-            return inst_or_pipe.remake()
-        return inst_or_pipe
-    return patient_ssh_pipe(inst_or_pipe, printouts=printouts)
+            out = inst_or_pipe.remake()
+        out = inst_or_pipe
+        if printouts is True or printouts is False:
+            out.printouts = printouts
+        return out
+    return patient_ssh_pipe(inst_or_pipe, printouts=not printouts is False)
 
-def _test_pair(tubo, t_cmds, expected, prompts=None, printouts=True, timeout=12):
+def _test_pair(tubo, t_cmds, expected, prompts=None, timeout=12):
     if prompts is None:
         prompts = eye_term.default_prompts()
 
     raise Exception(f'Even after a restart, the package does not work properly.')
-    tubo, x = eye_term.cmd_list_fixed_prompt(tubo, t_cmds, prompts, timeout, printouts=printouts)
+    tubo, x = eye_term.cmd_list_fixed_prompt(tubo, t_cmds, prompts, timeout)
     if len(list(filter(lambda r: r not in x, expected))) == 0:
         pass # All test results are hit.
     else:
         raise Exception('Some or all of the tests failed.')
     return tubo
 
-def update_apt(inst_or_pipe, printouts=True):
+def update_apt(inst_or_pipe, printouts=None):
     # Updating apt with a restart seems to be the most robust option.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     if inst_or_pipe is None:
@@ -201,7 +204,7 @@ def update_apt(inst_or_pipe, printouts=True):
     x0 = tubo.blit()
     #if prompts is None: # No need to have this as an actual argument.
     prompts = eye_term.default_prompts()
-    eye_term.cmd_list_fixed_prompt(tubo, cmds, prompts, timeout=64.0, printouts=printouts)
+    eye_term.cmd_list_fixed_prompt(tubo, cmds, prompts, timeout=64.0)
 
     # Verification of installation:
     x1 = tubo.blit(); x = x1[len(x0):]
@@ -213,29 +216,29 @@ def update_apt(inst_or_pipe, printouts=True):
         eye_term.log_pipes.append(tubo)
     return tubo
 
-def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=True):
+def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=None):
     if prompts is None:
         prompts = eye_term.default_prompts()
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
 
     apt_cmd = f'sudo apt install {package_name}'
 
-    tubo = eye_term.plumber_apt(tubo, apt_cmd, prompts, printouts=printouts, timeout=timeout)
+    tubo = eye_term.plumber_apt(tubo, apt_cmd, prompts, timeout=timeout)
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
     return tubo
 
-def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', timeout=64, prompts=None, printouts=True):
+def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', timeout=64, prompts=None, printouts=None):
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
 
     pip_cmd = 'pip install {package_name}'
-    tubo = plumber_pip(tubo, pip_cmd, xtra_prompt_responses={}, break_sys_packages='polite', timeout=64, printouts=printouts)
+    tubo = eye_term.plumber_pip(tubo, pip_cmd, xtra_prompt_responses={}, break_sys_packages='polite', timeout=64)
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
     return tubo
 
-def install_package(inst_or_pipe, package_name, package_manager, printouts=True, **kwargs):
+def install_package(inst_or_pipe, package_name, package_manager, printouts=None, **kwargs):
     # Includes configuration for common packages; package_manager = 'apt' or 'pip'
     # kwargs is needed sometimes.
     ### Per-package configurations:
@@ -258,7 +261,7 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True,
     xtra_cmds['awscli'] = ['aws configure']
 
     xtra_code = {}
-    xtra_code['awscli'] = lambda tubo: ez_pip_package(tubo, 'boto3', printouts=True, break_sys_packages='polite', timeout=64)
+    xtra_code['awscli'] = lambda tubo: ez_pip_package(tubo, 'boto3', break_sys_packages='polite', timeout=64)
 
     timeouts = {'awscli':128, 'python3-pip':128}
     timeout = timeouts.get(package_name, 64)
@@ -298,30 +301,30 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=True,
     if package_manager not in ['apt','pip']:
         raise Exception('Package manager must be "apt" or "pip".')
     if package_manager=='apt':
-        tubo = ez_apt_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
+        tubo = ez_apt_package(tubo, package_name, timeout=timeout, prompts=prompts)
     elif package_manager=='pip':
-        tubo = ez_pip_package(tubo, package_name, printouts=printouts, timeout=timeout, prompts=prompts)
+        tubo = ez_pip_package(tubo, package_name, timeout=timeout, prompts=prompts)
     xtra = xtra_cmds.get(package_name,None)
     if xtra is not None:
-        tubo, x = eye_term.cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), prompts, timeout=timeout, printouts=printouts)
+        tubo, x = eye_term.cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), prompts, timeout=timeout)
 
     f = xtra_code.get(package_name, None)
     if f is not None:
         tubo = f(tubo)
     t = tests.get(package_name, None)
     if t is None:
-        if printouts:
+        if tubo.printouts:
             bprint(f'Warning: no does-it-work test for {package_name}')
     else:
         t_cmds = t[0]; t_results = t[1]
-        tubo = _test_pair(tubo, t_cmds, t_results, prompts=None, printouts=True)
+        tubo = _test_pair(tubo, t_cmds, t_results, prompts=None)
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
     return tubo
 
 ###############Installation of our packages and configs#########################
 
-def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=True):
+def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=None):
     #Updates skythonic with what is stored locally (on the machine calling this fn).
     # Basically the same as install_custom_package(inst_or_pipe, skythonic) but with no testing.
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
@@ -330,13 +333,13 @@ def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=T
     for k in list(file2contents.keys()):
         if file_io.dump_folder.split('/')[-1] in k:
             del file2contents[k]
-    tubo = send_files(tubo.machine_id, file2contents, remote_root_folder, printouts=printouts)
+    tubo = send_files(tubo.machine_id, file2contents, remote_root_folder, printouts=tubo.printouts)
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
     return tubo
 
-def install_custom_package(inst_or_pipe, package_name, printouts=True):
+def install_custom_package(inst_or_pipe, package_name, printouts=None):
     # Install packages which we created.
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     package_name = package_name.lower().replace('_','-')
@@ -356,7 +359,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
                 del file2contents[k]
         dest_folder = '~/Skythonic'
         test_pair = [['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()'], ['module']]
-        xtra_code = lambda tubo: ez_pip_package(tubo, 'paramiko', printouts=printouts, break_sys_packages='polite', timeout=64)
+        xtra_code = lambda tubo: ez_pip_package(tubo, 'paramiko', break_sys_packages='polite', timeout=64)
     elif package_name=='host-list':
         dest_folder = '/etc'
         cmd_list = [f'cd {dest_folder}', 'sudo wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'sudo mv -f hosts.txt hosts', f"sudo sh -c 'echo jump > {dest_folder}/hostname'"]
@@ -393,14 +396,14 @@ def install_custom_package(inst_or_pipe, package_name, printouts=True):
 
     ### Core installation:
     if file2contents is not None:
-        send_files(tubo.machine_id, file2contents, remote_root_folder=dest_folder, printouts=printouts)
+        send_files(tubo.machine_id, file2contents, remote_root_folder=dest_folder, printouts=tubo.printouts)
     prompts = {**eye_term.default_prompts(), **extra_prompts}
     if cmd_list is not None:
-        tubo, x = eye_term.cmd_list_fixed_prompt(tubo, cmd_list, prompts, timeout=timeout, printouts=printouts)
+        tubo, x = eye_term.cmd_list_fixed_prompt(tubo, cmd_list, prompts, timeout=timeout)
     if xtra_code is not None:
         tubo = xtra_code(tubo)
     if test_pair is not None:
-        tubo = _test_pair(tubo, test_pair[0], test_pair[1], prompts=None, printouts=True)
+        tubo = _test_pair(tubo, test_pair[0], test_pair[1], prompts=None)
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()

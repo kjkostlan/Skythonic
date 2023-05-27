@@ -20,7 +20,6 @@ def bprint(*txt):
 
 def termstr(cmds, _out, _err):
     # Prints it in a format that is easier to read.
-    # For realtime printouts the printouts option should be used instead.
     pieces = []
     for i in range(len(_out)):
         c = cmds[i] if type(cmds[i]) is str else cmds[i][0]
@@ -376,16 +375,16 @@ def last_line(tubo):
         return ''
     return lines[-1]
 
-def with_timeout(p, f, timeout=6, message=None, printouts=True):
+def with_timeout(tubo, f, timeout=6, message=None):
     # Uses f (f(pipe)=>bool) as an expect with a timeout.
     # Alternative to calling pipe.API with a timeout.
     x = {}
     if message is None:
         message = str(f)
-    if f(p) or p.sure_of_EOF():
+    if f(tubo) or tubo.sure_of_EOF():
         x['reason'] = 'Detected '+str(message)
         return True
-    if p.drought_len()>timeout:
+    if tubo.drought_len()>timeout:
         raise Exception('Timeout')
     return False
 
@@ -443,7 +442,7 @@ def standard_is_done(p):
     lines = _non_empty_lines(txt)
     return len(lines)>0 and looks_like_blanck_prompt(lines[-1])
 
-def cmd_list_fixed_prompt(tubo, cmds, response_map, timeout=16, printouts=True):
+def cmd_list_fixed_prompt(tubo, cmds, response_map, timeout=16):
     x0 = tubo.blit()
     def _check_line(_tubo, txt):
         lline = last_line(_tubo)
@@ -464,7 +463,7 @@ def cmd_list_fixed_prompt(tubo, cmds, response_map, timeout=16, printouts=True):
     x1 = tubo.blit(); x = x1[len(x0):]
     return tubo, x
 
-def pipelayer_ssh(make_pipe_fn, printouts=True):
+def pipelayer_ssh(make_pipe_fn):
     # Tries to get an SSH pipe working properly.
     while True:
         try:
@@ -485,7 +484,7 @@ def pipelayer_ssh(make_pipe_fn, printouts=True):
             if not hit: # Not a standard error.
                 raise e
         time.sleep(1.0)
-    tubo = plumber_basic(tubo, printouts=printouts)
+    tubo = plumber_basic(tubo)
     return tubo
 
 def plumber_basic(tubo, timeout_seconds=24, err_msg = '???'):
@@ -496,25 +495,25 @@ def plumber_basic(tubo, timeout_seconds=24, err_msg = '???'):
         time.sleep(1)
         if 'foobar foobaz' in tubo.blit(True):
             break
-        if printouts:
+        if tubo.printouts:
             print('\033[90m'+'Waiting for pipe to blit back.'+'\033[0m')
         if i==timeout_seconds-1:
             raise Exception(f'Timeout waiting on {err_msg}')
 
-def plumber_apt(tubo, apt_cmd, xtra_prompt_responses, printouts=True, timeout=64):
+def plumber_apt(tubo, apt_cmd, xtra_prompt_responses, timeout=64):
     # Tries to get an apt prompt working.
     # tubo.API(self, txt, f_polls=None, timeout=8.0)
 
-    def _verify_apt_package(tubo, package_name, timeout=timeout, printouts=printouts):
+    def _verify_apt_package(tubo, package_name, timeout=timeout):
         # Have we installed a package?
-        tubo, x = cmd_list_fixed_prompt(tubo, [f'dpkg -s {package_name}'], eye_term.default_prompts(), timeout=timeout, printouts=printouts)
+        tubo, x = cmd_list_fixed_prompt(tubo, [f'dpkg -s {package_name}'], eye_term.default_prompts(), timeout=timeout)
         verify = 'install ok installed' in x or 'install ok unpacked' in x
         falsify = 'is not installed' in x
         return tubo, True if verify else (False if falsify else None)
 
     response_map = {**default_prompts(), **xtra_prompt_responses}
     while True:
-        tubo, txt = cmd_list_fixed_prompt(tubo, [apt_cmd], response_map, timeout=timeout, printouts=printouts)
+        tubo, txt = cmd_list_fixed_prompt(tubo, [apt_cmd], response_map, timeout=timeout)
 
         msgs = {'Unable to acquire the dpkg frontend lock':'dpkg lock uh ho.',
                 'sudo dpkg --configure -a" when needed':'Mystery --configure -a bug',
@@ -524,11 +523,11 @@ def plumber_apt(tubo, apt_cmd, xtra_prompt_responses, printouts=True, timeout=64
         hit_err = False
         for k in msgs.keys():
             if k in txt:
-                if printouts:
+                if tubo.printouts:
                     print('\033[90m Apt cmd error: '+msgs[k]+', retrying\033[0m')
                 hit_err = True
         if not hit_err:
-            tubo, tresult = _verify_apt_package(tubo, package_name, timeout=timeout, printouts=printouts)
+            tubo, tresult = _verify_apt_package(tubo, package_name, timeout=timeout)
             if tresult is False:
                 raise Exception('Mysterious apt error')
             elif tresult is None:
@@ -539,25 +538,25 @@ def plumber_apt(tubo, apt_cmd, xtra_prompt_responses, printouts=True, timeout=64
 
     return tubo
 
-def plumber_pip(tubo, pip_cmd, xtra_prompt_responses, break_sys_packages='polite', timeout=64, printouts=True):
+def plumber_pip(tubo, pip_cmd, xtra_prompt_responses, break_sys_packages='polite', timeout=64):
     # Tries to get an apt prompt working.
     x0 = tubo.blit()
     if prompts is None:
         prompts = eye_term.default_prompts()
-    tubo, x = cmd_list_fixed_prompt(tubo, [pip_cmd], prompts, timeout=timeout, printouts=printouts)
+    tubo, x = cmd_list_fixed_prompt(tubo, [pip_cmd], prompts, timeout=timeout)
 
-    if printouts and break_sys_packages.lower() == 'yes':
+    if tubo.printouts and break_sys_packages.lower() == 'yes':
         bprint('WARNING: using --break-system-packages option')
     if 'Successfully installed '+package_name in x or 'Requirement already satisfied' in x:
         pass
     elif "Command 'pip' not found" in x or 'pip: command not found' in x:
-        tubo = plumber_apt(tubo, 'sudo apt get python3-pip', timeout=64, printouts=printouts)
-        tubo = plumber_apt(tubo, 'sudo apt get python-is-python3', timeout=64, printouts=printouts)
+        tubo = plumber_apt(tubo, 'sudo apt get python3-pip', timeout=64)
+        tubo = plumber_apt(tubo, 'sudo apt get python-is-python3', timeout=64)
     elif 'No matching distribution found for '+package_name in x:
         raise Exception(f'No matching pip for {package_name}')
     elif '--break-system-packages' in x and 'This environment is externally managed' in x and break_sys_packages.lower() != 'yes':
         if break_sys_packages == 'polite':
-            plumber_pip(tubo, pip_cmd+' --break-system-packages', xtra_prompt_responses, break_sys_packages='yes', timeout=timeout, printouts=printouts)
+            plumber_pip(tubo, pip_cmd+' --break-system-packages', xtra_prompt_responses, break_sys_packages='yes', timeout=timeout)
         elif not break_sys_packages or break_sys_packages.lower() == 'no' or break_sys_packages.lower() == 'deny' or break_sys_packages.lower() == 'forbidden':
             raise Exception('Externally managed env error and break_sys_packages arg set to "forbidden"')
     else:
