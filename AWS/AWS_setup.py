@@ -1,12 +1,14 @@
 # Tools to set up common machines and simple networks.
+import time
 import boto3
 import AWS.AWS_core as AWS_core
 import AWS.AWS_query as AWS_query
 import AWS.AWS_format as AWS_format
 import AWS.AWS_vm as AWS_vm
-import vm, eye_term
-import time
-import covert, plumbing
+import vm
+import waterworks.eye_term as eye_term
+import waterworks.fittings as fittings
+import covert
 ec2r = boto3.resource('ec2'); ec2c = boto3.client('ec2'); iam = boto3.client('iam')
 
 def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
@@ -33,7 +35,7 @@ def wait_and_attach_address(machine_id, address_id):
     f_try = lambda: AWS_core.assoc(addr['AllocationId'], machine_id) #ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=inst_id)
     f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
     msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
-    eye_term.loop_try(f_try, f_catch, msg, delay=4)
+    plumbing.loop_try(f_try, f_catch, msg, delay=4)
 
 def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC', key_name='BYOC_keypair'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
@@ -178,7 +180,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             raise e
 
     # Testing time:
-    jbox_id = AWS_format.obj2id(plumbing.flat_lookup(AWS_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+    jbox_id = AWS_format.obj2id(fittings.flat_lookup(AWS_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
     print(f'Testing ssh ping from machine {jbox_id}')
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
