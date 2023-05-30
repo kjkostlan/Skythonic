@@ -74,7 +74,6 @@ def txt_poll(txt, f_polls):
 
 def last_line(txt):
     # Last non-empty line (empty if no such line exists).
-    txt = tubo.blit(include_history=False)
     lines = non_empty_lines(txt)
     if len(lines)==0:
         return ''
@@ -86,8 +85,8 @@ def standard_is_done(txt):
     #lines = txt.replace('\r\n','\n').split('\n')
     #if len(txt)>0 and len(lines[-1].strip()) == 0:
     #    return True
-    lines = _non_empty_lines(txt)
-    return len(lines)>0 and looks_like_blanck_prompt(lines[-1])
+    lines = txt.strip().split('\n')
+    return len(txt.strip())>0 and looks_like_blanck_prompt(lines[-1])
 
 def get_prompt_response(txt, response_map):
     # "Do you want to continue (Y/n); input AWS user name; etc"
@@ -405,7 +404,7 @@ class MessyPipe:
     def send(self, txt, include_newline=True, suppress_input_prints=False):
         # The non-blocking operation.
         #https://stackoverflow.com/questions/6203653/how-do-you-execute-multiple-commands-in-a-single-session-in-paramiko-python
-        if type(txt) is not str or type(txt) is not bytes:
+        if type(txt) is not str and type(txt) is not bytes:
             raise Exception(f'The input must be a string or bytes object, not a {type(txt)}')
         if self.closed:
             raise Exception('The pipe has been closed and cannot accept commands; use pipe.remake() to get a new, open pipe.')
@@ -490,7 +489,6 @@ class MessyPipe:
 ##############Expect-like tools that try to correct for errors##################
 
 #def _restart_parent(tubo):
-#    TODO
 #    # More robust against TODO
 #    tubo.close()
 #    t0 = time.time()
@@ -564,14 +562,15 @@ class Plumber():
         if test_pairs is None or len(test_pairs)==0:
             test_pairs = []
         self.dt = dt
+        self.response_map = response_map
 
         self.remaining_packages = list(packages)
-        self.completed_packages = []
-        self.completed_misc_cmds = []
-
-        self.response_map = response_map
         self.remaining_misc_cmds = other_cmds
         self.remaining_tests = test_pairs
+
+        self.completed_packages = []
+        self.completed_misc_cmds = []
+        self.completed_tests = []
 
         self.mode = 'green' # Finite state machine.
 
@@ -597,15 +596,15 @@ class Plumber():
 
     def step_packages(self, tubo):
         # Returns True once installation and testing is completed.
-        pkg = self.remaining_packages[0].strip(); ppair = pck.split(' ')
-        if pck.startswith('apt'):
+        pkg = self.remaining_packages[0].strip(); ppair = pkg.split(' ')
+        if ppair[0] == 'apt':
             _quer = apt_query; _err = apt_error; _ver = apt_verify
             _cmd = 'sudo apt install '+ppair[0]
-        elif pck.startswith('pip'):
+        elif ppair[0] == 'pip' or ppair[0] == 'pip3':
             _quer = pip_query; _err = pip_error; _ver = pip_verify
-            _cmd = 'pip install '+ppair[0]
+            _cmd = 'pip3 install '+ppair[0]
         else:
-            raise Exception('Package must be of the format "apt foo" or "pip bar"; no other managers are currently supported.')
+            raise Exception(f'Package must be of the format "apt foo" or "pip bar" (not "{pkg}"); no other managers are currently supported.')
 
         if not self.short_wait(tubo): # TODO: timeout if wait too long/dry pipes.
             return False
@@ -651,7 +650,7 @@ class Plumber():
         if x:
             tubo.send(x)
             return False
-        if self.mode = 'yellow':
+        if self.mode == 'yellow':
             self.mode = 'green'
             return True
         else:
@@ -697,7 +696,7 @@ class Plumber():
             return tubo, True
         return tubo, False
 
-    def run(tubo):
+    def run(self, tubo):
         while True:
             tubo, finished = self.step(tubo)
             if finished:

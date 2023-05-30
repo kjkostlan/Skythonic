@@ -91,7 +91,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     tubo.restart_fn = lambda: restart_vm(instance_id)
 
     p = eye_term.Plumber([], {}, [], [eye_term.pipe_test()], dt=0.5)
-    tubo = p.run()
+    tubo = p.run(tubo)
     return tubo
 
 def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
@@ -189,15 +189,15 @@ def update_apt(inst_or_pipe, printouts=None):
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
 
     p = eye_term.Plumber([], {}, ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], pairs, dt=0.5)
-    tubo = p.run()
+    tubo = p.run(tubo)
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
         tubo.close()
     return tubo
 
-def install_package(inst_or_pipe, package, printouts=None, **kwargs):
+def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     # Includes configuration for common packages;
-    # package = "apt apache2" or "pip boto3".
+    # package_name = "apt apache2" or "pip boto3".
     # Some pacakges will require kwards for configuration.
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
@@ -218,10 +218,10 @@ def install_package(inst_or_pipe, package, printouts=None, **kwargs):
     xtra_cmds['apt awscli'] = ['aws configure']
 
     xtra_packages = {}
-    xtra_packages['awscli'] = ['pip boto3']
+    xtra_packages['apt awscli'] = ['pip boto3']
     xtra_packages['apt python3-pip'] = ['apt python-is-python3']
 
-    timeouts = {'awscli':128, 'python3-pip':128}
+    timeouts = {'apt awscli':128, 'apt python3-pip':128}
     timeout = timeouts.get(package_name, 64)
 
     tests = {}
@@ -250,13 +250,13 @@ def install_package(inst_or_pipe, package, printouts=None, **kwargs):
                                     'Unpacking libaom3:amd64':''}
 
     ### Core installation:
-    package = package.lower().replace('_','-')
-    package = renames.get(package, package) # Lowercase, 0-9 -+ only.
-    package_manager = package_name.split().replace('pip3','pip')
+    package_name = package_name.lower().replace('_','-')
+    package_name = renames.get(package_name, package_name) # Lowercase, 0-9 -+ only.
+    package_manager = package_name.split()
 
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     response_map = {**eye_term.default_prompts(), **extra_prompts.get(package_name,{})}
-    p = eye_term.Plumber([package]+xtra_packages, response_map, xtra_cmds.get(package, []), tests.get(package, []), dt=2.0)
+    p = eye_term.Plumber([package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
     tubo = p.run(tubo)
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
