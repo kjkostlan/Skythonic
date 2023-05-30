@@ -4,57 +4,15 @@
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
 import paramiko, time, os
 import file_io
-import AWS.AWS_format as AWS_format
 import eye_term, covert
-import boto3
-ec2r = boto3.resource('ec2')
-ec2c = boto3.client('ec2')
 
-def get_ip(x): # Address or machine.
-    if type(x) is str and '.' in x: # Actually an ip address.
-        return x
-    if type(x) is str:
-        x = AWS_format.id2obj(x)
-    if 'PublicIp' in x:
-        return x['PublicIp']
-    if 'PublicIpAddress' in x:
-        return x['PublicIpAddress']
-    raise Exception('Cannot find the ip for: '+AWS_format.obj2id(x))
-
-def update_vms_skythonic(diff):
-    # Updates all skythonic files on VMs.
-    eye_term.bprint('Warning: TODO: implement this auto-update Skythonic function.')
-
-try: # Precompute.
-    _imgs
-except:
-    _imgs = [None]
-def ubuntu_aim_image():
-    # Attemts to return the latest "stable" minimal AIM Ubuntu image.
-    if _imgs[0] is None:
-        filters = [{'Name':'name','Values':['*ubuntu*']}, {'Name': 'state', 'Values': ['available']}]
-        filters.append({'Name':'architecture','Values':['x86_64']})
-        imgs0 = ec2c.describe_images(Filters=filters, Owners=['amazon'])['Images']
-        filter_fn = lambda d:d.get('Public',False) and d.get('ImageType',None)=='machine' and 'pro' not in d.get('Name',None) and 'minimal' in d.get('Name',None)
-        imgs = list(filter(filter_fn, imgs0))
-        _imgs[0] = {'Ubuntu':imgs}
-    imgs = _imgs[0]['Ubuntu']
-
-    if len(imgs)==0:
-        raise Exception('No matching images to this body of filters.')
-    imgs_sort = list(sorted(imgs,key=lambda d:d.get('CreationDate', '')))
-    return imgs_sort[-1]['ImageId']
+platform = 'AWS' # Different platforms will be supported here.
+if platform == 'AWS':
+    import AWS.AWS_vm as CLOUD_vm
+else:
+    raise Exception(f'Support not yet implemented for {platform}')
 
 ###############################SSH and SCP######################################
-
-def restart_vm(instance_id):
-    if instance_id is None:
-        raise Exception('None instance.')
-    if type(instance_id) is list or type(instance_id) is tuple: # Many at once should be faster in parallel?
-        instance_ids = [AWS_format.obj2id(iid) for iid in instance_id]
-    else:
-        instance_ids = [AWS_format.obj2id(instance_id)]
-    ec2c.reboot_instances(InstanceIds=instance_ids)
 
 def ssh_bash(instance_id, join_arguments=True):
     # Get the ssh cmd to use the key to enter instance_id.
@@ -62,8 +20,7 @@ def ssh_bash(instance_id, join_arguments=True):
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
     # Python or os.system?
     # https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
-    instance_id = AWS_format.obj2id(instance_id)
-    public_ip = get_ip(instance_id)
+    public_ip = CLOUD_vm.get_ip(instance_id)
     out = ['ssh', '-i', covert.get_key(instance_id)[1], 'ubuntu@'+str(public_ip)]
     if join_arguments:
         out[2] = '"'+out[2]+'"'
@@ -73,17 +30,12 @@ def ssh_bash(instance_id, join_arguments=True):
 
 def ssh_proc_args(instance_id):
     # Splat into into MessyPipe.
-    username = 'ubuntu'; hostname = get_ip(instance_id) #username@hostname
+    username = 'ubuntu'; hostname = CLOUD_vm.get_ip(instance_id) #username@hostname
     key_filename = covert.get_key(instance_id)[1]
     return{'username':username,'hostname':hostname, 'key_filename':key_filename}
 
 def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
-    # Ensures it is started and waites in a loop.
-    instance_id = AWS_format.obj2id(instance_id)
-    in_state = AWS_format.id2obj(instance_id)['State']['Name']
-    if in_state == 'terminated':
-        raise Exception(f'The instance {instance_id} has been terminated and can never ever be used again.')
-    ec2c.start_instances(InstanceIds=[instance_id])
+    CLOUD_vm.start_vm(instance_id)
 
     pargs = ssh_proc_args(instance_id)
     tubo = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes)
@@ -94,7 +46,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     tubo = p.run(tubo)
     return tubo
 
-def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
+def lazy_run_ssh(instance_id, bash_cmds, f_polls=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
     # f_poll can be a list 1:1 with bash_cmds but this usage is better dealt with paired_ssh_cmds.
     #https://stackoverflow.com/questions/53635843/paramiko-ssh-failing-with-server-not-found-in-known-hosts-when-run-on-we
@@ -111,15 +63,13 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # None contents are deleted.
     # Both local or non-local paths allowed.
     # Automatically creates folders.
-    instance_id = AWS_format.obj2id(instance_id)
     if printouts:
         bprint(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
-    instance_id = AWS_format.obj2id(instance_id)
     ez_ssh_cmds(instance_id,[f'mkdir -p {eye_term.quoteless(remote_root_folder)}'], printouts=printouts)
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
     #scp file.txt username@to_host:/remote/directory/
-    public_ip = get_ip(instance_id)
+    public_ip = CLOUD_vm.get_ip(instance_id)
 
     tmp_dump = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump')
     file_io.empty_folder(tmp_dump, ignore_permiss_error=False, keeplist=None)
@@ -155,7 +105,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     file_io.power_delete(save_here)
     file_io.make_folder(save_here)
 
-    public_ip = get_ip(instance_id); pem_fname = covert.get_key(instance_id)[1]
+    public_ip = CLOUD_vm.get_ip(instance_id); pem_fname = covert.get_key(instance_id)[1]
     tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
@@ -237,7 +187,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     package_name = renames.get(package_name.lower(), package_name.lower()) # Lowercase, 0-9 -+ only.
     if package_name=='awscli': # This one requires using boto3 so is buried in this conditional.
         bprint('awscli is a HEAVY installation. Should take about 5 min.')
-        region_name = boto3.session.Session().region_name
+        region_name = CLOUD_vm.get_region_name()
         user_id = covert.user_dangerkey(kwargs['user_name'])
         publicAWS_key, privateAWS_key = covert.get_key(user_id)
 

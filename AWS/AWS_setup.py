@@ -3,6 +3,7 @@ import boto3
 import AWS.AWS_core as AWS_core
 import AWS.AWS_query as AWS_query
 import AWS.AWS_format as AWS_format
+import AWS.AWS_vm as AWS_vm
 import vm, eye_term
 import time
 import covert, plumbing
@@ -14,7 +15,7 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
     inst_networkinter = [{'SubnetId': subnet_id, 'DeviceIndex': 0, 'PrivateIpAddress': private_ip,
                           'AssociatePublicIpAddress': False, 'Groups': [securitygroup_id]}]
     # ami-0735c191cf914754d; ami-0a695f0d95cefc163; ami-0fcf52bcf5db7b003
-    vm_params = {'ImageId':vm.ubuntu_aim_image(), 'InstanceType':'t2.micro',
+    vm_params = {'ImageId':AWS_vm.ubuntu_aim_image(), 'InstanceType':'t2.micro',
                  'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter,
                  'KeyName':key_name}
 
@@ -71,7 +72,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
         tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
     for pk_name in ['skythonic', 'host-list']:
         tubo = vm.install_custom_package(tubo, pk_name, printouts=True)
-    vm.restart_vm(inst_id)
+    AWS_vm.restart_vm(inst_id)
 
     print('Installation and basic tests of aws done.')
 
@@ -182,7 +183,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
     is_ssh = True # TODO: True in the cloud shell, False if we are in the jumpbox.
-    tubo = vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
+    tubo = AWS_vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
     tubo.API('ping -c 2 localhost')
     for ip in ips:
         cmd = f'ping -c 2 {ip}'
@@ -198,5 +199,5 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
 
     print('Check the above ssh ping test')
     print('Restarting the three new vms.')
-    vm.restart_vm(inst_ids)
+    AWS_vm.restart_vm(inst_ids)
     return cmds
