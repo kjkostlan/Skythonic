@@ -86,11 +86,12 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     ec2c.start_instances(InstanceIds=[instance_id])
 
     pargs = ssh_proc_args(instance_id)
-    make_pipe_fn = lambda: eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes)
-    tubo = eye_term.pipelayer_ssh(make_pipe_fn)
+    tubo = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes)
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: restart_vm(instance_id)
 
+    p = eye_term.Plumber([], {}, [], [eye_term.pipe_test()], dt=0.5)
+    tubo = p.run()
     return tubo
 
 def ez_ssh_cmds(instance_id, bash_cmds, f_polls=None, printouts=True):
@@ -142,9 +143,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
 
     tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
     tubo.send(scp_cmd)
-
-    # Getting the output from the scp command is ... tricky. Use echos instead:
-    eye_term.plumber_basic(tubo, None, timeout_seconds=24, err_msg='scp upload '+instance_id)
+    tubo.API('echo scp_cmd_sent') # Getting the output from the scp command is ... tricky. Use echos instead:
 
     file_io.power_delete(tmp_dump)
     bprint('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
@@ -161,9 +160,8 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
-    tubo.send(scp_cmd)
-    eye_term.plumber_basic(tubo, None, timeout_seconds=24, err_msg = 'scp download '+instance_id)
-    out = file_io.fload(save_here+remote_path.replace('\\','/').split('/')[-1], bin_mode=bin_mode)
+    p = eye_term.Plumber([], {}, [scp_cmd], eye_term.pipe_test(), dt=2.0)
+    tubo = p.run(tubo)
 
     if local_dest_folder is None:
         file_io.power_delete(save_here)
@@ -182,73 +180,33 @@ def _to_pipe(inst_or_pipe, printouts=None): # Idempotent.
         return out
     return patient_ssh_pipe(inst_or_pipe, printouts=not printouts is False)
 
-def _test_pair(tubo, t_cmds, expected, prompts=None, timeout=12):
-    if prompts is None:
-        prompts = eye_term.default_prompts()
-
-    raise Exception(f'Even after a restart, the package does not work properly.')
-    tubo, x = eye_term.cmd_list_fixed_prompt(tubo, t_cmds, prompts, timeout)
-    if len(list(filter(lambda r: r not in x, expected))) == 0:
-        pass # All test results are hit.
-    else:
-        raise Exception('Some or all of the tests failed.')
-    return tubo
-
 def update_apt(inst_or_pipe, printouts=None):
     # Updating apt with a restart seems to be the most robust option.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
-    cmds = ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp', 'sudo apt-get update', 'sudo apt-get upgrade']
+    pairs = [['sudo apt-get update\nsudo apt-get upgrade', 'Reading state information... Done']]
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    x0 = tubo.blit()
-    #if prompts is None: # No need to have this as an actual argument.
-    prompts = eye_term.default_prompts()
-    eye_term.cmd_list_fixed_prompt(tubo, cmds, prompts, timeout=64.0)
 
-    # Verification of installation:
-    x1 = tubo.blit(); x = x1[len(x0):]
-    if 'Reading state information... Done'.lower() not in x.lower():
-        raise Exception('update_apt has failed for some reason.')
+    p = eye_term.Plumber([], {}, ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], pairs, dt=0.5)
+    tubo = p.run()
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
         tubo.close()
-        eye_term.log_pipes.append(tubo)
     return tubo
 
-def ez_apt_package(inst_or_pipe, package_name, prompts=None, timeout=64, printouts=None):
-    if prompts is None:
-        prompts = eye_term.default_prompts()
-    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-
-    apt_cmd = f'sudo apt install {package_name}'
-
-    tubo = eye_term.plumber_apt(tubo, apt_cmd, prompts, timeout=timeout)
-    if type(inst_or_pipe) is not eye_term.MessyPipe:
-        tubo.close()
-    return tubo
-
-def ez_pip_package(inst_or_pipe, package_name, break_sys_packages='polite', timeout=64, prompts=None, printouts=None):
-    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-
-    pip_cmd = 'pip install {package_name}'
-    tubo = eye_term.plumber_pip(tubo, pip_cmd, xtra_prompt_responses={}, break_sys_packages='polite', timeout=64)
-
-    if type(inst_or_pipe) is not eye_term.MessyPipe:
-        tubo.close()
-    return tubo
-
-def install_package(inst_or_pipe, package_name, package_manager, printouts=None, **kwargs):
-    # Includes configuration for common packages; package_manager = 'apt' or 'pip'
-    # kwargs is needed sometimes.
-    ### Per-package configurations:
+def install_package(inst_or_pipe, package, printouts=None, **kwargs):
+    # Includes configuration for common packages;
+    # package = "apt apache2" or "pip boto3".
+    # Some pacakges will require kwards for configuration.
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
-    renames = {'ping':'iputils-ping','apache':'apache2', 'python':'python3-pip', 'python3':'python3-pip',
-               'aws':'awscli', 'netcat':'netcat-openbsd'}
+    renames = {'apt ping':'apt iputils-ping','apt apache':'apt apache2',
+               'apt python':'apt python3-pip', 'apt python3':'apt python3-pip',
+               'apt aws':'apt awscli', 'apt netcat':'apt netcat-openbsd'}
 
     xtra_cmds = {}
-    xtra_cmds['apache2'] = ['sudo apt install libcgi-session-perl',
+    xtra_cmds['apt apache2'] = ['sudo apt install libcgi-session-perl',
             'sudo systemctl enable apache2',
             'cd /etc/apache2/mods-enabled',
             'sudo ln -s ../mods-available/cgi.load cgi.load',
@@ -257,20 +215,20 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=None,
             'sudo ln -s ../mods-available/socache_shmcb.load socache_shmcb.load',
             'cd /etc/apache2/sites-enabled',
             'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
-    xtra_cmds['python3-pip'] = ['sudo apt-get install python-is-python3']
-    xtra_cmds['awscli'] = ['aws configure']
+    xtra_cmds['apt awscli'] = ['aws configure']
 
-    xtra_code = {}
-    xtra_code['awscli'] = lambda tubo: ez_pip_package(tubo, 'boto3', break_sys_packages='polite', timeout=64)
+    xtra_packages = {}
+    xtra_packages['awscli'] = ['pip boto3']
+    xtra_packages['apt python3-pip'] = ['apt python-is-python3']
 
     timeouts = {'awscli':128, 'python3-pip':128}
     timeout = timeouts.get(package_name, 64)
 
     tests = {}
-    tests['iputils-ping'] = [['ping -c 1 localhost'],['0% packet loss']]
-    tests['apache2'] = [['sudo service apache2 start', 'curl -k http://localhost', 'sudo service apache2 stop'], ['<div class="section_header">', 'Apache2']]
-    tests['python3-pip'] = [['python3', 'print(id)', 'quit()'],['<built-in function id>']]
-    tests['awscli'] = [['aws ec2 describe-vpcs --output text',
+    tests['aws iputils-ping'] = [['ping -c 1 localhost'],['0% packet loss']]
+    tests['aws apache2'] = [['sudo service apache2 start', 'curl -k http://localhost', 'sudo service apache2 stop'], ['<div class="section_header">', 'Apache2']]
+    tests['aws python3-pip'] = [['python3', 'print(id)', 'quit()'],['<built-in function id>']]
+    tests['aws awscli'] = [['aws ec2 describe-vpcs --output text',
                          'python3', 'import boto3', "boto3.client('ec2').describe_vpcs()", 'quit()'],
                        ['CIDRBLOCKASSOCIATIONSET', "'Vpcs': [{'CidrBlock'"]]
 
@@ -292,32 +250,15 @@ def install_package(inst_or_pipe, package_name, package_manager, printouts=None,
                                     'Unpacking libaom3:amd64':''}
 
     ### Core installation:
-    package_name = package_name.lower().replace('_','-')
-    package_name = renames.get(package_name, package_name) # Lowercase, 0-9 -+ only.
+    package = package.lower().replace('_','-')
+    package = renames.get(package, package) # Lowercase, 0-9 -+ only.
+    package_manager = package_name.split().replace('pip3','pip')
+
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    prompts = {**eye_term.default_prompts(), **extra_prompts.get(package_name,{})}
+    response_map = {**eye_term.default_prompts(), **extra_prompts.get(package_name,{})}
+    p = eye_term.Plumber([package]+xtra_packages, response_map, xtra_cmds.get(package, []), tests.get(package, []), dt=2.0)
+    tubo = p.run(tubo)
 
-    package_manager = package_manager.lower().replace('pip3','pip')
-    if package_manager not in ['apt','pip']:
-        raise Exception('Package manager must be "apt" or "pip".')
-    if package_manager=='apt':
-        tubo = ez_apt_package(tubo, package_name, timeout=timeout, prompts=prompts)
-    elif package_manager=='pip':
-        tubo = ez_pip_package(tubo, package_name, timeout=timeout, prompts=prompts)
-    xtra = xtra_cmds.get(package_name,None)
-    if xtra is not None:
-        tubo, x = eye_term.cmd_list_fixed_prompt(tubo, xtra_cmds.get(package_name,None), prompts, timeout=timeout)
-
-    f = xtra_code.get(package_name, None)
-    if f is not None:
-        tubo = f(tubo)
-    t = tests.get(package_name, None)
-    if t is None:
-        if tubo.printouts:
-            bprint(f'Warning: no does-it-work test for {package_name}')
-    else:
-        t_cmds = t[0]; t_results = t[1]
-        tubo = _test_pair(tubo, t_cmds, t_results, prompts=None)
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         tubo.close()
     return tubo
@@ -344,12 +285,13 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     package_name = package_name.lower().replace('_','-')
     file2contents = {}
+    response_map = {}
     dest_folder = ''
-    test_pair = None
+    test_pairs = None
     extra_prompts = {}
     cmd_list = None
-    xtra_code = None
     timeout = 12
+    non_custom_packages = []
 
     ### Per package information:
     if package_name == 'skythonic': # Local copy.
@@ -358,13 +300,13 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
             if file_io.dump_folder.split('/')[-1] in k:
                 del file2contents[k]
         dest_folder = '~/Skythonic'
-        test_pair = [['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()'], ['module']]
-        xtra_code = lambda tubo: ez_pip_package(tubo, 'paramiko', break_sys_packages='polite', timeout=64)
+        test_pairs = [['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()'], ['module']]
+        non_custom_packages = ['pip paramiko']
     elif package_name=='host-list':
         dest_folder = '/etc'
         cmd_list = [f'cd {dest_folder}', 'sudo wget https://developmentserver.com/BYOC/Resources/hosts.txt', 'sudo mv -f hosts.txt hosts', f"sudo sh -c 'echo jump > {dest_folder}/hostname'"]
     elif package_name=='app-server':
-        cmds_list = ['cd /usr/local/bin',
+        cmd_list = ['cd /usr/local/bin',
                      'sudo wget https://developmentserver.com/BYOC/Resources/addserver.txt',
                      'sudo wget https://developmentserver.com/BYOC/Resources/addserver.pl.txt',
                      'sudo wget https://developmentserver.com/BYOC/Resources/rmserver.txt',
@@ -376,7 +318,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
                      'sudo chmod a+x *',
                      "sudo sh -c 'echo app1 > /etc/hostname'"]
     elif package_name=='web-server':
-        cmds_list = ['cd /var/www/html', 'sudo wget https://developmentserver.com/BYOC/Resources/CiscoWorldLogo.jpg',
+        cmd_list = ['cd /var/www/html', 'sudo wget https://developmentserver.com/BYOC/Resources/CiscoWorldLogo.jpg',
                      'sudo wget https://developmentserver.com/BYOC/Resources/index.html.txt',
                      'sudo mv index.html.tx index.html',
                      'cd /usr/lib/cgi-bin',
@@ -394,17 +336,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     else:
         raise Exception(f'Unrecognized custom package {package_name}')
 
-    ### Core installation:
-    if file2contents is not None:
-        send_files(tubo.machine_id, file2contents, remote_root_folder=dest_folder, printouts=tubo.printouts)
-    prompts = {**eye_term.default_prompts(), **extra_prompts}
-    if cmd_list is not None:
-        tubo, x = eye_term.cmd_list_fixed_prompt(tubo, cmd_list, prompts, timeout=timeout)
-    if xtra_code is not None:
-        tubo = xtra_code(tubo)
-    if test_pair is not None:
-        tubo = _test_pair(tubo, test_pair[0], test_pair[1], prompts=None)
+    p = eye_term.Plumber(non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
+    tubo = p.run(tubo)
 
-    if type(inst_or_pipe) is not eye_term.MessyPipe:
-        tubo.close()
     return tubo

@@ -13,24 +13,16 @@ except:
     log_pipes = []
     rm_ctrl_chars_default = False
 
+######################Small functions######################################
+
 def bprint(*txt):
     # Use our own color to differentiate from the data dump that is the ssh/bash stream.
     txt = ' '.join([str(t) for t in txt])
     print('\033[94m'+txt+'\033[0m', end='')
 
-def termstr(cmds, _out, _err):
-    # Prints it in a format that is easier to read.
-    pieces = []
-    for i in range(len(_out)):
-        c = cmds[i] if type(cmds[i]) is str else cmds[i][0]
-        pieces.append('→'+c+'←')
-        pieces.append(_out[i])
-        if _err is not None:
-            pieces.append(_err[i])
-    txt = '\n'.join(pieces)
-    txt = txt.replace('\r\n','\n')
-    txt = txt.replace('\n\n','\n')
-    return txt
+def non_empty_lines(txt):
+    txt = txt.replace('\r\n','\n').strip()
+    return list(filter(lambda x: len(x)>0, txt.split('\n')))
 
 def quoteless(the_path):
     # Quotes prevent the nice convienent ~ and * syntax of directories.
@@ -48,6 +40,150 @@ def remove_control_chars(txt, label=True, rm_bash_escapes=False):
     if rm_bash_escapes:
         txt = txt.replace('[', '֍') # Removes bash control chars.
     return txt
+
+def termstr(cmds, _out, _err):
+    # Prints it in a format that is easier to read.
+    pieces = []
+    for i in range(len(_out)):
+        c = cmds[i] if type(cmds[i]) is str else cmds[i][0]
+        pieces.append('→'+c+'←')
+        pieces.append(_out[i])
+        if _err is not None:
+            pieces.append(_err[i])
+    txt = '\n'.join(pieces)
+    txt = txt.replace('\r\n','\n')
+    txt = txt.replace('\n\n','\n')
+    return txt
+
+####################Tier 1 Pipe output processing fns###########################
+
+def looks_like_blanck_prompt(line):
+    # When most cmds finish they return to foo/bar/baz$, or xyz>, etc.
+    # This determines whether the line is one of these.
+    line = line.strip()
+    for ending in ['$', '>', '#']:
+        if line.endswith(ending):
+            return True
+    return False
+
+def txt_poll(txt, f_polls):
+    # Polls txt for a particular output, return the key in f_polls, if any.
+    for k in f_polls.keys():
+        if f_polls[k](txt):
+            return k
+
+def last_line(txt):
+    # Last non-empty line (empty if no such line exists).
+    txt = tubo.blit(include_history=False)
+    lines = non_empty_lines(txt)
+    if len(lines)==0:
+        return ''
+    return lines[-1]
+
+def standard_is_done(txt):
+    # A default works-most-of-the-time pipe dryness detector.
+    # Will undergo a lot of tweaks that try to extract the spatial information.
+    #lines = txt.replace('\r\n','\n').split('\n')
+    #if len(txt)>0 and len(lines[-1].strip()) == 0:
+    #    return True
+    lines = _non_empty_lines(txt)
+    return len(lines)>0 and looks_like_blanck_prompt(lines[-1])
+
+def get_prompt_response(txt, response_map):
+    # "Do you want to continue (Y/n); input AWS user name; etc"
+    lline = last_line(txt.strip()) # First try the last line, then try everything since the last cmd ran.
+    # (A few false positive inputs is unlikely to cause trouble).
+    for otxt in [lline, txt]:
+        for k in response_map.keys():
+            if k in otxt:
+                if callable(response_map[k]):
+                    return response_map[k](otxt)
+                return response_map[k]
+
+####################Tier 2 Pipe output processing fns###########################
+
+def default_prompts():
+    # Default line end prompts and the needed input (str or function of the pipe).
+    def _super_advanced_linux_shell(): # Newfangled menu where.
+        # What button do you press to continue?
+        import random
+        out = []
+        for i in range(256): # We are getting frusterated...
+            chs = ['\033[1A','\033[1B','\033[1C','\033[1D','o','O','y','Y','\n']
+            out.append(random.choice(chs))
+        return ''.join(out)
+
+    return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
+            'continue connecting (yes/no)?':'Y',
+            'Which services should be restarted?':_super_advanced_linux_shell()}
+
+def apt_error(txt):
+    # Scan for errors in apt.
+    # If no error is detected, returns None.
+    msgs = {'Unable to acquire the dpkg frontend lock':'dpkg lock uh ho.',
+            'sudo dpkg --configure -a" when needed':'Mystery --configure -a bug',
+            'Unable to locate package':'Cant locate',
+            'has no installation candidate':'The other cant locate',
+            'Some packages could not be installed. This may mean that you have requested an impossible situation':'Oh no not the "impossible situation" error!'}
+    for k in msgs.keys():
+        if k in txt:
+            return msgs[k]
+    return None
+
+def pip_error(txt):
+    # Scan for errors in pip.
+    # TODO: better handling of --break-system-packages option
+    if "Command 'pip' not found" in x or 'pip: command not found' in txt:
+        return 'pip not found'
+    if 'No matching distribution found for' in txt:
+        return 'package not found'
+    if '--break-system-packages' in txt and 'This environment is externally managed' in txt:
+        return 'externally managed env'
+    return None
+
+def ssh_error(e_txt):
+    # Scan for errors in creating the ssh pipe (if making the pipe causes an Exception)
+    msgs = {'Unable to connect to':'Unable to connect', 'timed out':'timeout',\
+            'encountered RSA key, expected OPENSSH key':'RSA/OPENSSH keys',
+            'Connection reset by peer':'connection reset',\
+            'Error reading SSH protocol banner':'Oh no! the *banner* error!'}
+    for k in msgs.keys():
+        if k in e_txt:
+            return msgs[k]
+    return None
+
+def apt_query(pkg):
+    package_name = pkg.split(' ')[-1]
+    return f'dpkg -s {package_name}'
+
+def pip_query(pkg):
+    #https://askubuntu.com/questions/588390/how-do-i-check-whether-a-module-is-installed-in-python-and-install-it-if-needed
+    package_name = pkg.split(' ')[-1]
+    return f'python3\nimport sys\nimport {package_name}\nx=456*789 if "{package_name}" in sys.modules else 123*456\nprint(x)\nquit()'
+
+def apt_verify(pkg, txt):
+    # Is the pkg installed properly (run after apt_query).
+    if 'install ok installed' in txt or 'install ok unpacked' in txt:
+        return True
+    if 'is not installed' in txt:
+        return False
+
+def pip_verify(pkg, txt):
+    # Is the pkg installed properly (run after apt_query).
+    package_name = pkg.split(' ')[-1]
+    if 'Successfully installed ' in txt or 'Requirement already satisfied' in txt:
+        return True # Queries by re-running the installation cmd
+    if str(456*789) in txt:
+        return True # Our Python-based queries.
+    if str(123*456) in txt or f"ModuleNotFoundError: No module named '{package_name}'" in txt:
+        return False # Our Python-based queries.
+    return None
+
+def pipe_test():
+    # A simple test for a bash (or ssh to bash) pipe bieng open.
+    return ['echo foo{bar,baz}', 'foobar foobaz']
+
+################################Pipe mutation fns###############################
 
 def utf8_one_char(read_bytes_fn):
     # One unicode char may be multible bytes, but if so the first n-1 bytes are not valid single byte chars.
@@ -269,6 +405,8 @@ class MessyPipe:
     def send(self, txt, include_newline=True, suppress_input_prints=False):
         # The non-blocking operation.
         #https://stackoverflow.com/questions/6203653/how-do-you-execute-multiple-commands-in-a-single-session-in-paramiko-python
+        if type(txt) is not str or type(txt) is not bytes:
+            raise Exception(f'The input must be a string or bytes object, not a {type(txt)}')
         if self.closed:
             raise Exception('The pipe has been closed and cannot accept commands; use pipe.remake() to get a new, open pipe.')
         if self.printouts and not suppress_input_prints:
@@ -293,8 +431,9 @@ class MessyPipe:
 
         which_poll=None
         while which_poll is None:
+            blit_txt = self.blit(include_history=False)
             for k in f_polls.keys():
-                if f_polls[k](self):
+                if f_polls[k](blit_txt):
                     which_poll=k # Break out of the loop
                     break
             time.sleep(0.1)
@@ -363,18 +502,6 @@ class MessyPipe:
 #        raise Exception(f'The restart happened too fast ({t1-t0} s), maybe it was short-circuted?')
 #    return tubo
 
-def _non_empty_lines(txt):
-    txt = txt.replace('\r\n','\n').strip()
-    return list(filter(lambda x: len(x)>0, txt.split('\n')))
-
-def last_line(tubo):
-    # Last non-empty line (empty if no such line exists).
-    txt = tubo.blit(include_history=False)
-    lines = _non_empty_lines(txt)
-    if len(lines)==0:
-        return ''
-    return lines[-1]
-
 def with_timeout(tubo, f, timeout=6, message=None):
     # Uses f (f(pipe)=>bool) as an expect with a timeout.
     # Alternative to calling pipe.API with a timeout.
@@ -406,48 +533,13 @@ def loop_try(f, f_catch, msg, delay=4):
                 raise e
         time.sleep(delay)
 
-def looks_like_blanck_prompt(line):
-    # When most cmds finish they return to foo/bar/baz$, or xyz>, etc.
-    # This determines whether the line is one of these.
-    line = line.strip()
-    for ending in ['$', '>', '#']:
-        if line.endswith(ending):
-            return True
-    return False
-
-def default_prompts():
-    # Default line end prompts and the needed input (str or function of the pipe).
-    def _super_advanced_linux_shell(tubo):
-        # What button do you press to continue?
-        import random
-        for i in range(256): # We are getting frusterated...
-            chs = ['\033[1A','\033[1B','\033[1C','\033[1D','o','O','y','Y','\n']
-            ch = random.choice(chs)
-            tubo.send(ch, suppress_input_prints=True, include_newline=False)
-        return tubo.API('random_bashing_done')
-
-    return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
-            'continue connecting (yes/no)?':'Y',
-            'Which services should be restarted?':_super_advanced_linux_shell} # Newfangled menu.
-
-def standard_is_done(p):
-    # A default works-most-of-the-time pipe dryness detector.
-    # Will undergo a lot of tweaks that try to extract the spatial information.
-    txt = p.blit(include_history=False)
-    if p.proc_type=='shell': #Sometimes they use empty lines!?
-        lines = txt.replace('\r\n','\n').split('\n')
-        if len(txt)>0 and len(lines[-1].strip()) == 0:
-            return True
-
-    lines = _non_empty_lines(txt)
-    return len(lines)>0 and looks_like_blanck_prompt(lines[-1])
-
 def cmd_list_fixed_prompt(tubo, cmds, response_map, timeout=16):
+    TODO #get_prompt_response(txt, response_map)
     x0 = tubo.blit()
     def _check_line(_tubo, txt):
-        lline = last_line(_tubo)
+        lline = last_line(_tubo.blit(include_history=False))
         return txt in lline
-    line_end_poll = lambda _tubo: looks_like_blanck_prompt(last_line(tubo))
+    line_end_poll = lambda _tubo: looks_like_blanck_prompt(last_line(_tubo.blit(include_history=False)))
     f_polls = {'_vanilla':line_end_poll}
 
     for k in response_map.keys():
@@ -463,105 +555,151 @@ def cmd_list_fixed_prompt(tubo, cmds, response_map, timeout=16):
     x1 = tubo.blit(); x = x1[len(x0):]
     return tubo, x
 
-def pipelayer_ssh(make_pipe_fn):
-    # Tries to get an SSH pipe working properly.
-    while True:
-        try:
-            tubo = make_pipe_fn()
-            return tubo
-        except Exception as e:
-            se = str(e)
-            msgs = {'Unable to connect to':'Unable to connect', 'timed out':'timeout',\
-                    'encountered RSA key, expected OPENSSH key':'RSA/OPENSSH keys',
-                    'Connection reset by peer':'connection reset',\
-                    'Error reading SSH protocol banner':'Oh no! the *banner* error!'}
-            hit = False
-            for k in msgs.keys():
-                if k in se:
-                    if printouts:
-                        print('\033[90m SSH waiting to clear error: '+str(msgs[k])+'\033[0m')
-                    hit = True
-            if not hit: # Not a standard error.
-                raise e
-        time.sleep(1.0)
-    tubo = plumber_basic(tubo)
-    return tubo
+class Plumber():
+    def __init__(self, packages, response_map, other_cmds, test_pairs, dt=2.0):
+        self.last_restart_time = -1e100 # Wait for it to restart!
+        #self.broken_record = 0 # Num times the last err appeared.
+        #self.err_counts = {} # TODO: use.
+        # test_pairs is a vector of [cmd, expected] pairs.
+        if test_pairs is None or len(test_pairs)==0:
+            test_pairs = []
+        self.dt = dt
 
-def plumber_basic(tubo, timeout_seconds=24, err_msg = '???'):
-    # For cmds that don't return much. TODO: get working on windows.
-    timeout_seconds = int(timeout_seconds)
-    for i in range(timeout_seconds):
-        tubo.send('echo foo{bar,baz}')
-        time.sleep(1)
-        if 'foobar foobaz' in tubo.blit(True):
-            break
-        if tubo.printouts:
-            print('\033[90m'+'Waiting for pipe to blit back.'+'\033[0m')
-        if i==timeout_seconds-1:
-            raise Exception(f'Timeout waiting on {err_msg}')
+        self.remaining_packages = list(packages)
+        self.completed_packages = []
+        self.completed_misc_cmds = []
 
-def plumber_apt(tubo, apt_cmd, xtra_prompt_responses, timeout=64):
-    # Tries to get an apt prompt working.
-    # tubo.API(self, txt, f_polls=None, timeout=8.0)
+        self.response_map = response_map
+        self.remaining_misc_cmds = other_cmds
+        self.remaining_tests = test_pairs
 
-    def _verify_apt_package(tubo, package_name, timeout=timeout):
-        # Have we installed a package?
-        tubo, x = cmd_list_fixed_prompt(tubo, [f'dpkg -s {package_name}'], eye_term.default_prompts(), timeout=timeout)
-        verify = 'install ok installed' in x or 'install ok unpacked' in x
-        falsify = 'is not installed' in x
-        return tubo, True if verify else (False if falsify else None)
+        self.mode = 'green' # Finite state machine.
 
-    response_map = {**default_prompts(), **xtra_prompt_responses}
-    while True:
-        tubo, txt = cmd_list_fixed_prompt(tubo, [apt_cmd], response_map, timeout=timeout)
+    def get_resp_map_response(self, tubo):
+        txt_or_none = get_prompt_response(tubo.blit(False), self.response_map)
+        return txt_or_none
 
-        msgs = {'Unable to acquire the dpkg frontend lock':'dpkg lock uh ho.',
-                'sudo dpkg --configure -a" when needed':'Mystery --configure -a bug',
-                'Unable to locate package':'Cant locate',
-                'has no installation candidate':'The other cant locate',
-                'Some packages could not be installed. This may mean that you have requested an impossible situation':'Oh no not the "impossible situation" error!'}
-        hit_err = False
-        for k in msgs.keys():
-            if k in txt:
-                if tubo.printouts:
-                    print('\033[90m Apt cmd error: '+msgs[k]+', retrying\033[0m')
-                hit_err = True
-        if not hit_err:
-            tubo, tresult = _verify_apt_package(tubo, package_name, timeout=timeout)
-            if tresult is False:
-                raise Exception('Mysterious apt error')
-            elif tresult is None:
-                raise Exception("Cannot verify installation of package.")
+    def short_wait(self, tubo):
+        # Waits up to self.dt for the tubo, hoping that the tubo catches up.
+        # Returns True for if the command finished or if a response was caused.
+        sub_dt = 1.0/2048.0
+        t0 = time.time(); t1 = t0+self.dt
+        while time.time()<t1:
+            if standard_is_done(tubo.blit(include_history=False)) or self.get_resp_map_response(tubo):
+                return True
+            sub_dt = sub_dt*1.414
+            ts = min(sub_dt, t1-time.time())
+            if ts>0:
+                time.sleep(ts)
             else:
-                break #Success!
-        time.sleep(2.0)
+                break
+        return False
 
-    return tubo
+    def step_packages(self, tubo):
+        # Returns True once installation and testing is completed.
+        pkg = self.remaining_packages[0].strip(); ppair = pck.split(' ')
+        if pck.startswith('apt'):
+            _quer = apt_query; _err = apt_error; _ver = apt_verify
+            _cmd = 'sudo apt install '+ppair[0]
+        elif pck.startswith('pip'):
+            _quer = pip_query; _err = pip_error; _ver = pip_verify
+            _cmd = 'pip install '+ppair[0]
+        else:
+            raise Exception('Package must be of the format "apt foo" or "pip bar"; no other managers are currently supported.')
 
-def plumber_pip(tubo, pip_cmd, xtra_prompt_responses, break_sys_packages='polite', timeout=64):
-    # Tries to get an apt prompt working.
-    x0 = tubo.blit()
-    if prompts is None:
-        prompts = eye_term.default_prompts()
-    tubo, x = cmd_list_fixed_prompt(tubo, [pip_cmd], prompts, timeout=timeout)
+        if not self.short_wait(tubo): # TODO: timeout if wait too long/dry pipes.
+            return False
 
-    if tubo.printouts and break_sys_packages.lower() == 'yes':
-        bprint('WARNING: using --break-system-packages option')
-    if 'Successfully installed '+package_name in x or 'Requirement already satisfied' in x:
-        pass
-    elif "Command 'pip' not found" in x or 'pip: command not found' in x:
-        tubo = plumber_apt(tubo, 'sudo apt get python3-pip', timeout=64)
-        tubo = plumber_apt(tubo, 'sudo apt get python-is-python3', timeout=64)
-    elif 'No matching distribution found for '+package_name in x:
-        raise Exception(f'No matching pip for {package_name}')
-    elif '--break-system-packages' in x and 'This environment is externally managed' in x and break_sys_packages.lower() != 'yes':
-        if break_sys_packages == 'polite':
-            plumber_pip(tubo, pip_cmd+' --break-system-packages', xtra_prompt_responses, break_sys_packages='yes', timeout=timeout)
-        elif not break_sys_packages or break_sys_packages.lower() == 'no' or break_sys_packages.lower() == 'deny' or break_sys_packages.lower() == 'forbidden':
-            raise Exception('Externally managed env error and break_sys_packages arg set to "forbidden"')
-    else:
-        raise Exception(f'Cannot verify pip installation for: {package_name}')
+        if self.mode == 'green':
+            tubo.send(_cmd)
+            self.mode = 'blue'
+            return False
+        elif self.mode == 'blue':
+            if _err(tubo.blit(False)):
+                self.mode = 'green' # Try again.
+            else:
+                x = self.get_resp_map_response(tubo)
+                if x:
+                    tubo.send(x)
+                else:
+                    self.mode = 'yellow'
+            return False
+        elif self.mode == 'yellow': # Testing A
+            if _err(tubo.blit(False)):
+                self.mode = 'green' # Try again.
+            else:
+                tubo.send(_quer(pkg))
+            return False
+        elif self.mode == 'orange': # Testing B
+            if _err(tubo.blit(False)):
+                self.mode = 'green' # Try again.
+            elif _ver(pkg, tubo.blit(False)):
+                self.mode = 'green' # Reset.
+                return True # Package has been verified.
+            else:
+                self.mode = 'green' # Try again.
+            return False
+        else:
+            self.mode = 'green'
+            return False
 
-    if type(inst_or_pipe) is not eye_term.MessyPipe:
-        tubo.close()
-    return tubo
+    def step_cmds(self, tubo):
+        # Extra cmds.
+        if not self.short_wait(tubo): # TODO: timeout if wait too long/dry pipes.
+            return False
+        x = self.get_resp_map_response(tubo)
+        if x:
+            tubo.send(x)
+            return False
+        if self.mode = 'yellow':
+            self.mode = 'green'
+            return True
+        else:
+            the_cmd = self.remaining_misc_cmds[0]
+            tubo.send(the_cmd)
+            self.mode = 'yellow'
+
+    def step_tests(self, tubo):
+        if not self.short_wait(tubo): # TODO: timeout if wait too long/dry pipes.
+            return False
+        x = self.get_resp_map_response(tubo)
+        if x:
+            tubo.send(x)
+            return False
+        the_cmd, look_for_this = self.remaining_tests[0]
+        if self.mode == 'green':
+            tubo.send(the_cmd)
+            self.mode = 'yellow'
+        elif self.mode == 'yellow':
+            self.mode = 'green'
+            if look_for_this in tubo.blit(False):
+                return True
+            else:
+                return False
+
+    def step(self, tubo):
+        # One step (one sent cmd or restart action) in the attempt to run the cmds, verify packages, etc.
+        if len(self.remaining_packages)>0:
+            # Attempt to install a package.
+            if self.step_packages(tubo):
+                self.completed_packages.append(self.remaining_packages[0])
+                self.remaining_packages = self.remaining_packages[1:]
+        elif len(self.remaining_misc_cmds)>0:
+            # Commands that are ran after installation.
+            if self.step_cmds(tubo):
+                self.completed_misc_cmds.append(self.remaining_misc_cmds[0])
+                self.remaining_misc_cmds = self.remaining_misc_cmds[1:]
+        elif len(self.remaining_tests)>0:
+            if self.step_tests(tubo):
+                self.completed_tests.append(self.remaining_tests[0])
+                self.remaining_tests = self.remaining_tests[1:]
+        else:
+            return tubo, True
+        return tubo, False
+
+    def run(tubo):
+        while True:
+            tubo, finished = self.step(tubo)
+            if finished:
+                break
+        return tubo

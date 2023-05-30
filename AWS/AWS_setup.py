@@ -65,9 +65,9 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    tubo = vm.install_package(inst_id, 'python3', 'apt', printouts=True)
-    tubo = vm.install_package(tubo, 'aws', 'apt', printouts=True, user_name=user_name)
-    for pk_name in ['net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
+    tubo = vm.install_package(inst_id, 'apt python3', printouts=True)
+    tubo = vm.install_package(tubo, 'apt aws', printouts=True, user_name=user_name)
+    for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
         tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
     for pk_name in ['skythonic', 'host-list']:
         tubo = vm.install_custom_package(tubo, pk_name, printouts=True)
@@ -151,11 +151,11 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     for i in range(3):
         inst_id = inst_ids[i]
 
-        tubo = vm.install_package(inst_id, 'mysql-client', 'apt', printouts=True)
-        for pk_name in ['net-tools', 'netcat', 'vim', 'tcpdump', 'ping']:
-            tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
+        tubo = vm.install_package(inst_id, 'apt mysql-client', printouts=True)
+        for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
+            tubo = vm.install_package(tubo, pk_name, printouts=True)
     vm.install_custom_package(inst_ids[1], 'app-server')
-    vm.install_package(inst_ids[0], 'apache', 'apt')
+    vm.install_package(inst_ids[0], 'apt apache')
     vm.install_custom_package(inst_ids[0], 'web-server')
 
     #The gateway is the VpcPeeringConnectionId
