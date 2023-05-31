@@ -1,6 +1,5 @@
+# Plumbers deal with pipes that *should be* working but *aren't* working.
 import time
-
-##############Expect-like tools that try to correct for errors##################
 
 #def _restart_parent(tubo):
 #    # More robust against TODO

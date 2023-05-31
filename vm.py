@@ -4,7 +4,9 @@
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
 import paramiko, time, os
 import file_io
-import eye_term, covert
+import covert
+import waterworks.eye_term as eye_term
+import waterworks.plumber as plumber
 
 platform = 'AWS' # Different platforms will be supported here.
 if platform == 'AWS':
@@ -42,7 +44,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: restart_vm(instance_id)
 
-    p = eye_term.Plumber([], {}, [], [eye_term.pipe_test()], dt=0.5)
+    p = plumber.Plumber([], {}, [], [eye_term.pipe_test()], dt=0.5)
     tubo = p.run(tubo)
     return tubo
 
@@ -110,7 +112,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
-    p = eye_term.Plumber([], {}, [scp_cmd], eye_term.pipe_test(), dt=2.0)
+    p = plumber.Plumber([], {}, [scp_cmd], eye_term.pipe_test(), dt=2.0)
     tubo = p.run(tubo)
 
     if local_dest_folder is None:
@@ -138,7 +140,7 @@ def update_apt(inst_or_pipe, printouts=None):
     pairs = [['sudo apt-get update\nsudo apt-get upgrade', 'Reading state information... Done']]
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
 
-    p = eye_term.Plumber([], {}, ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], pairs, dt=0.5)
+    p = plumber.Plumber([], {}, ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], pairs, dt=0.5)
     tubo = p.run(tubo)
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
@@ -206,7 +208,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
 
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     response_map = {**eye_term.default_prompts(), **extra_prompts.get(package_name,{})}
-    p = eye_term.Plumber([package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
+    p = plumber.Plumber([package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
     tubo = p.run(tubo)
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
@@ -286,7 +288,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     else:
         raise Exception(f'Unrecognized custom package {package_name}')
 
-    p = eye_term.Plumber(non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
+    p = plumber.Plumber(non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
     tubo = p.run(tubo)
 
     return tubo
