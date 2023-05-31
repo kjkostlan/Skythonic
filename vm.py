@@ -44,7 +44,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: restart_vm(instance_id)
 
-    p = plumber.Plumber([], {}, [], [eye_term.pipe_test()], dt=0.5)
+    p = plumber.Plumber([], {}, [], [plumber.pipe_test()], dt=0.5)
     tubo = p.run(tubo)
     return tubo
 
@@ -119,6 +119,10 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
         file_io.power_delete(save_here)
 
     return out, tubo
+
+def update_vms_skythonic(diff):
+    # Updates all skythonic files on VMs.
+    eye_term.bprint('Warning: TODO: implement this auto-update Skythonic function.')
 
 ########################Installation of packages################################
 
@@ -207,7 +211,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     package_manager = package_name.split()
 
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    response_map = {**eye_term.default_prompts(), **extra_prompts.get(package_name,{})}
+    response_map = {**plumber.default_prompts(), **extra_prompts.get(package_name,{})}
     p = plumber.Plumber([package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
     tubo = p.run(tubo)
 

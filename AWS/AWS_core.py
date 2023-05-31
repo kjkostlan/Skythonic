@@ -3,7 +3,7 @@ import time, requests
 import boto3
 import AWS.AWS_format as AWS_format
 import AWS.AWS_query as AWS_query
-import eye_term
+import waterworks.plumber as plumber
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
@@ -76,7 +76,7 @@ def create(rtype0, name, **kwargs):
     f = lambda: add_tags(x, {'Name':name, '__Skythonic__':True})
     f_catch = lambda e: 'does not exist' in repr(e).lower()
     msg = 'created a resource of type '+rtype+' waiting for it to start existing.'
-    eye_term.loop_try(f, f_catch, msg, delay=4)
+    plumber.loop_try(f, f_catch, msg, delay=4)
     if raw: # Generally discouraged to work with, except for keypairs.
         return x
     elif type(x) is dict:

@@ -1,6 +1,6 @@
 import boto3
 import AWS.AWS_format as AWS_format
-import plumbing
+import waterworks.fittings as fittings
 
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')

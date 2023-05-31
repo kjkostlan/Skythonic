@@ -1,8 +1,8 @@
 # Virtal machine tools specific to aws.
 import paramiko, time, os
-import file_io
+import file_io, covert
 import AWS.AWS_format as AWS_format
-import eye_term, covert
+import waterworks.eye_term as eye_term
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
@@ -20,10 +20,6 @@ def get_ip(x): # Address or machine.
 
 def get_region_name():
     return boto3.session.Session().region_name
-
-def update_vms_skythonic(diff):
-    # Updates all skythonic files on VMs.
-    eye_term.bprint('Warning: TODO: implement this auto-update Skythonic function.')
 
 try: # Precompute.
     _imgs

@@ -2,7 +2,8 @@ import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 import AWS.AWS_query as AWS_query, AWS.AWS_core as AWS_core, AWS.AWS_format as AWS_format
-import covert, eye_term
+import covert
+import waterworks.eye_term as eye_term
 
 def has_been_deleted(id):
     # To clean up stuff that lingers.
