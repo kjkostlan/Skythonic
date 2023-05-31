@@ -44,7 +44,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: restart_vm(instance_id)
 
-    p = plumber.Plumber([], {}, [], [plumber.pipe_test()], dt=0.5)
+    p = plumber.Plumber([], {}, [], 'default', dt=0.5)
     tubo = p.run(tubo)
     return tubo
 
@@ -112,7 +112,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
-    p = plumber.Plumber([], {}, [scp_cmd], eye_term.pipe_test(), dt=2.0)
+    p = plumber.Plumber([], {}, [scp_cmd], 'default', dt=2.0)
     tubo = p.run(tubo)
 
     if local_dest_folder is None:
