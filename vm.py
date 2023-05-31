@@ -44,9 +44,9 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: restart_vm(instance_id)
 
-    p = plumber.Plumber([], {}, [], 'default', dt=0.5)
-    tubo = p.run(tubo)
-    return tubo
+    p = plumber.Plumber(tubo, [], {}, [], 'default', dt=0.5)
+    p.run()
+    return p.tubo
 
 def lazy_run_ssh(instance_id, bash_cmds, f_polls=None, printouts=True):
     # This abstraction is quite leaky, so *only use when things are very simple and consistent*.
@@ -112,13 +112,13 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
-    p = plumber.Plumber([], {}, [scp_cmd], 'default', dt=2.0)
-    tubo = p.run(tubo)
+    p = plumber.Plumber(tubo, [], {}, [scp_cmd], 'default', dt=2.0)
+    p.run()
 
     if local_dest_folder is None:
         file_io.power_delete(save_here)
 
-    return out, tubo
+    return out, p.tubo
 
 def update_vms_skythonic(diff):
     # Updates all skythonic files on VMs.
@@ -144,12 +144,12 @@ def update_apt(inst_or_pipe, printouts=None):
     pairs = [['sudo apt-get update\nsudo apt-get upgrade', 'Reading state information... Done']]
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
 
-    p = plumber.Plumber([], {}, ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], pairs, dt=0.5)
-    tubo = p.run(tubo)
+    p = plumber.Plumber(tubo, [], {}, ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], pairs, dt=0.5)
+    p.run()
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
-        tubo.close()
-    return tubo
+        p.tubo.close()
+    return p.tubo
 
 def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     # Includes configuration for common packages;
@@ -212,12 +212,12 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
 
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     response_map = {**plumber.default_prompts(), **extra_prompts.get(package_name,{})}
-    p = plumber.Plumber([package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
-    tubo = p.run(tubo)
+    p = plumber.Plumber(tubo, [package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
+    tubo = p.run()
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
-        tubo.close()
-    return tubo
+        p.tubo.close()
+    return p.tubo
 
 ###############Installation of our packages and configs#########################
 
@@ -292,7 +292,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     else:
         raise Exception(f'Unrecognized custom package {package_name}')
 
-    p = plumber.Plumber(non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
-    tubo = p.run(tubo)
+    p = plumber.Plumber(tubo, non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
+    p.run()
 
-    return tubo
+    return p.tubo

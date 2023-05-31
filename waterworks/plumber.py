@@ -62,17 +62,20 @@ def with_timeout(tubo, f, timeout=6, message=None):
     return False
 
 class Plumber():
-    def __init__(self, packages, response_map, other_cmds, test_pairs, dt=2.0):
+    def __init__(self, tubo, packages, response_map, other_cmds, test_pairs, fn_override=None, dt=2.0):
+        # test_pairs is a vector of [cmd, expected] pairs.
         self.last_restart_time = -1e100 # Wait for it to restart!
         #self.broken_record = 0 # Num times the last err appeared.
         #self.err_counts = {} # TODO: use.
-        # test_pairs is a vector of [cmd, expected] pairs.
         if test_pairs is None or len(test_pairs)==0:
             test_pairs = []
         if test_pairs == 'default':
             test_pairs = [['echo foo{bar,baz}', 'foobar foobaz']]
-        self.dt = dt
+        self.dt = dt # Time-step when we need to wait, if the cmd returns faster we will respond faster.
         self.response_map = response_map
+        self.fn_override = fn_override
+        self.cmd_history = []
+        self.tubo = tubo
 
         self.remaining_packages = list(packages)
         self.remaining_misc_cmds = other_cmds
@@ -84,17 +87,39 @@ class Plumber():
 
         self.mode = 'green' # Finite state machine.
 
-    def get_resp_map_response(self, tubo):
-        txt_or_none = ptools.get_prompt_response(tubo.blit(False), self.response_map)
-        return txt_or_none
+    def send_cmd(self, _cmd):
+        # Preferable than tubo.send since we store cmd_history.
+        self.tubo.send(_cmd)
+        self.cmd_history.append(_cmd)
 
-    def short_wait(self, tubo):
+    def blit_based_response(self):
+        # Responses based on the blit alone, including error handling.
+        # None means that there is no need to give a specific response.
+        pkg = 'Nonepkg'
+        if len(self.remaining_packages)>0:
+            pkg = self.remaining_packages[0]
+        txt = self.tubo.blit(False)
+        w = ptools.ssh_error(txt, self.cmd_history)
+        if w is not None:
+            return w
+        x = ptools.apt_error(txt, pkg, self.cmd_history)
+        if x is not None:
+            return x
+        y = ptools.pip_error(txt, pkg, self.cmd_history)
+        if y is not None:
+            return y
+        z = ptools.get_prompt_response(txt, self.response_map) # Do this last in case there is a false positive that actually is an error.
+        if z is not None:
+            return z
+        return None
+
+    def short_wait(self):
         # Waits up to self.dt for the tubo, hoping that the tubo catches up.
         # Returns True for if the command finished or if a response was caused.
         sub_dt = 1.0/2048.0
         t0 = time.time(); t1 = t0+self.dt
         while time.time()<t1:
-            if eye_term.standard_is_done(tubo.blit(include_history=False)) or self.get_resp_map_response(tubo):
+            if eye_term.standard_is_done(self.tubo.blit(include_history=False)) or self.blit_based_response():
                 return True
             sub_dt = sub_dt*1.414
             ts = min(sub_dt, t1-time.time())
@@ -104,111 +129,78 @@ class Plumber():
                 break
         return False
 
-    def step_packages(self, tubo):
+    def step_packages(self):
         # Returns True once installation and testing is completed.
         pkg = self.remaining_packages[0].strip(); ppair = pkg.split(' ')
         if ppair[0] == 'apt':
             _quer = ptools.apt_query; _err = ptools.apt_error; _ver = ptools.apt_verify
-            _cmd = 'sudo apt install '+ppair[0]
+            _cmd = 'sudo apt install '+ppair[1]
         elif ppair[0] == 'pip' or ppair[0] == 'pip3':
             _quer = ptools.pip_query; _err = ptools.pip_error; _ver = ptools.pip_verify
-            _cmd = 'pip3 install '+ppair[0]
+            _cmd = 'pip3 install '+ppair[1]
         else:
             raise Exception(f'Package must be of the format "apt foo" or "pip bar" (not "{pkg}"); no other managers are currently supported.')
 
-        if not self.short_wait(tubo): # TODO: timeout if wait too long/dry pipes.
-            return False
-
         if self.mode == 'green':
-            tubo.send(_cmd)
+            self.send_cmd(_cmd)
             self.mode = 'blue'
-            return False
         elif self.mode == 'blue':
-            if _err(tubo.blit(False)):
-                self.mode = 'green' # Try again.
-            else:
-                x = self.get_resp_map_response(tubo)
-                if x:
-                    tubo.send(x)
-                else:
-                    self.mode = 'yellow'
-            return False
-        elif self.mode == 'yellow': # Testing A
-            if _err(tubo.blit(False)):
-                self.mode = 'green' # Try again.
-            else:
-                tubo.send(_quer(pkg))
-            return False
+            self.send_cmd(_quer(pkg))
+            self.mode = 'orange'
         elif self.mode == 'orange': # Testing B
-            if _err(tubo.blit(False)):
-                self.mode = 'green' # Try again.
-            elif _ver(pkg, tubo.blit(False)):
-                self.mode = 'green' # Reset.
-                return True # Package has been verified.
-            else:
-                self.mode = 'green' # Try again.
-            return False
+            self.mode = 'green' # Keep looping the send cmd, send query, verify result loop.
+            if _ver(pkg, self.tubo.blit(False)):
+                return True
         else:
             self.mode = 'green'
-            return False
+        return False
 
-    def step_cmds(self, tubo):
-        # Extra cmds.
-        if not self.short_wait(tubo): # TODO: timeout if wait too long/dry pipes.
-            return False
-        x = self.get_resp_map_response(tubo)
-        if x:
-            tubo.send(x)
-            return False
-        if self.mode == 'yellow':
-            self.mode = 'green'
-            return True
-        else:
-            the_cmd = self.remaining_misc_cmds[0]
-            tubo.send(the_cmd)
-            self.mode = 'yellow'
-
-    def step_tests(self, tubo):
-        if not self.short_wait(tubo): # TODO: timeout if wait too long/dry pipes.
-            return False
-        x = self.get_resp_map_response(tubo)
-        if x:
-            tubo.send(x)
-            return False
+    def step_tests(self):
         the_cmd, look_for_this = self.remaining_tests[0]
         if self.mode == 'green':
-            tubo.send(the_cmd)
-            self.mode = 'yellow'
-        elif self.mode == 'yellow':
-            self.mode = 'green'
-            if look_for_this in tubo.blit(False):
+            self.tubo.send(the_cmd)
+            self.mode = 'magenta'
+        elif self.mode == 'magenta':
+            self.mode = 'green' # Another reset loop if we fail.
+            txt = self.tubo.blit(False)
+            if callable(look_for_this) and look_for_this(txt): # Function or string.
                 return True
-            else:
-                return False
+            elif look_for_this in txt:
+                return True
+        else:
+            self.mode = 'green'
+        return False
 
-    def step(self, tubo):
-        # One step (one sent cmd or restart action) in the attempt to run the cmds, verify packages, etc.
-        if len(self.remaining_packages)>0:
-            # Attempt to install a package.
-            if self.step_packages(tubo):
+    def step(self):
+        if not self.short_wait():
+            return False
+        if self.fn_override is not None: # For those occasional situations where complete control of everything is needed.
+            if self.fn_override(self):
+                return False
+        send_this = self.blit_based_response() # These can introject randomally (if i.e. the SSH pipe goes down and need a reboot).
+        if callable(send_this): # Sometimes the response is a function of the plumber, not a simple txt prompt.
+            send_this(self)
+        elif send_this is not None:
+            self.send_cmd(send_this)
+        elif len(self.remaining_packages)>0:
+            if self.step_packages():
                 self.completed_packages.append(self.remaining_packages[0])
                 self.remaining_packages = self.remaining_packages[1:]
         elif len(self.remaining_misc_cmds)>0:
             # Commands that are ran after installation.
-            if self.step_cmds(tubo):
-                self.completed_misc_cmds.append(self.remaining_misc_cmds[0])
-                self.remaining_misc_cmds = self.remaining_misc_cmds[1:]
+            self.send_cmd(self.self.remaining_misc_cmds[0])
+            self.completed_misc_cmds.append(self.remaining_misc_cmds[0])
+            self.remaining_misc_cmds = self.remaining_misc_cmds[1:]
         elif len(self.remaining_tests)>0:
-            if self.step_tests(tubo):
+            # Extra tests, beyond the specific verifications.
+            if self.step_tests():
                 self.completed_tests.append(self.remaining_tests[0])
                 self.remaining_tests = self.remaining_tests[1:]
         else:
-            return tubo, True
-        return tubo, False
+            return True
+        return False
 
-    def run(self, tubo):
-        while True:
-            tubo, finished = self.step(tubo)
-            if finished:
-                break
-        return tubo
+    def run(self):
+        while not self.step():
+            pass
+        return self.tubo

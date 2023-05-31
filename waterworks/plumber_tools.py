@@ -36,36 +36,42 @@ def get_prompt_response(txt, response_map):
 #    x1 = tubo.blit(); x = x1[len(x0):]
 #    return tubo, x
 
-def apt_error(txt):
-    # Scan for errors in apt.
-    # If no error is detected, returns None.
-    msgs = {'Unable to acquire the dpkg frontend lock':'dpkg lock uh ho.',
-            'sudo dpkg --configure -a" when needed':'Mystery --configure -a bug',
-            'Unable to locate package':'Cant locate',
-            'has no installation candidate':'The other cant locate',
-            'Some packages could not be installed. This may mean that you have requested an impossible situation':'Oh no not the "impossible situation" error!'}
+def apt_error(txt, pkg, cmd_history):
+    # Errors and the recommended response after running an apt cmd.
+    # Dealing with the lock:
+    if 'ps aux | grep -i apt' in str((['']*2+cmd_history)[-2:]):
+        # Kill all processes using apt.
+        # Note: sudo rm /var/lib/dpkg/lock would be the nuclear option.
+        TODO
+    msgs = {'Unable to acquire the dpkg frontend lock':'ps aux | grep -i apt --color=never',
+            'sudo dpkg --configure -a" when needed':'sudo dpkg --configure -a',
+            'Unable to locate package':'sudo apt update\nsudo apt upgrade',
+            'has no installation candidate':'sudo apt update\nsudo apt upgrade',
+            'Some packages could not be installed. This may mean that you have requested an impossible situation':'sudo apt update\nsudo apt upgrade'}
     for k in msgs.keys():
         if k in txt:
             return msgs[k]
     return None
 
-def pip_error(txt):
+def pip_error(txt, pkg, cmd_history):
     # Scan for errors in pip.
     # TODO: better handling of --break-system-packages option
-    if "Command 'pip' not found" in x or 'pip: command not found' in txt:
-        return 'pip not found'
+    if "Command 'pip' not found" in txt or 'pip: command not found' in txt:
+        return 'sudo apt install python3-pip'
     if 'No matching distribution found for' in txt:
         return 'package not found'
     if '--break-system-packages' in txt and 'This environment is externally managed' in txt:
-        return 'externally managed env'
+        pkg1 = pkg.split(' ')[-1]
+        return f'sudo apt install {pkg1} --break-system-packages'
     return None
 
-def ssh_error(e_txt):
+def ssh_error(e_txt, cmd_history):
     # Scan for errors in creating the ssh pipe (if making the pipe causes an Exception)
-    msgs = {'Unable to connect to':'Unable to connect', 'timed out':'timeout',\
-            'encountered RSA key, expected OPENSSH key':'RSA/OPENSSH keys',
-            'Connection reset by peer':'connection reset',\
-            'Error reading SSH protocol banner':'Oh no! the *banner* error!'}
+    f_re = lambda plumber: plumber.tubo.remake()
+    msgs = {'Unable to connect to':f_re, 'timed out':f_re,\
+            'encountered RSA key, expected OPENSSH key':f_re,
+            'Connection reset by peer':f_re,\
+            'Error reading SSH protocol banner':f_re}
     for k in msgs.keys():
         if k in e_txt:
             return msgs[k]
