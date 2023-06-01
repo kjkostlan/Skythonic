@@ -119,7 +119,7 @@ class Plumber():
             self.restart_vm()
 
     def send_cmd(self, _cmd, add_to_packets=True):
-        # Preferable than tubo.send since we store cmd_history.
+        # Preferable than tubo.send since we store cmd_history and catch SSH errors.
         try:
             self.tubo.send(_cmd, add_to_packets=add_to_packets)
         except Exception as e:
@@ -205,7 +205,7 @@ class Plumber():
     def step_tests(self):
         the_cmd, look_for_this = self.remaining_tests[0]
         if self.mode == 'green':
-            self.tubo.send(the_cmd)
+            self.send_cmd(the_cmd)
             self.mode = 'magenta'
         elif self.mode == 'magenta':
             self.mode = 'green' # Another reset loop if we fail.

@@ -58,7 +58,7 @@ def lazy_run_ssh(instance_id, bash_cmds, f_polls=None, printouts=True):
     _out, _err, _ = tubo.multi_API(bash_cmds, f_polls=f_polls)
     tubo.close()
     if tubo.printouts:
-        bprint('\nWe closed the SSH\n')
+        eye_term.bprint('\nWe closed the SSH\n')
     return _out, _err, tubo
 
 def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
@@ -66,8 +66,11 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # Both local or non-local paths allowed.
     # Automatically creates folders.
     if printouts:
-        bprint(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
-    ez_ssh_cmds(instance_id,[f'mkdir -p {eye_term.quoteless(remote_root_folder)}'], printouts=printouts)
+        eye_term.bprint(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
+
+    tubo = patient_ssh_pipe(instance_id, printouts=printouts)
+    p = plumber.Plumber(tubo, [], {}, [f'mkdir -p {eye_term.quoteless(remote_root_folder)}'], [], dt=2.0)
+    p.run()
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
     #scp file.txt username@to_host:/remote/directory/
@@ -98,7 +101,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     tubo.API('echo scp_cmd_sent') # Getting the output from the scp command is ... tricky. Use echos instead:
 
     file_io.power_delete(tmp_dump)
-    bprint('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
+    eye_term.bprint('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
     return tubo
 
 def download_remote_file(instance_id, remote_path, local_dest_folder=None, printouts=True, bin_mode=False):
@@ -203,8 +206,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     tests['apt apache2'] = [['sudo service apache2 start\ncurl -k http://localhost\nsudo service apache2 stop', ['<div class="section_header">', 'Apache2']]]
     tests['apt python3-pip'] = [['python3\nprint(id)\nquit()', '<built-in function id>']]
     tests['apt awscli'] = [['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'],
-                           ["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()"],
-                           "'Vpcs': [{'CidrBlock'"]
+                           ["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]]
 
     extra_prompts = {}
     boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
@@ -277,7 +279,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
             if file_io.dump_folder.split('/')[-1] in k:
                 del file2contents[k]
         dest_folder = '~/Skythonic'
-        test_pairs = [['cd Skythonic', 'python3 \nimport file_io\nprint(file_io)\n', 'quit()'], ['module']]
+        test_pairs = [['cd Skythonic\npython3\nimport file_io\nprint(file_io)\nquit()','module']]
         non_custom_packages = ['pip paramiko']
     elif package_name=='host-list':
         dest_folder = '/etc'
@@ -312,6 +314,9 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
                      'journalctl -xeu apache2.service --no-pager']
     else:
         raise Exception(f'Unrecognized custom package {package_name}')
+
+    if len(file2contents)>0:
+        send_files(tubo.machine_id, file2contents, dest_folder, printouts=tubo.printouts)
 
     p = plumber.Plumber(tubo, non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
     p.run()
