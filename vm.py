@@ -155,11 +155,16 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     # Includes configuration for common packages;
     # package_name = "apt apache2" or "pip boto3".
     # Some pacakges will require kwards for configuration.
+    package_name = package_name.lower() # Lowercase, 0-9 -+ only.
+    if package_name.startswith('pip '):
+        package_name = 'pip3 '+package_name[3:].strip()
+
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
     renames = {'apt ping':'apt iputils-ping','apt apache':'apt apache2',
                'apt python':'apt python3-pip', 'apt python3':'apt python3-pip',
                'apt aws':'apt awscli', 'apt netcat':'apt netcat-openbsd'}
+    package_name = renames.get(package_name, package_name)
 
     xtra_cmds = {}
     xtra_cmds['apt apache2'] = ['sudo apt install libcgi-session-perl',
@@ -172,35 +177,38 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
             'cd /etc/apache2/sites-enabled',
             'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
     xtra_cmds['apt awscli'] = ['aws configure']
+    xtra_cmds['apt python3-pip'] = ['PYTHON3_PATH=$(which python3)', 'sudo ln -sf $PYTHON3_PATH /usr/local/bin/python']
 
     xtra_packages = {}
     xtra_packages['apt awscli'] = ['pip boto3']
-    xtra_packages['apt python3-pip'] = ['apt python-is-python3']
+    #xtra_packages['apt python3-pip'] = ['apt python-is-python3'] # This package can't always be found for some reason.
 
     timeouts = {'apt awscli':128, 'apt python3-pip':128}
     timeout = timeouts.get(package_name, 64)
 
     tests = {}
-    tests['aws iputils-ping'] = [['ping -c 1 localhost'],['0% packet loss']]
-    tests['aws apache2'] = [['sudo service apache2 start', 'curl -k http://localhost', 'sudo service apache2 stop'], ['<div class="section_header">', 'Apache2']]
-    tests['aws python3-pip'] = [['python3', 'print(id)', 'quit()'],['<built-in function id>']]
-    tests['aws awscli'] = [['aws ec2 describe-vpcs --output text',
-                         'python3', 'import boto3', "boto3.client('ec2').describe_vpcs()", 'quit()'],
-                       ['CIDRBLOCKASSOCIATIONSET', "'Vpcs': [{'CidrBlock'"]]
+    tests['apt iputils-ping'] = [['ping -c 1 localhost', '0% packet loss']]
+    tests['apt apache2'] = [['sudo service apache2 start\ncurl -k http://localhost\nsudo service apache2 stop', ['<div class="section_header">', 'Apache2']]]
+    tests['apt python3-pip'] = [['python3\nprint(id)\nquit()', '<built-in function id>']]
+    tests['apt awscli'] = [['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'],
+                           ["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()"],
+                           "'Vpcs': [{'CidrBlock'"]
 
     extra_prompts = {}
+    boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
+    extra_prompts['pip3 boto3'] = {boto3_err:'pip3 install --upgrade boto3 botocore'}
 
-    package_name = renames.get(package_name.lower(), package_name.lower()) # Lowercase, 0-9 -+ only.
-    if package_name=='awscli': # This one requires using boto3 so is buried in this conditional.
-        bprint('awscli is a HEAVY installation. Should take about 5 min.')
+    if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
+        eye_term.bprint('awscli is a HEAVY installation. Should take about 5 min.')
         region_name = CLOUD_vm.get_region_name()
         user_id = covert.user_dangerkey(kwargs['user_name'])
         publicAWS_key, privateAWS_key = covert.get_key(user_id)
 
         # The null prompts (empty string) may help to keep ssh alive:
-        extra_prompts['awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+        extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
                                     'region name':region_name, 'output format':'json',
                                     'Geographic area':11, #11 = SystemV
+                                    boto3_err:'pip install --upgrade boto3 botocore',
                                     'Get:42':'', 'Unpacking awscli':'',
                                     'Setting up fontconfig':'', 'Extracting templates from packages':'',
                                     'Unpacking libaom3:amd64':''}

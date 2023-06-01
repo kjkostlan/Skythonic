@@ -69,11 +69,11 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
         region_name = region_name[0:-1]
 
     tubo = vm.install_package(inst_id, 'apt python3', printouts=True)
-    tubo = vm.install_package(tubo, 'apt aws', printouts=True, user_name=user_name)
+    tubo = vm.install_package(tubo, 'apt aws', user_name=user_name)
     for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
-        tubo = vm.install_package(tubo, pk_name, 'apt', printouts=True)
+        tubo = vm.install_package(tubo, pk_name)
     for pk_name in ['skythonic', 'host-list']:
-        tubo = vm.install_custom_package(tubo, pk_name, printouts=True)
+        tubo = vm.install_custom_package(tubo, pk_name)
     AWS_vm.restart_vm(inst_id)
 
     print('Installation and basic tests of aws done.')

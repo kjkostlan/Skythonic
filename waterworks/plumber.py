@@ -64,8 +64,12 @@ def with_timeout(tubo, f, timeout=6, message=None):
 class Plumber():
     def __init__(self, tubo, packages, response_map, other_cmds, test_pairs, fn_override=None, dt=2.0):
         # test_pairs is a vector of [cmd, expected] pairs.
+        if tubo.closed: # Make sure the pipe is open.
+            tubo = tubo.remake()
         self.last_restart_time = -1e100 # Wait for it to restart!
         self.rcounts_since_restart = {}
+        self.num_restarts = 0
+        self.max_restarts = 3
         self.pipe_fix_fn = None
 
         #self.broken_record = 0 # Num times the last err appeared.
@@ -74,6 +78,8 @@ class Plumber():
             test_pairs = []
         if test_pairs == 'default':
             test_pairs = [['echo foo{bar,baz}', 'foobar foobaz']]
+        if other_cmds is None:
+            other_cmds = []
         self.dt = dt # Time-step when we need to wait, if the cmd returns faster we will respond faster.
         self.response_map = response_map
         self.fn_override = fn_override
@@ -100,6 +106,17 @@ class Plumber():
             raise e
         return fix_f
 
+    def _anti_loop_restart(self, k):
+        # k indentifies the error or the prompt, etc.
+        if k is None:
+            return
+        k = str(k)
+        self.rcounts_since_restart[k] = self.rcounts_since_restart.get(k,0)+1
+        if time.time() - self.last_restart_time > 90 and self.rcounts_since_restart[k] >= 3:
+            if self.tubo.printouts:
+                eye_term.bprint('Installation may be stuck in a loop, restarting machine')
+            self.restart_vm()
+
     def send_cmd(self, _cmd, add_to_packets=True):
         # Preferable than tubo.send since we store cmd_history.
         try:
@@ -107,13 +124,16 @@ class Plumber():
         except Exception as e:
             self.pipe_fix_fn = self._sshe(e)
             if self.tubo.printouts:
-                eye_term.bprint('Sending command failed b/c of:', str(e), ' will run the remedy.\n')
+                eye_term.bprint('Sending command failed b/c of:', str(e)+'; will run the remedy.\n')
 
     def restart_vm(self):
         # Preferable than using the tubo's restart fn because it resets rcounts_since_restart
         self.tubo.restart_fn()
         self.rcounts_since_restart = {}
         self.last_restart_time = time.time()
+        self.num_restarts = self.num_restarts+1
+        if self.num_restarts==self.max_restarts:
+            raise Exception('Max restarts exceeded, there appears to be an infinite loop that cant be broken.')
 
     def blit_based_response(self):
         # Responses based on the blit alone, including error handling.
@@ -150,7 +170,8 @@ class Plumber():
                 time.sleep(ts)
             else:
                 break
-        self.send_cmd('echo waiting_for_shell', add_to_packets=False) # Breaking the ssh pipe will make this cause errors.
+        if self.tubo.drought_len()>8:
+            self.send_cmd('Y\necho waiting_for_shell', add_to_packets=False) # Breaking the ssh pipe will make this cause errors.
         return False
 
     def step_packages(self):
@@ -171,10 +192,11 @@ class Plumber():
         elif self.mode == 'blue':
             self.send_cmd(_quer(pkg))
             self.mode = 'orange'
-        elif self.mode == 'orange': # Testing B
+        elif self.mode == 'orange':
             self.mode = 'green' # Keep looping the send cmd, send query, verify result loop.
             if _ver(pkg, self.tubo.blit(False)):
                 return True
+            self._anti_loop_restart(pkg+'_'+_quer(pkg))
         else:
             self.mode = 'green'
         return False
@@ -187,10 +209,18 @@ class Plumber():
         elif self.mode == 'magenta':
             self.mode = 'green' # Another reset loop if we fail.
             txt = self.tubo.blit(False)
-            if callable(look_for_this) and look_for_this(txt): # Function or string.
+            if type(look_for_this) is list or type(look_for_this) is tuple:
+                miss = False
+                for look_for in look_for_this:
+                    if look_for_this not in txt:
+                        miss = True
+                if not miss:
+                    return True
+            elif callable(look_for_this) and look_for_this(txt): # Function or string.
                 return True
             elif look_for_this in txt:
                 return True
+            self._anti_loop_restart(the_cmd+'_'+look_for_this)
         else:
             self.mode = 'green'
         return False
@@ -208,6 +238,8 @@ class Plumber():
                 self.tubo = self.pipe_fix_fn(self)
                 if type(self.tubo) is not eye_term.MessyPipe:
                     raise Exception('The remedy fn returned not a MessyPipe.')
+                elif self.tubo.closed:
+                    raise Exception('The remedy fn returned a closed MessyPipe.')
                 if self.tubo.printouts:
                     eye_term.bprint('Ran remedy to fix pipe\n')
                 self.pipe_fix_fn = None
@@ -224,12 +256,7 @@ class Plumber():
 
         # Restart if we seem stuck in a loop:
         send_this = self.blit_based_response() # These can introject randomally (if i.e. the SSH pipe goes down and need a reboot).
-        if send_this is not None:
-            self.rcounts_since_restart[str(send_this)] = self.rcounts_since_restart.get(str(send_this),0)+1
-        if time.time() - self.last_restart_time > 90 and send_this is not None and self.rcounts_since_restart[str(send_this)] >= 3:
-            if self.tubo.printouts:
-                eye_term.bprint('Installation may be stuck in a loop, restarting machine')
-            self.restart_vm()
+        self._anti_loop_restart(send_this)
 
         if callable(send_this): # Sometimes the response is a function of the plumber, not a simple txt prompt.
             send_this(self)
@@ -241,7 +268,7 @@ class Plumber():
                 self.remaining_packages = self.remaining_packages[1:]
         elif len(self.remaining_misc_cmds)>0:
             # Commands that are ran after installation.
-            self.send_cmd(self.self.remaining_misc_cmds[0])
+            self.send_cmd(self.remaining_misc_cmds[0])
             self.completed_misc_cmds.append(self.remaining_misc_cmds[0])
             self.remaining_misc_cmds = self.remaining_misc_cmds[1:]
         elif len(self.remaining_tests)>0:

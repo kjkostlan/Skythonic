@@ -67,6 +67,8 @@ def pip_error(txt, pkg, cmd_history):
         return 'sudo apt install python3-pip'
     if 'No matching distribution found for' in txt:
         return 'package not found'
+    if 'Upgrade to the latest pip and try again' in txt:
+        return 'pip3 install --upgrade pip'
     if '--break-system-packages' in txt and 'This environment is externally managed' in txt:
         pkg1 = pkg.split(' ')[-1]
         return f'sudo apt install {pkg1} --break-system-packages'
