@@ -65,6 +65,9 @@ class Plumber():
     def __init__(self, tubo, packages, response_map, other_cmds, test_pairs, fn_override=None, dt=2.0):
         # test_pairs is a vector of [cmd, expected] pairs.
         self.last_restart_time = -1e100 # Wait for it to restart!
+        self.rcounts_since_restart = {}
+        self.pipe_fix_fn = None
+
         #self.broken_record = 0 # Num times the last err appeared.
         #self.err_counts = {} # TODO: use.
         if test_pairs is None or len(test_pairs)==0:
@@ -76,6 +79,7 @@ class Plumber():
         self.fn_override = fn_override
         self.cmd_history = []
         self.tubo = tubo
+        self.nsteps = 0
 
         self.remaining_packages = list(packages)
         self.remaining_misc_cmds = other_cmds
@@ -87,10 +91,29 @@ class Plumber():
 
         self.mode = 'green' # Finite state machine.
 
-    def send_cmd(self, _cmd):
+    def _sshe(self, e):
+        # Throws e if not a recognized "SSH pipe malfunctioning" error.
+        # If it is, will return the remedy.
+        e_txt = str(e)
+        fix_f = ptools.ssh_error(e_txt, self.cmd_history)
+        if fix_f is None: # Only errors which can be thrown by ssh unreliabilities aren't thrown.
+            raise e
+        return fix_f
+
+    def send_cmd(self, _cmd, add_to_packets=True):
         # Preferable than tubo.send since we store cmd_history.
-        self.tubo.send(_cmd)
-        self.cmd_history.append(_cmd)
+        try:
+            self.tubo.send(_cmd, add_to_packets=add_to_packets)
+        except Exception as e:
+            self.pipe_fix_fn = self._sshe(e)
+            if self.tubo.printouts:
+                eye_term.bprint('Sending command failed b/c of:', str(e), ' will run the remedy.\n')
+
+    def restart_vm(self):
+        # Preferable than using the tubo's restart fn because it resets rcounts_since_restart
+        self.tubo.restart_fn()
+        self.rcounts_since_restart = {}
+        self.last_restart_time = time.time()
 
     def blit_based_response(self):
         # Responses based on the blit alone, including error handling.
@@ -99,9 +122,9 @@ class Plumber():
         if len(self.remaining_packages)>0:
             pkg = self.remaining_packages[0]
         txt = self.tubo.blit(False)
-        w = ptools.ssh_error(txt, self.cmd_history)
-        if w is not None:
-            return w
+        #w = ptools.ssh_error(txt, self.cmd_history) # SSH errors are handled by catching exceptions instead.
+        #if w is not None:
+        #    return w
         x = ptools.apt_error(txt, pkg, self.cmd_history)
         if x is not None:
             return x
@@ -127,6 +150,7 @@ class Plumber():
                 time.sleep(ts)
             else:
                 break
+        self.send_cmd('echo waiting_for_shell', add_to_packets=False) # Breaking the ssh pipe will make this cause errors.
         return False
 
     def step_packages(self):
@@ -172,12 +196,41 @@ class Plumber():
         return False
 
     def step(self):
+        try:
+            self.tubo.ensure_init()
+        except Exception as e:
+            self.pipe_fix_fn = self._sshe(e)
+            if self.tubo.printouts:
+                eye_term.bprint('Init the pipe failed b/c:', str(e), '. It may not be ready yet.\n')
+        if self.pipe_fix_fn is not None:
+            # Attempt to pipe_fix_fn, but the fn itself may cause an error (i.e. waiting for a vm to restart).
+            try:
+                self.tubo = self.pipe_fix_fn(self)
+                if type(self.tubo) is not eye_term.MessyPipe:
+                    raise Exception('The remedy fn returned not a MessyPipe.')
+                if self.tubo.printouts:
+                    eye_term.bprint('Ran remedy to fix pipe\n')
+                self.pipe_fix_fn = None
+            except Exception as e:
+                self.pipe_fix_fn = self._sshe(e)
+                if self.tubo.printouts:
+                    eye_term.bprint('Running remedy failed b/c of:', str(e), '. This may be b/c the machine is rebooting, etc. Will run remedy for remedy.\n')
+
         if not self.short_wait():
             return False
         if self.fn_override is not None: # For those occasional situations where complete control of everything is needed.
             if self.fn_override(self):
                 return False
+
+        # Restart if we seem stuck in a loop:
         send_this = self.blit_based_response() # These can introject randomally (if i.e. the SSH pipe goes down and need a reboot).
+        if send_this is not None:
+            self.rcounts_since_restart[str(send_this)] = self.rcounts_since_restart.get(str(send_this),0)+1
+        if time.time() - self.last_restart_time > 90 and send_this is not None and self.rcounts_since_restart[str(send_this)] >= 3:
+            if self.tubo.printouts:
+                eye_term.bprint('Installation may be stuck in a loop, restarting machine')
+            self.restart_vm()
+
         if callable(send_this): # Sometimes the response is a function of the plumber, not a simple txt prompt.
             send_this(self)
         elif send_this is not None:
@@ -197,7 +250,9 @@ class Plumber():
                 self.completed_tests.append(self.remaining_tests[0])
                 self.remaining_tests = self.remaining_tests[1:]
         else:
+            self.nsteps += 1
             return True
+        self.nsteps += 1
         return False
 
     def run(self):

@@ -144,25 +144,15 @@ def pipe_loop(tubo): # For ever watching... untill the thread gets closed.
 
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
-    def _init_core(self, proc_type, proc_args=None, printouts=True, return_bytes=False):
-        self.proc_type = proc_type
-        self.proc_args = proc_args
+    def _init_core(self, proc_type, proc_args=None, return_bytes=False):
         self.send_f = None # Send strings OR bytes.
         self.stdout_f = None # Returns an empty bytes if there is nothing to get.
         self.stderr_f = None
         self._streams = None # Mainly used for debugging.
         self.color = 'linux'
         self.remove_control_chars = rm_ctrl_chars_default # **Only on printing** Messier but should prevent terminal upsets.
-        self.printouts = printouts # True when debugging.
-        self.return_bytes = return_bytes
         self._close = None
-        self.closed = False
-        self.machine_id = None # Optional user data.
-        self.restart_fn = None # Optional fn allowing any server to be restarted.
-        self.lock = threading.Lock()
         self.loop_thread = threading.Thread(target=pipe_loop, args=[self])
-        self.packets = [['<init>', b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()]] # Each command: [cmd, out, err, time0, time1]
-        self.loop_err = None
 
         _to_str = lambda x: x if type(x) is str else x.decode()
         _to_bytes = lambda x: x if type(x) is bytes else x.encode()
@@ -252,26 +242,39 @@ class MessyPipe:
         if self.stdout_f is None or self.stderr_f is None:
             raise Exception('stdout_f and/or stderr_f not set.')
 
-        def _remake(self):
-            out = MessyPipe(self.proc_type, self.proc_args, self.printouts, self.return_bytes)
-            out.machine_id = self.machine_id
-            out.remove_control_chars = self.remove_control_chars
-            return out
-        self._remake = _remake
-
         self.update()
         self.loop_thread.daemon = True; self.loop_thread.start() # This must only happen when the setup is complete.
-        while True:
-            try:
-                self.API('echo pipe_begin', timeout=2.0) # This may prevent sending commands too early.
-                break
-            except Exception as e:
-                if 'API timeout' not in str(e):
-                    raise e
-            print(f'Waiting for {proc_pipe} pipe to be ready for a simple bash cmd.')
+        #while True: # TODO: this is more like the plumber loop?
+        #    try:
+        #        self.API('echo pipe_begin', timeout=2.0) # This may prevent sending commands too early.
+        #        break
+        #    except Exception as e:
+        #        if 'API timeout' not in str(e):
+        #            raise e
+        #    print(f'Waiting for {proc_pipe} pipe to be ready for a simple bash cmd.')
+        self.is_init = True
+
+    def ensure_init(self):
+        # Will raise some sort of paramiko Exception if the pipe isn't ready yet.
+        if self.is_init:
+            return
+        self._init_core(proc_type=self.proc_type, proc_args=self.proc_args, return_bytes=self.return_bytes)
 
     def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False):
-        self._init_core(proc_type, proc_args=proc_args, printouts=printouts, return_bytes=return_bytes)
+        # Defers creation of the pipe; creation can cause errors if done before i.e. a reboot is complete.
+        # the plumber class deals with such erros but needs a MessyPipe object.
+        self.lock = threading.Lock()
+        self.printouts = printouts
+        self.is_init = False
+        self.closed = False
+        self.return_bytes = return_bytes
+        self.proc_type = proc_type
+        self.proc_args = proc_args
+        self.loop_err = None
+        self.packets = [['<init>', b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()]] # Each command: [cmd, out, err, time0, time1]
+
+        self.machine_id = None # Optional user data.
+        self.restart_fn = None # Optional fn allowing any server to be restarted.
 
     def blit(self, include_history=True):
         # Mash the output and error together.
@@ -307,9 +310,10 @@ class MessyPipe:
         # How long since neither stdout nor stderr spoke to us.
         return time.time() - self.packets[-1][4]
 
-    def send(self, txt, include_newline=True, suppress_input_prints=False):
+    def send(self, txt, include_newline=True, suppress_input_prints=False, add_to_packets=True):
         # The non-blocking operation.
         #https://stackoverflow.com/questions/6203653/how-do-you-execute-multiple-commands-in-a-single-session-in-paramiko-python
+        self.ensure_init()
         if type(txt) is not str and type(txt) is not bytes:
             raise Exception(f'The input must be a string or bytes object, not a {type(txt)}')
         if self.closed:
@@ -317,10 +321,14 @@ class MessyPipe:
         if self.printouts and not suppress_input_prints:
             if self.color=='linux':
                 #https://stackoverflow.com/questions/287871/how-do-i-print-colored-text-to-the-terminal
-                print('\x1b[0;33;40m'+'→'+'\x1b[6;30;42m' +txt+'\x1b[0;33;40m'+'←'+'\x1b[0m')
+                if add_to_packets:
+                    print('\x1b[0;33;40m'+'→'+'\x1b[6;30;42m'+txt+'\x1b[0;33;40m'+'←'+'\x1b[0m')
+                else:
+                    print('\x1b[0;33;40m'+'→'+'\033[97;104m'+txt+'\x1b[0;33;40m'+'←'+'\x1b[0m')
             else:
                 print('→'+txt+'←')
-        self.packets.append([txt, b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()])
+        if add_to_packets:
+            self.packets.append([txt, b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()])
         self.send_f(txt, include_newline=include_newline)
 
     def API(self, txt, f_polls=None, timeout=8.0):
@@ -375,6 +383,8 @@ class MessyPipe:
         return outputs, errs, polls_info
 
     def close(self):
+        if not self.is_init:
+            raise Exception('Attempt to close a pipe which has not been initalized.')
         self._close(self)
         self.closed = True
 
@@ -388,6 +398,9 @@ class MessyPipe:
     def remake(self):
         # If closed, opens a new pipe to the same settings and returns it.
         # Recommended to put into a loop which may i.e. restart vms or otherwise debug things.
-        if not self.closed:
+        if self.is_init and not self.closed:
             self.close()
-        return self._remake(self)
+        out = MessyPipe(proc_type=self.proc_type, proc_args=self.proc_args, printouts=self.printouts, return_bytes=self.return_bytes)
+        out.machine_id = self.machine_id
+        out.restart_fn = self.restart_fn
+        return out

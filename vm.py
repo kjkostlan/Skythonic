@@ -42,7 +42,7 @@ def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
     pargs = ssh_proc_args(instance_id)
     tubo = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes)
     tubo.machine_id = instance_id
-    tubo.restart_fn = lambda: restart_vm(instance_id)
+    tubo.restart_fn = lambda: CLOUD_vm.restart_vm(instance_id)
 
     p = plumber.Plumber(tubo, [], {}, [], 'default', dt=0.5)
     p.run()

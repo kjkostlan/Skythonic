@@ -1,4 +1,5 @@
 # These plumbertools are used in plumber, and are generally less useful outside of plumber.
+import re
 
 def _last_line(txt):
     return txt.replace('\r\n','\n').split('\n')[-1]
@@ -39,12 +40,18 @@ def get_prompt_response(txt, response_map):
 def apt_error(txt, pkg, cmd_history):
     # Errors and the recommended response after running an apt cmd.
     # Dealing with the lock:
-    if 'ps aux | grep -i apt' in str((['']*2+cmd_history)[-2:]):
-        # Kill all processes using apt.
+    if 'ps aux | grep -i apt' in str((['']+cmd_history)[-1]):
+        # Forceful cleanup.
         # Note: sudo rm /var/lib/dpkg/lock would be the nuclear option.
-        TODO
+        lines = list(filter(lambda l: 'grep' not in l and len(l.strip())>0, txt.split('\n')))
+        lines = [re.sub('\s+', ' ', l) for l in lines]
+        ids = [(l+' 000 000').strip().split(' ')[1] for l in lines]
+        ids = list(filter(lambda pid: pid not in ['', '000'], ids))
+        if len(ids)>0:
+            return '\n'.join(['sudo kill -9 '+pid for pid in ids])
+
     msgs = {'Unable to acquire the dpkg frontend lock':'ps aux | grep -i apt --color=never',
-            'sudo dpkg --configure -a" when needed':'sudo dpkg --configure -a',
+            "you must manually run 'sudo dpkg --configure -a'":'sudo dpkg --configure -a',
             'Unable to locate package':'sudo apt update\nsudo apt upgrade',
             'has no installation candidate':'sudo apt update\nsudo apt upgrade',
             'Some packages could not be installed. This may mean that you have requested an impossible situation':'sudo apt update\nsudo apt upgrade'}
@@ -68,10 +75,12 @@ def pip_error(txt, pkg, cmd_history):
 def ssh_error(e_txt, cmd_history):
     # Scan for errors in creating the ssh pipe (if making the pipe causes an Exception)
     f_re = lambda plumber: plumber.tubo.remake()
-    msgs = {'Unable to connect to':f_re, 'timed out':f_re,\
+    msgs = {'Unable to connect to':f_re, 'timed out':f_re,
             'encountered RSA key, expected OPENSSH key':f_re,
-            'Connection reset by peer':f_re,\
-            'Error reading SSH protocol banner':f_re}
+            'Connection reset by peer':f_re,
+            'Error reading SSH protocol banner':f_re,
+            'Socket is closed':f_re,
+            'paramiko.ssh_exception.NoValidConnectionsError':f_re}
     for k in msgs.keys():
         if k in e_txt:
             return msgs[k]
