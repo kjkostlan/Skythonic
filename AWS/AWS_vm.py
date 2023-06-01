@@ -1,5 +1,5 @@
 # Virtal machine tools specific to aws.
-import paramiko, time, os
+import paramiko, time, os, re
 import file_io, covert
 import AWS.AWS_format as AWS_format
 import waterworks.eye_term as eye_term
@@ -25,21 +25,35 @@ try: # Precompute.
     _imgs
 except:
     _imgs = [None]
-def ubuntu_aim_image():
+def ubuntu_aim_image(precompute=True):
     # Attemts to return the latest "stable" minimal AIM Ubuntu image.
-    if _imgs[0] is None:
+    if not precompute or _imgs[0] is None:
         filters = [{'Name':'name','Values':['*ubuntu*']}, {'Name': 'state', 'Values': ['available']}]
         filters.append({'Name':'architecture','Values':['x86_64']})
         imgs0 = ec2c.describe_images(Filters=filters, Owners=['amazon'])['Images']
         filter_fn = lambda d:d.get('Public',False) and d.get('ImageType',None)=='machine' and 'pro' not in d.get('Name',None) and 'minimal' in d.get('Name',None)
         imgs = list(filter(filter_fn, imgs0))
         _imgs[0] = {'Ubuntu':imgs}
-    imgs = _imgs[0]['Ubuntu']
+    else:
+        imgs = _imgs[0]['Ubuntu']
 
     if len(imgs)==0:
-        raise Exception('No matching images to this body of filters.')
+        raise Exception('No matching images to a basic Ubuntu filter.')
     imgs_sort = list(sorted(imgs,key=lambda d:d.get('CreationDate', '')))
-    return imgs_sort[-1]['ImageId']
+
+    only_supported = list(filter(lambda im: 'Description' in im and 'UNSUPPORTED' not in im['Description'] and 'LTS' in im['Description'], imgs_sort))
+    by_version = {}
+    for im in only_supported:
+        _v = re.findall('\d+\.\d+', im.get('Description', ''))
+        if len(_v)>0:
+            vnum = _v[0]
+            if vnum not in by_version:
+                by_version[vnum] = []
+            by_version[vnum].append(im)
+    kys = list(sorted(by_version.keys(), key=lambda k:float(k)))
+
+    im = by_version[kys[-1]][0]
+    return im['ImageId']
 
 def restart_vm(instance_id):
     if instance_id is None:
