@@ -15,6 +15,7 @@ def default_prompts():
         return ''.join(out)
 
     return {'Pending kernel upgrade':'\n\n\n','continue? [Y/n]':'Y',
+            'Continue [yN]':'Y', 'To continue please press [ENTER]':'\n', # the '\n' actually presses enter twice b/c linefeeds are added.
             'continue connecting (yes/no)?':'Y',
             'Which services should be restarted?':_super_advanced_linux_shell()}
 

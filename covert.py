@@ -98,7 +98,7 @@ def get_key(id_or_desc):
     elif id.startswith('AID'):
         desc = AWS_format.id2obj(id); uname = desc['UserName']
         if uname not in x['username2AWS_key'] and len(iam.list_access_keys(UserName=uname)['AccessKeyMetadata'])>0:
-            raise Exception(f'The keys exist for {uname} but they are not in this keychain and are thus lost. They need to be replaced.')
+            raise Exception(f'The keys exist for {uname} but they are not in this keychain and are likely lost. This may mean that the vm is bricked.')
         key_name = x['username2AWS_key'].get(uname, None)
         if key_name is None:
             raise Exception(f'No saved user key found for {uname}')

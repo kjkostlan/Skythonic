@@ -8,6 +8,7 @@ import AWS.AWS_vm as AWS_vm
 import vm
 import waterworks.eye_term as eye_term
 import waterworks.fittings as fittings
+import waterworks.plumber as plumber
 import covert
 ec2r = boto3.resource('ec2'); ec2c = boto3.client('ec2'); iam = boto3.client('iam')
 
@@ -35,7 +36,7 @@ def wait_and_attach_address(machine_id, address_id):
     f_try = lambda: AWS_core.assoc(addr['AllocationId'], machine_id) #ec2c.associate_address(AllocationId=addr['AllocationId'],InstanceId=inst_id)
     f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
     msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
-    plumbing.loop_try(f_try, f_catch, msg, delay=4)
+    plumber.loop_try(f_try, f_catch, msg, delay=4)
 
 def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC', key_name='BYOC_keypair'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
@@ -68,7 +69,8 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    tubo = vm.install_package(inst_id, 'apt python3', printouts=True)
+    #tubo = vm.upgrade_os(inst_id, printouts=True)
+    tubo = vm.install_package(inst_id, 'apt python3')
     tubo = vm.install_package(tubo, 'apt aws', user_name=user_name)
     for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
         tubo = vm.install_package(tubo, pk_name)
@@ -143,6 +145,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
                 if 'already exists' not in repr(e):
                     raise e
         inst_id = simple_vm(basenames[i], ips[i], subnet_id, securitygroup_id, key_name)
+        #_ = vm.upgrade_os(inst_id, printouts=True)
         inst_ids.append(inst_id)
 
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.

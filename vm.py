@@ -151,6 +151,18 @@ def update_apt(inst_or_pipe, printouts=None):
         p.tubo.close()
     return p.tubo
 
+def upgrade_os(inst_or_pipe, printouts=None):
+    # Upgrades the Ubuntu version.
+    raise Exception('TODO: Upgrading the OS over SSH seems to not work properly. Instead try to use a newer image in the initial vm.')
+    tubo = _to_pipe(inst_or_pipe, printouts=printouts)
+    response_map = {**plumber.default_prompts(), **{}}
+    p = plumber.Plumber(tubo, [], response_map, ['sudo do-release-upgrade', 'echo hopefully_upgraded_now'], [], dt=2.0)
+    tubo = p.run()
+
+    if type(inst_or_pipe) is not eye_term.MessyPipe:
+        p.tubo.close()
+    return tubo
+
 def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     # Includes configuration for common packages;
     # package_name = "apt apache2" or "pip boto3".
@@ -177,7 +189,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
             'cd /etc/apache2/sites-enabled',
             'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
     xtra_cmds['apt awscli'] = ['aws configure']
-    xtra_cmds['apt python3-pip'] = ['PYTHON3_PATH=$(which python3)', 'sudo ln -sf $PYTHON3_PATH /usr/local/bin/python']
+    xtra_cmds['apt python3-pip'] = ['PYTHON3_PATH=$(which python3)', 'sudo ln -sf $PYTHON3_PATH /usr/local/bin/python', 'sudo apt upgrade python3']
 
     xtra_packages = {}
     xtra_packages['apt awscli'] = ['pip boto3']
@@ -196,7 +208,8 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
 
     extra_prompts = {}
     boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
-    extra_prompts['pip3 boto3'] = {boto3_err:'pip3 install --upgrade boto3 botocore'}
+    boto3_fix = 'sudo apt upgrade openssl\npip3 install --upgrade boto3 botocore'
+    extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
 
     if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
         eye_term.bprint('awscli is a HEAVY installation. Should take about 5 min.')
@@ -208,7 +221,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
         extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
                                     'region name':region_name, 'output format':'json',
                                     'Geographic area':11, #11 = SystemV
-                                    boto3_err:'pip install --upgrade boto3 botocore',
+                                    boto3_err:boto3_fix,
                                     'Get:42':'', 'Unpacking awscli':'',
                                     'Setting up fontconfig':'', 'Extracting templates from packages':'',
                                     'Unpacking libaom3:amd64':''}
