@@ -107,13 +107,15 @@ class Plumber():
             raise e
         return fix_f
 
-    def _anti_loop_restart(self, k):
+    def _restart_if_too_loopy(self, k, not_pipe_related=None):
         # k indentifies the error or the prompt, etc.
         if k is None:
             return
         k = str(k)
         self.rcounts_since_restart[k] = self.rcounts_since_restart.get(k,0)+1
-        if time.time() - self.last_restart_time > 90 and self.rcounts_since_restart[k] >= 3:
+        n = self.rcounts_since_restart[k]
+        slow = time.time() - self.last_restart_time > 90
+        if (slow and n >= 3) or (not_pipe_related and n>8):
             if self.tubo.printouts:
                 eye_term.bprint('Installation may be stuck in a loop, restarting machine')
             self.restart_vm()
@@ -195,9 +197,12 @@ class Plumber():
             self.mode = 'orange'
         elif self.mode == 'orange':
             self.mode = 'green' # Keep looping the send cmd, send query, verify result loop.
-            if _ver(pkg, self.tubo.blit(False)):
+            txt = self.tubo.blit(False)
+            v = _ver(pkg, txt):
+            if v:
                 return True
-            self._anti_loop_restart(pkg+'_'+_quer(pkg))
+            safe_no_pipe = v is False # Exclude None.
+            self._restart_if_too_loopy(pkg+'_'+_quer(pkg), not_pipe_related=safe_no_pipe) # safe_no_pipe means that the SSH pipe is safely up and running.
         else:
             self.mode = 'green'
         return False
@@ -221,7 +226,7 @@ class Plumber():
                 return True
             elif look_for_this in txt:
                 return True
-            self._anti_loop_restart(the_cmd+'_'+look_for_this)
+            self._restart_if_too_loopy(the_cmd+'_'+look_for_this)
         else:
             self.mode = 'green'
         return False
@@ -257,7 +262,7 @@ class Plumber():
 
         # Restart if we seem stuck in a loop:
         send_this = self.blit_based_response() # These can introject randomally (if i.e. the SSH pipe goes down and need a reboot).
-        self._anti_loop_restart(send_this)
+        self._restart_if_too_loopy(send_this)
 
         if callable(send_this): # Sometimes the response is a function of the plumber, not a simple txt prompt.
             send_this(self)
