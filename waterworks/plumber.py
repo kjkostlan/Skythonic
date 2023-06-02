@@ -196,13 +196,18 @@ class Plumber():
             self.send_cmd(_quer(pkg))
             self.mode = 'orange'
         elif self.mode == 'orange':
-            self.mode = 'green' # Keep looping the send cmd, send query, verify result loop.
             txt = self.tubo.blit(False)
-            v = _ver(pkg, txt):
+            self.mode = 'green' # Done OR restart loop.
+            v = _ver(pkg, txt)
             if v:
                 return True
             safe_no_pipe = v is False # Exclude None.
             self._restart_if_too_loopy(pkg+'_'+_quer(pkg), not_pipe_related=safe_no_pipe) # safe_no_pipe means that the SSH pipe is safely up and running.
+
+            if ppair[0]=='apt':
+                self.send_cmd('sudo apt update\nudo apt upgrade')
+            elif ppair[0] == 'pip' or ppair[0] == 'pip3':
+                self.send_cmd('pip3 install --upgrade pip')
         else:
             self.mode = 'green'
         return False
@@ -215,18 +220,21 @@ class Plumber():
         elif self.mode == 'magenta':
             self.mode = 'green' # Another reset loop if we fail.
             txt = self.tubo.blit(False)
-            if type(look_for_this) is list or type(look_for_this) is tuple:
-                miss = False
-                for look_for in look_for_this:
-                    if look_for_this not in txt:
-                        miss = True
-                if not miss:
-                    return True
-            elif callable(look_for_this) and look_for_this(txt): # Function or string.
+            if type(look_for_this) is str or callable(look_for_this):
+                look_for_this = [look_for_this]
+
+            miss = False
+            for look_for in look_for_this:
+                if callable(look_for) and look_for(txt): # Function or string.
+                    pass
+                elif look_for in txt:
+                    pass
+                else:
+                    miss = True
+            if not miss:
                 return True
-            elif look_for_this in txt:
-                return True
-            self._restart_if_too_loopy(the_cmd+'_'+look_for_this)
+
+            self._restart_if_too_loopy(the_cmd+'_'+'_'.join(look_for_this))
         else:
             self.mode = 'green'
         return False
