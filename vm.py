@@ -36,11 +36,11 @@ def ssh_proc_args(instance_id):
     key_filename = covert.get_key(instance_id)[1]
     return{'username':username,'hostname':hostname, 'key_filename':key_filename}
 
-def patient_ssh_pipe(instance_id, printouts=True, return_bytes=False):
+def patient_ssh_pipe(instance_id, printouts=True, binary_mode=False):
     CLOUD_vm.start_vm(instance_id)
 
     pargs = ssh_proc_args(instance_id)
-    tubo = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, return_bytes=return_bytes)
+    tubo = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, binary_mode=binary_mode)
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: CLOUD_vm.restart_vm(instance_id)
 

@@ -13,6 +13,26 @@ except:
     log_pipes = []
     rm_ctrl_chars_default = False
 
+class Sbuild:
+    # String builder class which avoids O(n^2). Also works for bytes array.
+    # Python has an unreliable anti-O(n^2) for string cat, this is more robust.
+    def __init__(self, is_bytes):
+        self.vals = []
+        self.is_bytes = is_bytes
+
+    def add(self, x):
+        self.vals.append(x)
+
+    def val(self):
+        if self.is_bytes:
+            out = b''.join(self.vals)
+            self.vals = [out.copy()]
+            return out
+        else:
+            out = ''.join(self.vals)
+            self.vals = [out]
+            return out
+
 ######################Small functions######################################
 
 def bprint(*txt):
@@ -127,24 +147,35 @@ class ThreadSafeList(): # TODO: deprecated.
             self._list = []
             return out
 
-def pipe_loop(tubo): # For ever watching... untill the thread gets closed.
+def pipe_loop(tubo, is_err): # For ever watching... untill the thread gets closed.
     dt0 = 0.001
     dt1 = 2.0
     dt = dt0
     while not tubo.closed:
         try:
-            n = tubo.update()
-            if n==0:
+            while tubo.update(is_err)>0:
                 dt = dt0
-            else:
-                dt = min(dt*2, dt1)
-            time.sleep(dt)
         except Exception as e:
-            tubo.loop_err = e
+            tubo.loop_err = e # Gets thrown during the blit stage.
+        time.sleep(dt)
+        dt = min(dt1, dt*1.414)
 
 class MessyPipe:
     # The low-level basic messy pipe object with a way to get [output, error] as a string.
-    def _init_core(self, proc_type, proc_args=None, return_bytes=False):
+    def _to_output(self, x):
+        if type(x) is bytes and not self.binary_mode:
+            x = bytes.decode('utf-8')
+        elif type(x) is str and self.binary_mode:
+            x = x.encode()
+        return x
+
+    def _to_input(self, x, include_newline=True):
+        x = self._to_output(x)
+        if include_newline and not self.binary_mode:
+            x = x+'\n'
+        return x
+
+    def _init_core(self, proc_type, proc_args=None, binary_mode=False):
         self.send_f = None # Send strings OR bytes.
         self.stdout_f = None # Returns an empty bytes if there is nothing to get.
         self.stderr_f = None
@@ -152,17 +183,7 @@ class MessyPipe:
         self.color = 'linux'
         self.remove_control_chars = rm_ctrl_chars_default # **Only on printing** Messier but should prevent terminal upsets.
         self._close = None
-        self.loop_thread = threading.Thread(target=pipe_loop, args=[self])
-
-        _to_str = lambda x: x if type(x) is str else x.decode()
-        _to_bytes = lambda x: x if type(x) is bytes else x.encode()
-
-        def _mk_close_fn(f):
-            def _tmp(self):
-                log_pipes.append(self)
-                self.closed = True
-                f()
-            return _tmp
+        self.loop_threads =[threading.Thread(target=pipe_loop, args=[self, False]), threading.Thread(target=pipe_loop, args=[self, True])]
 
         if proc_type == 'shell':
             #https://stackoverflow.com/questions/375427/a-non-blocking-read-on-a-subprocess-pipe-in-python/4896288#4896288
@@ -182,23 +203,49 @@ class MessyPipe:
                 raise Exception('For the shell, the type of proc args must be str, list, or dict.')
             def _read_loop(the_pipe, safe_list):
                 while True:
-                    safe_list.append(ord(the_pipe.read(1)) if self.return_bytes else utf8_one_char(the_pipe.read))
-                #for line in iter(out.readline, b''): # Could readline be better or is it prone to getting stuck?
-                #    safe_list.append(line)
-                #out.close()
-            p = subprocess.Popen(procX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=posix_mode) #bufsize=1, shell=True
+                    safe_list.append(ord(the_pipe.read(1)) if self.binary_mode else utf8_one_char(the_pipe.read))
+
+            p = subprocess.Popen(procX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=posix_mode) # shell=True #, bufsize=1
 
             def _stdouterr_f(is_err):
-                p_std = [p.stderr if is_err else p.stdout]
-                ready_to_read, _, _ = select.select([p_std], [], [], 0)
-                all_data = ''
-                if p_std in ready_to_read:
-                    all_data = p_std.read()
-                if type(all_data) is bytes and not self.return_bytes:
-                    all_data = all_data.decode('UTF-8')
-                if type(all_data) is not bytes and self.return_bytes:
-                    all_data = all_data.encode()
-                return all_data
+                p_std = p.stderr if is_err else p.stdout
+                p_std.flush()
+                if self.binary_mode:
+                    return p_std.read(1)
+                else:
+                    return utf8_one_char(p_std.read)
+                #the_line = p_std.readline().strip() # Will block here if no line is ready.
+                #print('Has been read on line:', the_line)
+                #if len(the_line)>0: #Just in case it does not block.
+                #    return self._to_output('\n'+the_line)
+                #return self._to_output('')
+                #out = []
+                #print('Begin stdout_err_f')
+                #while True:
+                #    print('In the loop')
+                #    the_line = p_std.readline().strip()
+                #    if len(the_line)==0:
+                #        break
+                #    out.append(the_line)
+                #out = '\n'.join(out)
+                #print('End stdout_err_f')
+                #return self._to_output(out)
+                #ready_to_read, _, _ = select.select([p_std], [], [], 0)
+                #all_data = ''
+                #if p_std in ready_to_read:
+                #    all_data = p_std.read()
+                #print('Ready to read:', ready_to_read, all_data)
+                #return self._to_output(all_data)
+
+            self._close = lambda self: p.terminate()
+
+            def _send(x, include_newline=True):
+                x = self._to_input(x, include_newline=include_newline)
+                if type(x) is str: # Bash subprocesses always take binary bytes?
+                    x = x.encode()
+                p.stdin.write(x)
+                p.stdin.flush()
+            self.send_f = _send
 
             self.stdout_f = lambda: _stdouterr_f(False)
             self.stderr_f = lambda: _stdouterr_f(True)
@@ -206,12 +253,11 @@ class MessyPipe:
         elif proc_type == 'ssh':
             #https://unix.stackexchange.com/questions/70895/output-of-command-not-in-stderr-nor-stdout?rq=1
             #https://stackoverflow.com/questions/55762006/what-is-the-difference-between-exec-command-and-send-with-invoke-shell-on-para
-            # https://stackoverflow.com/questions/40451767/paramiko-recv-ready-returns-false-values
+            #https://stackoverflow.com/questions/40451767/paramiko-recv-ready-returns-false-values
             #https://gist.github.com/kdheepak/c18f030494fea16ffd92d95c93a6d40d
             import paramiko
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy()) # Being permissive is quite a bit easier...
-            #print('Connecting paramiko SSH with these arguments:', proc_args)
             #if not proc_args:
             #    proc_args['banner_timeout'] = 32 # Does this help?
             client.connect(**proc_args) #password=passphrase) #proc_args['hostname'],
@@ -223,88 +269,83 @@ class MessyPipe:
             self._streams = channel
 
             def _send(x, include_newline=True):
-                x = _to_str(x)+('\n' if include_newline else '')
-                channel.send(x)
+                channel.send(self._to_input(x, include_newline=include_newline))
             self.send_f = _send
             def _get_elements(ready_fn, read_fn):
                 out = []
                 while ready_fn():
-                    out.append(ord(read_fn(1)) if self.return_bytes else utf8_one_char(read_fn))
-                return ''.join(out).encode() if self.return_bytes else ''.join(out)
+                    out.append(ord(read_fn(1)) if self.binary_mode else utf8_one_char(read_fn))
+                return ''.join(out).encode() if self.binary_mode else ''.join(out)
             self.stdout_f = lambda: _get_elements(channel.recv_ready, channel.recv)
             self.stderr_f = lambda: _get_elements(channel.recv_stderr_ready, channel.recv_stderr)
 
             #chan = client.get_transport().open_session() #TODO: what does this do and is it needed?
-            self._close = _mk_close_fn(client.close)
+            self._close = lambda self: client.close()
         else: # TODO: more kinds of pipes.
             raise Exception('proc_type must be "shell" or "ssh"')
 
         if self.stdout_f is None or self.stderr_f is None:
             raise Exception('stdout_f and/or stderr_f not set.')
 
-        self.update()
-        self.loop_thread.daemon = True; self.loop_thread.start() # This must only happen when the setup is complete.
-        #while True: # TODO: this is more like the plumber loop?
-        #    try:
-        #        self.API('echo pipe_begin', timeout=2.0) # This may prevent sending commands too early.
-        #        break
-        #    except Exception as e:
-        #        if 'API timeout' not in str(e):
-        #            raise e
-        #    print(f'Waiting for {proc_pipe} pipe to be ready for a simple bash cmd.')
+        for lot in self.loop_threads:
+            lot.daemon = True; lot.start() # This must only happen when the setup is complete.
         self.is_init = True
 
     def ensure_init(self):
         # Will raise some sort of paramiko Exception if the pipe isn't ready yet.
         if self.is_init:
             return
-        self._init_core(proc_type=self.proc_type, proc_args=self.proc_args, return_bytes=self.return_bytes)
+        self._init_core(proc_type=self.proc_type, proc_args=self.proc_args, binary_mode=self.binary_mode)
 
-    def __init__(self, proc_type, proc_args=None, printouts=True, return_bytes=False):
+    def __init__(self, proc_type, proc_args=None, printouts=True, binary_mode=False):
         # Defers creation of the pipe; creation can cause errors if done before i.e. a reboot is complete.
         # the plumber class deals with such erros but needs a MessyPipe object.
         self.lock = threading.Lock()
         self.printouts = printouts
         self.is_init = False
         self.closed = False
-        self.return_bytes = return_bytes
+        self.binary_mode = binary_mode
         self.proc_type = proc_type
         self.proc_args = proc_args
         self.loop_err = None
-        self.packets = [['<init>', b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()]] # Each command: [cmd, out, err, time0, time1]
+        self.packets = [[b'' if binary_mode else '', Sbuild(self.binary_mode), Sbuild(self.binary_mode), time.time(), time.time()]] # Each command: [cmd, out, err, time0, time1]
 
         self.machine_id = None # Optional user data.
         self.restart_fn = None # Optional fn allowing any server to be restarted.
 
     def blit(self, include_history=True):
         # Mash the output and error together.
+        self.assert_no_loop_err()
         with self.lock:
-            self.assert_no_loop_err()
             if include_history:
-                return ''.join([pk[1]+pk[2] for pk in self.packets])
+                if self.binary_mode:
+                    out = b''
+                    for pak in self.packets:
+                        out.extend(pak[1].val()+pak[2].val())
+                    return out
+                else:
+                    return ''.join([pk[1].val()+pk[2].val() for pk in self.packets])
             else:
-                return self.packets[-1][1]+self.packets[-1][2]
+                return self.packets[-1][1].val()+self.packets[-1][2].val()
 
-    def update(self): # Returns the len of the data.
+    def update(self, is_std_err): # Returns the len of the data.
+        def _boring_txt(txt):
+            txt = txt.replace('\r\n','\n')
+            if self.remove_control_chars:
+                txt = remove_control_chars(txt, True)
+            return txt
+        _outerr = self.stderr_f() if is_std_err else self.stdout_f()
+        if self.printouts:
+            if len(_outerr)>0:
+                txt = _boring_txt(_outerr)
+                with self.lock: # Does this prevent interleaving out and err prints?
+                    print(txt, end='') # Newlines should be contained within the feed so there is no need to print them directly.
         with self.lock:
-            _out = None; _err = None
-            def _boring_txt(txt):
-                txt = txt.replace('\r\n','\n')
-                if self.remove_control_chars:
-                    txt = remove_control_chars(txt, True)
-                return txt
-            _out = self.stdout_f()
-            _err = self.stderr_f()
-            if self.printouts:
-                if len(_out)>0:
-                    print(_boring_txt(_out), end='') # Newlines should be contained within the feed so there is no need to print them directly.
-                if len(_err)>0:
-                    print(_boring_txt(_err), end='')
-            if len(_out)+len(_err)>0:
-                self.packets[-1][1] = self.packets[-1][1]+_out
-                self.packets[-1][2] = self.packets[-1][2]+_err
-                self.packets[-1][4] = time.time()
-            return len(_out)+len(_err)
+            if len(_outerr)>0:
+                ix = 2 if is_std_err else 1
+                self.packets[-1][ix].add(_outerr)
+                self.packets[-1][4] = time.time() # Either stdout or stderr.
+            return len(_outerr)
 
     def drought_len(self):
         # How long since neither stdout nor stderr spoke to us.
@@ -328,7 +369,7 @@ class MessyPipe:
             else:
                 print('→'+txt+'←')
         if add_to_packets:
-            self.packets.append([txt, b'' if self.return_bytes else '', b'' if self.return_bytes else '', time.time(), time.time()])
+            self.packets.append([txt, Sbuild(self.binary_mode), Sbuild(self.binary_mode), time.time(), time.time()])
         self.send_f(txt, include_newline=include_newline)
 
     def API(self, txt, f_polls=None, timeout=8.0):
@@ -385,6 +426,7 @@ class MessyPipe:
     def close(self):
         if not self.is_init:
             raise Exception('Attempt to close a pipe which has not been initalized.')
+        log_pipes.append(self)
         self._close(self)
         self.closed = True
 
@@ -400,7 +442,7 @@ class MessyPipe:
         # Recommended to put into a loop which may i.e. restart vms or otherwise debug things.
         if self.is_init and not self.closed:
             self.close()
-        out = MessyPipe(proc_type=self.proc_type, proc_args=self.proc_args, printouts=self.printouts, return_bytes=self.return_bytes)
+        out = MessyPipe(proc_type=self.proc_type, proc_args=self.proc_args, printouts=self.printouts, binary_mode=self.binary_mode)
         out.machine_id = self.machine_id
         out.restart_fn = self.restart_fn
         return out
