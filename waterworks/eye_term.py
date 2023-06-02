@@ -5,7 +5,7 @@
 # *Of course* the 2023+ solution is AI, but this one should be fairly simple.
 #https://www.linode.com/docs/guides/use-paramiko-python-to-ssh-into-a-server/
 #https://hackersandslackers.com/automate-ssh-scp-python-paramiko/
-import time, re, os, sys, threading, select
+import time, re, os, sys, threading
 
 try:
     log_pipes # All logs go here.
@@ -188,7 +188,7 @@ class MessyPipe:
         if proc_type == 'shell':
             #https://stackoverflow.com/questions/375427/a-non-blocking-read-on-a-subprocess-pipe-in-python/4896288#4896288
             #https://stackoverflow.com/questions/156360/get-all-items-from-thread-queue
-            import subprocess
+            import subprocess, pty
             terminal = 'cmd' if os.name=='nt' else 'bash' # Windows vs non-windows.
             posix_mode = 'posix' in sys.builtin_module_names
             if not proc_args:
@@ -205,7 +205,17 @@ class MessyPipe:
                 while True:
                     safe_list.append(ord(the_pipe.read(1)) if self.binary_mode else utf8_one_char(the_pipe.read))
 
-            p = subprocess.Popen(procX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=posix_mode) # shell=True #, bufsize=1
+            use_pty = False # Why does pexpect work so much better than vanilla? This is the secret spicy sauce.
+            #https://gist.github.com/thomasballinger/7979808
+            # But said sauce is hard to use, thus it's False for now.
+            if use_pty:
+                peacock, tail = pty.openpty(); stdin=tail
+                pty_input = os.fdopen(peacock, 'w')
+            else:
+                pty_input = None
+                stdin = subprocess.PIPE
+
+            p = subprocess.Popen(procX, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=posix_mode) # shell=True has no effect?
 
             def _stdouterr_f(is_err):
                 p_std = p.stderr if is_err else p.stdout
@@ -241,10 +251,16 @@ class MessyPipe:
 
             def _send(x, include_newline=True):
                 x = self._to_input(x, include_newline=include_newline)
-                if type(x) is str: # Bash subprocesses always take binary bytes?
-                    x = x.encode()
-                p.stdin.write(x)
-                p.stdin.flush()
+                if use_pty:
+                    if type(x) is bytes:
+                        x = x.decode('UTF-8')
+                    pty_input.write(x)
+                    pty_input.flush()
+                else:
+                    if type(x) is str: # Bash subprocesses always take binary bytes?
+                        x = x.encode()
+                    p.stdin.write(x)
+                    p.stdin.flush()
             self.send_f = _send
 
             self.stdout_f = lambda: _stdouterr_f(False)
@@ -290,6 +306,13 @@ class MessyPipe:
         for lot in self.loop_threads:
             lot.daemon = True; lot.start() # This must only happen when the setup is complete.
         self.is_init = True
+
+        tweak_prompt = True
+        if proc_type=='shell' and tweak_prompt:
+            #https://ss64.com/bash/syntax-prompt.html
+            for var in ['PS0','PS1','PS2','PS3','PS4','PROMPT_COMMAND']:
+                txt = f"export {var}='$'"
+                self.send(txt, include_newline=True, suppress_input_prints=False, add_to_packets=True)
 
     def ensure_init(self):
         # Will raise some sort of paramiko Exception if the pipe isn't ready yet.
@@ -375,6 +398,10 @@ class MessyPipe:
     def API(self, txt, f_polls=None, timeout=8.0):
         # Behaves like an API, returning out, err, and information about which polling fn suceeded.
         # Optional timeout if all polling fns fail.
+        use_echo = True
+        if self.binary_mode:
+            use_echo = False
+        ky = 'eye_term_done_mark' # Shell prompts don't seem to have the $ so we must get an echo back instead.
         self.send(txt)
         if f_polls is None:
             f_polls = {'default':standard_is_done}
@@ -390,6 +417,11 @@ class MessyPipe:
                 if f_polls[k](blit_txt):
                     which_poll=k # Break out of the loop
                     break
+            if use_echo and self.proc_type == 'shell' and blit_txt.endswith('\n'):
+                if ky in blit_txt:
+                    which_poll = 'default'
+                else:
+                    self.send('echo '+ky, add_to_packets=False)
             time.sleep(0.1)
             td = self.drought_len()
             if self.printouts:
@@ -403,8 +435,15 @@ class MessyPipe:
                 raise Exception(f'API timeout on cmd {txt}; ')
 
         self.assert_no_loop_err()
-
-        return self.packets[-1][1], self.packets[-1][2], which_poll
+        def _clean_ky(txt):
+            if not use_echo:
+                return txt
+            if txt.endswith(ky):
+                txt = txt[0:len(txt)-len(ky)]
+            if txt.endswith(ky+'\n'):
+                txt = txt[0:len(txt)-len(ky+'\n')]
+            return txt
+        return _clean_ky(self.packets[-1][1].val()), _clean_ky(self.packets[-1][2].val()), which_poll
 
     def assert_no_loop_err(self):
         if self.loop_err:
