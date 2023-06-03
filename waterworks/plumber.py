@@ -62,6 +62,33 @@ def with_timeout(tubo, f, timeout=6, message=None):
         raise Exception('Timeout')
     return False
 
+def manual_labor(plumber):
+    while True:
+        print('\n')
+        x = input("\033[38;2;255;255;0;48;2;0;0;139mInput text to send to pipe (or quit or continue or .foo to query plumber.foo):\033[0m").strip()
+        if len(x)==0:
+            continue
+        if x.lower()=='quit' or x.lower()=='quit()':
+            return
+        if x.lower()=='continue':
+            return True
+        try:
+            if x[0]=='.':
+                print(exec('plumber'+x))
+            else:
+                plumber.tubo.send(x)
+        except Exception as e:
+            print('Error:', e)
+
+def interactive_error(plumber, e):
+    # Lets the user manually input the error.
+    print(f"\033[38;2;255;255;0;48;2;0;0;139mError: {e}; entering interactive debug session.\033[0m")
+    x = manual_labor(plumber)
+    if x:
+        plumber.num_restarts = 0; plumber.rcounts_since_restart = {} # Reset this.
+    else:
+        raise e
+
 class Plumber():
     def __init__(self, tubo, packages, response_map, other_cmds, test_pairs, fn_override=None, dt=2.0):
         # test_pairs is a vector of [cmd, expected] pairs.
@@ -101,10 +128,10 @@ class Plumber():
     def _sshe(self, e):
         # Throws e if not a recognized "SSH pipe malfunctioning" error.
         # If it is, will return the remedy.
-        e_txt = str(e)
+        e_txt = str(e)+' '+str(type(e))
         fix_f = ptools.ssh_error(e_txt, self.cmd_history)
         if fix_f is None: # Only errors which can be thrown by ssh unreliabilities aren't thrown.
-            raise e
+            interactive_error(self, e)
         return fix_f
 
     def _restart_if_too_loopy(self, k, not_pipe_related=None):
@@ -130,13 +157,13 @@ class Plumber():
                 eye_term.bprint('Sending command failed b/c of:', str(e)+'; will run the remedy.\n')
 
     def restart_vm(self):
-        # Preferable than using the tubo's restart fn because it resets rcounts_since_restart
+        # Preferable than using the tubo's restart fn because it resets rcounts_since_restart.
+        if self.num_restarts==self.max_restarts:
+            interactive_error(self, Exception('Max restarts exceeded, there appears to be an infinite loop that cant be broken.'))
         self.tubo.restart_fn()
         self.rcounts_since_restart = {}
         self.last_restart_time = time.time()
         self.num_restarts = self.num_restarts+1
-        if self.num_restarts==self.max_restarts:
-            raise Exception('Max restarts exceeded, there appears to be an infinite loop that cant be broken.')
 
     def blit_based_response(self):
         # Responses based on the blit alone, including error handling.
@@ -240,6 +267,9 @@ class Plumber():
         return False
 
     def step(self):
+        if self.fn_override is not None: # For those occasional situations where complete control of everything is needed.
+            if self.fn_override(self):
+                return False
         try:
             self.tubo.ensure_init()
         except Exception as e:
@@ -264,9 +294,6 @@ class Plumber():
 
         if not self.short_wait():
             return False
-        if self.fn_override is not None: # For those occasional situations where complete control of everything is needed.
-            if self.fn_override(self):
-                return False
 
         # Restart if we seem stuck in a loop:
         send_this = self.blit_based_response() # These can introject randomally (if i.e. the SSH pipe goes down and need a reboot).

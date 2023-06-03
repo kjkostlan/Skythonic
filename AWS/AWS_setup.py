@@ -78,8 +78,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
         tubo = vm.install_custom_package(tubo, pk_name)
     AWS_vm.restart_vm(inst_id)
 
-    print('Installation and basic tests of aws done.')
-
+    print("\033[38;5;208mJumpbox appears to be setup and working (minus a restart which is happening now).\033[0m")
     return ssh_bash, inst_id
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', subnet_zone='us-west-2c'):
@@ -187,22 +186,27 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     print(f'Testing ssh ping from machine {jbox_id}')
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
-    is_ssh = True # TODO: True in the cloud shell, False if we are in the jumpbox.
-    tubo = AWS_vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
+    is_ssh = AWS_core.our_vm_id() != jbox_id # TODO: True in the cloud shell, False if we are in the jumpbox.
+    tubo = vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
+    ping_check = '0% packet loss'
+    test_pairs = [['ping -c 2 localhost',ping_check]]
+    for ip in ips:
+        test_pairs.append([f'ping -c 2 {ip}', ping_check])
+    p = plumber.Plumber(tubo, [], {}, [], test_pairs, fn_override=None, dt=2.0)
+    p.run()
     tubo.API('ping -c 2 localhost')
     for ip in ips:
         cmd = f'ping -c 2 {ip}'
         tubo.API(cmd, timeout=16)
 
     tubo.close()
-
-    txt = str(tubo.history_contents)
-    if 'packet loss' not in txt:
-        print('WARNING: Cant extract ping printout to test.')
-    elif '50% packet loss' in txt or '100% packet loss' in txt:
-        print('WARNING: Packets lost in test')
+    #if 'packet loss' not in txt:
+    #    print('WARNING: Cant extract ping printout to test.')
+    #elif '50% packet loss' in txt or '100% packet loss' in txt:
+    #    print('WARNING: Packets lost in test')
 
     print('Check the above ssh ping test')
-    print('Restarting the three new vms.')
+    print('Restarting the three new vms as a final step.')
     AWS_vm.restart_vm(inst_ids)
+    print("\033[38;5;208mThree tier appears to be setup and working (minus an instance restart which is happening now).\033[0m")
     return cmds

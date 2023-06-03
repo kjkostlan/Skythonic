@@ -77,11 +77,13 @@ def pip_error(txt, pkg, cmd_history):
 def ssh_error(e_txt, cmd_history):
     # Scan for errors in creating the ssh pipe (if making the pipe causes an Exception)
     f_re = lambda plumber: plumber.tubo.remake()
+    # The menagerie of ways the pipe can fail:
     msgs = {'Unable to connect to':f_re, 'timed out':f_re,
             'encountered RSA key, expected OPENSSH key':f_re,
             'Connection reset by peer':f_re,
             'Error reading SSH protocol banner':f_re,
             'Socket is closed':f_re,
+            'EOFError':f_re,
             'paramiko.ssh_exception.NoValidConnectionsError':f_re}
     for k in msgs.keys():
         if k in e_txt:

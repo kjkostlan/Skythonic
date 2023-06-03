@@ -203,7 +203,9 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
 
     tests = {}
     tests['apt iputils-ping'] = [['ping -c 1 localhost', '0% packet loss']]
-    tests['apt apache2'] = [['sudo service apache2 start\ncurl -k http://localhost\nsudo service apache2 stop', ['<div class="section_header">', 'Apache2']]]
+    tests['apt apache2'] = [['sudo service apache2 start',''],
+                            ['curl -k http://localhost', ['apache2', '<div>', '<html']],
+                            ['systemctl status apache2.service', ['The Apache HTTP Server', 'Main PID:']]]
     tests['apt python3-pip'] = [['python3\nprint(id)\nquit()', '<built-in function id>']]
     tests['apt awscli'] = [['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'],
                            ["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]]
