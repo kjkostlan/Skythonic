@@ -187,7 +187,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     print(f'Testing ssh ping from machine {jbox_id}')
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
-    is_ssh = AWS_core.our_vm_id() != jbox_id # TODO: True in the cloud shell, False if we are in the jumpbox.
+    is_ssh = AWS_vm.our_vm_id() != jbox_id # TODO: True in the cloud shell, False if we are in the jumpbox.
     tubo = vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
     ping_check = '0% packet loss'
     test_pairs = [['ping -c 2 localhost',ping_check]]
