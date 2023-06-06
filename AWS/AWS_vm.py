@@ -1,11 +1,22 @@
 # Virtal machine tools specific to aws.
-import paramiko, time, os, re
+import time, os, re, requests, paramiko
 import file_io, covert
 import AWS.AWS_format as AWS_format
 import waterworks.eye_term as eye_term
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
+
+def our_vm_id():
+    # The instance_id of our machine; None if in the cloud shell.
+    x = requests.get('http://169.254.169.254/latest/meta-data/instance-id').content.decode().strip()
+
+    #x = requests.get('http://169.254.169.254/latest/meta-data/ami-id').content.decode().strip()
+    if 'i-' not in x or 'resource not found' in x.lower():
+        return None
+    return x
+    #stuff = ec2c.describe_instances(Filters=[{'Name': 'image-id','Values': [x]}])
+    #return stuff['Reservations'][0]['Instances'][0]['InstanceId']
 
 def get_ip(x): # Address or machine.
     if type(x) is str and '.' in x: # Actually an ip address.

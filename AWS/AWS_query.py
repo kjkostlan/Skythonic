@@ -7,7 +7,7 @@ ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
 
 def lingers(desc_or_id):
-    #desc = AWS_format.id2obj(desc_or_id)
+    #Has the resource been deleted but is still around? Assumes None resources are deleted.
     #instance 'terminated' in str(m.get('State',None)) # Alternative way for machines.
     #peering ['Status']['Code']=='deleted'. #Alternate for deleted.
     if desc_or_id is None:

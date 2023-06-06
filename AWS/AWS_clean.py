@@ -1,7 +1,7 @@
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
-import AWS.AWS_query as AWS_query, AWS.AWS_core as AWS_core, AWS.AWS_format as AWS_format
+from AWS import AWS_query, AWS_core, AWS_format, AWS_vm
 import covert
 import waterworks.eye_term as eye_term, waterworks.plumber as plumber
 
@@ -54,7 +54,7 @@ def _nuclear_clean(only_skythonic_stuff=True, restrict_to_these=None, remove_lin
     resc = AWS_query.custom_resources(include_lingers=remove_lingers)
     deps = AWS_query.what_needs_these(custom_only=False, include_empty=True, include_lingers=remove_lingers)
     n_delete=0
-    this_machine = AWS_core.our_vm_id()
+    this_machine = AWS_vm.our_vm_id()
     machine_depends_on = set([this_machine]) # Cannot be deleted from said machine.
     for k in ['users', 'peerings','addresses', 'machines', 'subnets', 'rtables','webgates','sgroups','vpcs','kpairs']: # Can the right order avoid needing deps?
         if k not in resc:

@@ -1,5 +1,5 @@
 # Plumbers deal with pipes that *should be* working but *aren't* working.
-import time
+import time, traceback
 import waterworks.eye_term as eye_term
 import waterworks.plumber_tools as ptools
 
@@ -82,6 +82,8 @@ def manual_labor(plumber):
 
 def interactive_error(plumber, e):
     # Lets the user manually input the error.
+    print('Plumber encountered an error that should be debugged:')
+    print('\n'.join(traceback.format_exception(e)))
     print(f"\033[38;2;255;255;0;48;2;0;0;139mError: {e}; entering interactive debug session.\033[0m")
     x = manual_labor(plumber)
     if x:
@@ -113,6 +115,7 @@ class Plumber():
         self.fn_override = fn_override
         self.cmd_history = []
         self.tubo = tubo
+        self.tubo_history = [tubo]
         self.nsteps = 0
 
         self.remaining_packages = list(packages)
@@ -156,9 +159,9 @@ class Plumber():
             if self.tubo.printouts:
                 eye_term.bprint('Sending command failed b/c of:', str(e)+'; will run the remedy.\n')
 
-    def restart_vm(self):
+    def restart_vm(self, raise_max_restart_error=True):
         # Preferable than using the tubo's restart fn because it resets rcounts_since_restart.
-        if self.num_restarts==self.max_restarts:
+        if raise_max_restart_error and self.num_restarts==self.max_restarts:
             interactive_error(self, Exception('Max restarts exceeded, there appears to be an infinite loop that cant be broken.'))
         self.tubo.restart_fn()
         self.rcounts_since_restart = {}
@@ -279,7 +282,10 @@ class Plumber():
         if self.pipe_fix_fn is not None:
             # Attempt to pipe_fix_fn, but the fn itself may cause an error (i.e. waiting for a vm to restart).
             try:
-                self.tubo = self.pipe_fix_fn(self)
+                tubo1 = self.pipe_fix_fn(self)
+                if tubo1 is not self.tubo:
+                    self.tubo_history.append(tubo1)
+                    self.tubo = tubo1
                 if type(self.tubo) is not eye_term.MessyPipe:
                     raise Exception('The remedy fn returned not a MessyPipe.')
                 elif self.tubo.closed:
@@ -327,3 +333,7 @@ class Plumber():
         while not self.step():
             pass
         return self.tubo
+
+    def blit_all(self):
+        # Blits all the history from all the tubos.
+        return ''.join([tubo.blit(include_history=True) for tubo in self.tubo_history])

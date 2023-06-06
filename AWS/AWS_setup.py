@@ -162,6 +162,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     vm.install_custom_package(inst_ids[1], 'app-server')
     vm.install_package(inst_ids[0], 'apt apache')
     vm.install_custom_package(inst_ids[0], 'web-server')
+    vm.install_package(inst_ids[2], 'apt mysql-server', printouts=True)
 
     #The gateway is the VpcPeeringConnectionId
     peering_id = AWS_core.create_once('vpcpeer', 'BYOC_3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #AWS_core.assoc(jbox_vpc_id, vpc_id)

@@ -14,6 +14,9 @@ if platform == 'AWS':
 else:
     raise Exception(f'Support not yet implemented for {platform}')
 
+def our_vm_id():
+    return CLOUD_vm.our_vm_id()
+
 ###############################SSH and SCP######################################
 
 def ssh_bash(instance_id, join_arguments=True):
@@ -115,7 +118,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
-    p = plumber.Plumber(tubo, [], {}, [scp_cmd], 'default', dt=2.0)
+    p = plumber.Plumber(tubo, [], {}, [scp_cmd+'\necho download_cmd_ran'], 'default', dt=2.0)
     p.run()
 
     if local_dest_folder is None:

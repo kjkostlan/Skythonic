@@ -1,5 +1,5 @@
 # Lower level AWS functions. Simplifies some aspects of the API, but not designed to cover every last case.
-import time, requests
+import time
 import boto3
 import AWS.AWS_format as AWS_format
 import AWS.AWS_query as AWS_query
@@ -11,8 +11,7 @@ try:
     logs # A simple way to report output without needing to print it.
 except:
     logs = []
-
-delete_user_input_check = [True] # Safety.
+    delete_user_input_check = [True] # Safety.
 
 def add_tags(desc_or_id, d, ignore_none_desc=False):
     #botocore.exceptions.ClientError: An error occurred (InvalidInstanceID.NotFound) when calling the CreateTags operation: The instance ID 'i-0fb7af9af917db726' does not exist
@@ -61,7 +60,32 @@ def create(rtype0, name, **kwargs):
         kwargs['KeyName'] = name # one of those irregularities in their API.
         x = ec2r.create_key_pair(**kwargs)
     elif rtype =='machine':
-        x = ec2r.create_instances(**kwargs)[0]
+        _error_state = {}
+        def _catch_err_f(e):
+            if 'Address' in str(e) and 'is in use' in str(e): # Attempt to resolve this error.
+                # Can this happen just after machine deletion?
+                inter_we_specify = kwargs['NetworkInterfaces'][0]
+                subnet_id = inter_we_specify['SubnetId']
+                address_we_want = inter_we_specify['PrivateIpAddress']
+                subnet_interfaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'subnet-id','Values': [subnet_id]}])['NetworkInterfaces']
+                for subn_i in subnet_interfaces:
+                    if subn_i['PrivateIpAddress'] == address_we_want:
+                        if 'Attachment' in subn_i:
+                            iid = subn_i['Attachment']['InstanceId']
+                            import AWS.AWS_clean as AWS_clean # TODO: annoying circular dependency.
+                            if AWS_clean.has_been_deleted(iid):
+                                _error_state['zombie_vm_id'] = iid
+                                _error_state['t1'] = time.time()
+                                return True
+                        elif 'instance' not in str(subn_i):
+                            if 'zombie_vm_id' in _error_state: # It can appear cleaned up but still need a delay.
+                                if time.time()-_error_state['t1']<64:
+                                    return True
+                                else:
+                                    print('A zombie instance was bieng deleted, but even after its attachment half-cleread and a further 64 seconds it is still not letting us on.')
+
+            return False
+        x = plumber.loop_try(lambda: ec2r.create_instances(**kwargs)[0], _catch_err_f, 'Creating a machine with a PrivateIP of a recently deleted machine.', delay=4)
     elif rtype == 'address':
         x = ec2c.allocate_address(**kwargs)
     elif rtype == 'user':
@@ -211,14 +235,3 @@ def disassoc(A, B, _swapped=False):
     # Opposite of assoc and Idempotent.
     TODO
 dissoc = disassoc # For those familiar with Clojure...
-
-def our_vm_id():
-    # The instance_id of our machine; None if in the cloud shell.
-    x = requests.get('http://169.254.169.254/latest/meta-data/instance-id').content.decode().strip()
-
-    #x = requests.get('http://169.254.169.254/latest/meta-data/ami-id').content.decode().strip()
-    if 'i-' not in x or 'resource not found' in x.lower():
-        return None
-    return x
-    #stuff = ec2c.describe_instances(Filters=[{'Name': 'image-id','Values': [x]}])
-    #return stuff['Reservations'][0]['Instances'][0]['InstanceId']

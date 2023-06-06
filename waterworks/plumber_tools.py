@@ -77,11 +77,23 @@ def pip_error(txt, pkg, cmd_history):
 def ssh_error(e_txt, cmd_history):
     # Scan for errors in creating the ssh pipe (if making the pipe causes an Exception)
     f_re = lambda plumber: plumber.tubo.remake()
+    def banner_err_handle(plumber): # Oh no not this one!
+        if not hasattr(plumber, 'SSH_banner_annoy'):
+            plumber.SSH_banner_annoy = 0
+        plumber.SSH_banner_annoy = plumber.SSH_banner_annoy + 1
+        if plumber.SSH_banner_annoy<12:
+            plumber.tubo.remake()
+        else:
+            if plumber.tubo.printouts:
+                print('12 banner errors in a row, restarting and hope for the best!')
+            plumber.restart_vm()
+            plumber.tubo.remake()
+            plumber.SSH_banner_annoy = 0
     # The menagerie of ways the pipe can fail:
     msgs = {'Unable to connect to':f_re, 'timed out':f_re,
             'encountered RSA key, expected OPENSSH key':f_re,
             'Connection reset by peer':f_re,
-            'Error reading SSH protocol banner':f_re,
+            'Error reading SSH protocol banner':banner_err_handle,
             'Socket is closed':f_re,
             'EOFError':f_re,
             'paramiko.ssh_exception.NoValidConnectionsError':f_re}
