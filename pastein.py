@@ -85,16 +85,17 @@ def _src_diff(old_file2contents, new_file2contents):
 
 def install_git_fetch(branch='main'):
     # Fetches git in a temporary folder and copies the contents here.
-    clean_here = True # Extra cleanup. Not necessary?
+    import proj
+    clean_here = False # Extra cleanup. Not necessary?
 
     if clean_here:
-        file_io.empty_folder('.', keeplist='softwareDump')
-    tmp_folder = './softwareDump/GitDump'
+        file_io.empty_folder('.', keeplist=proj.dump_folder)
+    tmp_folder = f'{proj.dump_folder}/GitDump'
     if not os.path.exists(tmp_folder):
         os.makedirs(tmp_folder, exist_ok=True)
     else:
         file_io.empty_folder(tmp_folder)
-    replace_with_Git_fetch(branch=branch, folder=tmp_folder)
+    code_in_a_box.download(url, tmp_folder, clear_folder=False, branch=branch)
     file_io.copy_with_overwrite(tmp_folder, '.', ignore_permiss_error=True)
 
 def _gitHub_bootstrap_txt(branch='main'):
