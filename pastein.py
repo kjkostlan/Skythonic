@@ -76,11 +76,11 @@ def _src_diff(old_file2contents, new_file2contents):
         if k not in new_file2contents:
             out[k] = None
     for k in new_file2contents.keys():
-        if new_cache[k] != old_file2contents.get(k,None):
+        if new_file2contents[k] != old_file2contents.get(k,None):
             out[k] = new_file2contents[k]
     for k in old_file2contents.keys():
         if k[0]=='/':
-            raise Exception('Absolute-like filepath in the src cache (bug in this function).')
+            raise Exception('Absolute-like filepath in the src-code-as-dict, but only relative paths will work in most cases.')
     return out
 
 def install_git_fetch(branch='main'):
@@ -97,7 +97,7 @@ def install_git_fetch(branch='main'):
     replace_with_Git_fetch(branch=branch, folder=tmp_folder)
     file_io.copy_with_overwrite(tmp_folder, '.', ignore_permiss_error=True)
 
-def _gitHub_bootstrap_txt(branch='main', windows=False):
+def _gitHub_bootstrap_txt(branch='main'):
     txt = """
 cd ~
 mkdir Skythonic
@@ -116,24 +116,25 @@ bad_fnames = list(filter(lambda fname: not os.path.exists(fname), fnames))
 print('WARNING: the curl bootstrap may have failed.') if len(bad_fnames)>0 else None
 print(f'Curled github bootstrap branch {branch} to folder {os.path.realpath(".")}; the GitHub curl requests may be a few minutes out of date.')
 import proj # Installs the file_io.py which is needed by pastein.
-import pastein.install_git_fetch(branch=branch)
+import pastein
+pastein.install_git_fetch(branch=branch)
     """.replace('BRANCH', branch)
-    if windows:
-        txt = txt.replace('\n','\r\n')
+    txt = txt.replace('\n','\r\n')
     return txt
 
 def _get_update_txt(pickle64_string):
     txt = '''
-    cd ~ # Bash cmds will error if attempted inside Python shell, but lines after errors will still run.
-    mkdir Skythonic
-    cd ~/Skythonic
-    python3
-    python
-    import sys, os, time, subprocess
-    obj64 = r"""PICKLE"""
-    from waterworks import py_updater
-    py_updater.unpickle64_and_update(obj64, True, True)
+cd ~ # Bash cmds will error if attempted inside Python shell, but lines after errors will still run.
+mkdir Skythonic
+cd ~/Skythonic
+python3
+python
+import sys, os, time, subprocess
+obj64 = r"""PICKLE"""
+from waterworks import py_updater
+py_updater.unpickle64_and_update(obj64, True, True)
     '''.replace('PICKLE', pickle64_string)
+    txt = txt.replace('\n','\r\n')
     return txt
 
 def _importcode(mnames):
@@ -157,14 +158,14 @@ if __name__ == '__main__': # For running on your local machine.
             clipboard.copy(txt)
             print(f'Bootstrap ready using GitHub fetch ({branch} branch).')
         elif x == '' or not x:
-            big_txt = file_io.pickle64(pickle_these)
+            big_txt = file_io.pickle64(source_diff)
             txt = _get_update_txt(big_txt)
             clipboard.copy(txt)
             n = len(source_diff)
             if n==0:
                 print('No pickled files but code has been copied to jumpstart your Python work.')
             else:
-                print(f'Your clipboard is ready with: {n} pickled files; {list(pickle_these.keys())}; press enter once pasted in.')
+                print(f'Your clipboard is ready with: {n} pickled files; {list(source_diff.keys())}; press enter once pasted in.')
 
 '''
 # Installation script (Bash):
