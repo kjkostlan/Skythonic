@@ -1,5 +1,4 @@
 import os, sys, time
-from waterworks import file_io
 
 #######################Different code depending on which package################
 
@@ -55,6 +54,14 @@ def oracleP(windows=False):
     lines = [] # TODO
     exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
+####################### Non-platform specific code below########################
+
+try: # Import file_io, with a download of waterworks if need be.
+    from waterworks import file_io
+except:
+    import proj # Will download to local machine.
+    from waterworks import file_io
+
 def _joinlines(lines, windows=False):
     if windows:
         out = '\r\n'+'\r\n'.join(lines)+'\r\n'
@@ -79,6 +86,7 @@ def _src_diff(old_file2contents, new_file2contents):
 def install_git_fetch(branch='main'):
     # Fetches git in a temporary folder and copies the contents here.
     clean_here = True # Extra cleanup. Not necessary?
+
     if clean_here:
         file_io.empty_folder('.', keeplist='softwareDump')
     tmp_folder = './softwareDump/GitDump'

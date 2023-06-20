@@ -8,7 +8,7 @@ except:
 def _install_gitpacks(): # Runs once on "import proj"
     # Installs elegant games, for a more socialized age:
     packs = {}
-    packs['./Termpylus_extern/waterworks'] = '../Waterworks'
+    packs['./waterworks'] = '../Waterworks'
 
     for k, v in packs.items():
         k = k.replace('\\','/')
