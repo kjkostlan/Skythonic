@@ -1,9 +1,7 @@
+import os, sys, time
+from waterworks import file_io
 
-import sys, time
-import install_core, file_io
-
-def _importcode(mnames):
-    return ['import '+mname for mname in mnames]
+#######################Different code depending on which package################
 
 def awsP(windows=False):
     imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean',\
@@ -13,101 +11,152 @@ def awsP(windows=False):
     lines = _importcode(imports)
     lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", "iam = boto3.client('iam')", 'who = AWS_query.get_resources']
     for line in lines:
-        exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+        exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def azureP(windows=False):
+    raise Exception('TODO')
     lines = [] # TODO
-    exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def googleP(windows=False):
+    raise Exception('TODO')
     lines = [] # TODO
-    exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
-# All these below are lower prority (<=5%)
+def CommonsCloudP(windows=False): # This one is special in that it is customer-owned.
+    raise Exception('TODO')
+    lines = [] # TODO
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
+
+# All these below are lower prority (<=5%) and are unlikely to ever be implemented....
 #https://www.statista.com/chart/18819/worldwide-market-share-of-leading-cloud-infrastructure-service-providers/
 def alibabaP(windows=False):
+    raise Exception('TODO')
     lines = [] # TODO
-    exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def ibmP(windows=False):
+    raise Exception('TODO')
     lines = [] # TODO
-    exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def salesforceP(windows=False):
+    raise Exception('TODO')
     lines = [] # TODO
-    exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def tencentP(windows=False):
+    raise Exception('TODO')
     lines = [] # TODO
-    exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
 def oracleP(windows=False):
+    raise Exception('TODO')
     lines = [] # TODO
-    exec(install_core.joinlines(lines, windows), vars(sys.modules['__main__']))
+    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
+
+def _joinlines(lines, windows=False):
+    if windows:
+        out = '\r\n'+'\r\n'.join(lines)+'\r\n'
+    else:
+        out = '\n'+'\n'.join(lines)+'\n'
+    return out
+
+def _src_diff(old_file2contents, new_file2contents):
+    # Changed file local path => contents; deleted files map to None
+    out = {}
+    for k in old_file2contents.keys():
+        if k not in new_file2contents:
+            out[k] = None
+    for k in new_file2contents.keys():
+        if new_cache[k] != old_file2contents.get(k,None):
+            out[k] = new_file2contents[k]
+    for k in old_file2contents.keys():
+        if k[0]=='/':
+            raise Exception('Absolute-like filepath in the src cache (bug in this function).')
+    return out
+
+def install_git_fetch(branch='main'):
+    # Fetches git in a temporary folder and copies the contents here.
+    clean_here = True # Extra cleanup. Not necessary?
+    if clean_here:
+        file_io.empty_folder('.', keeplist='softwareDump')
+    tmp_folder = './softwareDump/GitDump'
+    if not os.path.exists(tmp_folder):
+        os.makedirs(tmp_folder, exist_ok=True)
+    else:
+        file_io.empty_folder(tmp_folder)
+    replace_with_Git_fetch(branch=branch, folder=tmp_folder)
+    file_io.copy_with_overwrite(tmp_folder, '.', ignore_permiss_error=True)
+
+def _gitHub_bootstrap_txt(branch='main', windows=False):
+    txt = """
+cd ~
+mkdir Skythonic
+cd ~/Skythonic
+python3
+python
+import os
+branch = 'BRANCH'
+fnames = ['proj.py', 'pastein.py']
+#os.system('sudo apt install curl -y') # Make sure curl is installed first!
+urls = [f'https://raw.githubusercontent.com/kjkostlan/Skythonic/{branch}/{fname}' for fname in fnames]
+[os.unlink('./'+fname) if os.path.exists(fname) else None for fname in fnames]
+curl_cmds = [f'curl "{urls[i]}" -o "./{fnames[i]}"' for i in range(len(fnames))]
+[os.system(curl_cmd) for curl_cmd in curl_cmds]
+bad_fnames = list(filter(lambda fname: not os.path.exists(fname), fnames))
+print('WARNING: the curl bootstrap may have failed.') if len(bad_fnames)>0 else None
+print(f'Curled github bootstrap branch {branch} to folder {os.path.realpath(".")}; the GitHub curl requests may be a few minutes out of date.')
+import proj # Installs the file_io.py which is needed by pastein.
+import pastein.install_git_fetch(branch=branch)
+    """.replace('BRANCH', branch)
+    if windows:
+        txt = txt.replace('\n','\r\n')
+    return txt
+
+def _get_update_txt(pickle64_string):
+    txt = '''
+    cd ~ # Bash cmds will error if attempted inside Python shell, but lines after errors will still run.
+    mkdir Skythonic
+    cd ~/Skythonic
+    python3
+    python
+    import sys, os, time, subprocess
+    obj64 = r"""PICKLE"""
+    from waterworks import py_updater
+    py_updater.unpickle64_and_update(obj64, True, True)
+    '''.replace('PICKLE', pickle64_string)
+    return txt
+
+def _importcode(mnames):
+    return ['import '+mname for mname in mnames]
 
 if __name__ == '__main__': # For running on your local machine.
     import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
-    from itertools import islice
-
-    def batched(iterable, n): #https://docs.python.org/3/library/itertools.html
-        "Batch data into tuples of length n. The last batch may be shorter."
-        # batched('ABCDEFG', 3) --> ABC DEF G
-        if n < 1:
-            raise ValueError('n must be at least one')
-        it = iter(iterable)
-        while True: # The := is as of Python 3.8 and had to be removed.
-            batch = tuple(islice(it, n))
-            if not batch:
-                break
-            yield batch
 
     while True:
-        #install_txt(windows=False, diff=False, pyboot_txt=True, import_txt=True)
-        cache_before_input = install_core.src_cache_from_disk()
-
-        x = input('<None> = load diffs, g = GitHub dev fetch; b = include bootstrap; f = bootstrap with git fetch; q = quit.')
+        sourcecode_before_input = file_io.python_source_load()
+        x = input('<None> = load diffs, gm = Github with main branch bootstrap, gd = Github with dev fetch bootstrap, q = quit.')
         x = x.lower().strip()
         if x=='q':
             quit()
-        cache_afr_input = install_core.src_cache_from_disk()
-        cache_diff = install_core.src_cache_diff(old_cache=cache_before_input, new_cache=cache_afr_input)
+        sourcecode_afr_input = file_io.python_source_load()
+        source_diff = _src_diff(sourcecode_before_input, sourcecode_afr_input)
 
-        a = 0 # For beaking down large pastes.
-        pickle_these = {}
-        if x.startswith('a'):
-            all_files = cache_afr_input
-            if '/' in x: # Only include some files.
-                pieces = x.strip().replace('a','').split('/')
-                kys = list(all_files.keys()); kys.sort()
-                a = int(pieces[0]); b = int(pieces[1])
-                sz = int(len(kys)/b+len(kys)/(len(kys)+1))
-                pieces1 = list(batched(kys, sz))
-                if len(pieces1) != b:
-                    raise Exception('bug in this code.')
-                piece = pieces1[a]
-                pickle_these = dict(zip(piece, [all_files[k] for k in piece]))
+        if x == 'gd' or x == 'gm':
+            branch = 'main' if x == 'gm' else 'dev'
+            txt = _gitHub_bootstrap_txt(branch=branch)
+            clipboard.copy(txt)
+            print(f'Bootstrap ready using GitHub fetch ({branch} branch).')
+        elif x == '' or not x:
+            big_txt = file_io.pickle64(pickle_these)
+            txt = _get_update_txt(big_txt)
+            clipboard.copy(txt)
+            n = len(source_diff)
+            if n==0:
+                print('No pickled files but code has been copied to jumpstart your Python work.')
             else:
-                pickle_these = all_files
-        elif 'g' not in x:
-            pickle_these = cache_diff
-
-        big_txt = file_io.pickle64(pickle_these)
-        n = len(pickle_these)
-
-        if 'f' in x:
-            txt = install_core.gitHub_bootstrap_txt(False)
-        else:
-            txt = install_core.bootstrap_txt(False, big_txt, pyboot_txt=(a==0 and 'a' in x) or 'b' in x, import_txt=True, github_txt='g' in x)
-        clipboard.copy(txt)
-        if 'g' in x and ('b' in x or 'f' in x):
-            print('Bootstrap ready with GitHub fetch.')
-        elif 'g' in x:
-            print('GitHub fetch ready.')
-        elif n==0:
-            print('No pickled files but code has been copied to jumpstart your Python work.')
-        else:
-            print(f'Your clipboard is ready with: {n} pickled files; {list(pickle_these.keys())}; press enter once pasted in or c to cancel')
-        install_core.update_src_cache() # Not sure if necessary.
+                print(f'Your clipboard is ready with: {n} pickled files; {list(pickle_these.keys())}; press enter once pasted in.')
 
 '''
 # Installation script (Bash):

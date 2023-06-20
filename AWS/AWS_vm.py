@@ -1,8 +1,8 @@
 # Virtal machine tools specific to aws.
 import time, os, re, requests, paramiko
-import file_io, covert
+import covert
 import AWS.AWS_format as AWS_format
-import waterworks.eye_term as eye_term
+from waterworks import eye_term, file_io
 import boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
