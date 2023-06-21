@@ -98,7 +98,7 @@ def install_us(branch='main'):
         file_io.empty_folder(tmp_folder)
     url = 'https://github.com/kjkostlan/Skythonic/'
     code_in_a_box.download(url, tmp_folder, clear_folder=False, branch=branch)
-    file_io.copy_with_overwrite(tmp_folder, '.', ignore_permiss_error=True)
+    file_io.copy_with_overwrite(tmp_folder, '.')
 
 def _gitHub_bootstrap_txt(branch='main'):
     txt = """
