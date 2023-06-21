@@ -86,6 +86,7 @@ def _src_diff(old_file2contents, new_file2contents):
 def install_git_fetch(branch='main'):
     # Fetches git in a temporary folder and copies the contents here.
     import proj
+    import code_in_a_box
     clean_here = False # Extra cleanup. Not necessary?
 
     if clean_here:
@@ -146,9 +147,9 @@ if __name__ == '__main__': # For running on your local machine.
 
     while True:
         sourcecode_before_input = file_io.python_source_load()
-        x = input('<None> = load diffs, gm = Github with main branch bootstrap, gd = Github with dev fetch bootstrap, q = quit.')
+        x = input('<None> = load diffs, gm = Github with main branch bootstrap, gd = Github with dev fetch bootstrap, q = quit:')
         x = x.lower().strip()
-        if x=='q':
+        if x=='q' or x=='quit()':
             quit()
         sourcecode_afr_input = file_io.python_source_load()
         source_diff = _src_diff(sourcecode_before_input, sourcecode_afr_input)
