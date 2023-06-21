@@ -83,7 +83,7 @@ def _src_diff(old_file2contents, new_file2contents):
             raise Exception('Absolute-like filepath in the src-code-as-dict, but only relative paths will work in most cases.')
     return out
 
-def install_git_fetch(branch='main'):
+def install_us(branch='main'):
     # Fetches git in a temporary folder and copies the contents here.
     import proj
     import code_in_a_box
@@ -91,11 +91,12 @@ def install_git_fetch(branch='main'):
 
     if clean_here:
         file_io.empty_folder('.', keeplist=proj.dump_folder)
-    tmp_folder = f'{proj.dump_folder}/GitDump'
+    tmp_folder = f'{proj.dump_folder}/GitDump' # Need a tmp folder b/c Git pulls only work on empty folders.
     if not os.path.exists(tmp_folder):
         os.makedirs(tmp_folder, exist_ok=True)
     else:
         file_io.empty_folder(tmp_folder)
+    url = 'https://github.com/kjkostlan/Skythonic/'
     code_in_a_box.download(url, tmp_folder, clear_folder=False, branch=branch)
     file_io.copy_with_overwrite(tmp_folder, '.', ignore_permiss_error=True)
 
@@ -119,7 +120,7 @@ print('WARNING: the curl bootstrap may have failed.') if len(bad_fnames)>0 else 
 print(f'Curled github bootstrap branch {branch} to folder {os.path.realpath(".")}; the GitHub curl requests may be a few minutes out of date.')
 import proj # Installs the file_io.py which is needed by pastein.
 import pastein
-pastein.install_git_fetch(branch=branch)
+pastein.install_us(branch=branch)
     """.replace('BRANCH', branch)
     txt = txt.replace('\n','\r\n')
     return txt
