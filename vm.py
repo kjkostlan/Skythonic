@@ -3,7 +3,7 @@
 # Don't forget the chmod 600 on the keys!
 # And the fun of scp: https://www.simplified.guide/ssh/copy-file
 import paramiko, time, os
-import covert
+import covert, proj
 from waterworks import eye_term, plumber, file_io
 
 platform = 'AWS' # Different platforms will be supported here.

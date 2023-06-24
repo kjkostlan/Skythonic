@@ -5,8 +5,8 @@ try:
 except:
     dump_folder = './softwaredump' # Software-generated files go here.
 
-def _install_gitpacks(): # Runs once on "import proj"
-    # Installs elegant games, for a more socialized age:
+def _install_gitpacks():
+    # It may be only one package, but 'waterworks' is essential when working with SSH pipes and the like.
     packs = {}
     packs['./waterworks'] = 'https://github.com/kjkostlan/waterworks'
 
