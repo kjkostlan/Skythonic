@@ -127,3 +127,7 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# External packages.
+waterworks/
+code_in_a_box.py

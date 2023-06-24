@@ -4,11 +4,12 @@
 import os, pickle, shutil
 import boto3
 from AWS import AWS_core, AWS_format
-import file_io, vm
+from waterworks import file_io
+import vm, proj
 
 iam = boto3.client('iam')
 pickle_leaf = 'vm_secrets.pypickle'
-pickle_fname = f'{file_io.dump_folder}/{pickle_leaf}'
+pickle_fname = f'{proj.dump_folder}/{pickle_leaf}'
 
 def _fillkeys(x):
     kys = ['instance_id2key_name', 'key_name2key_material', 'username2AWS_key']
@@ -23,8 +24,8 @@ def _pickleload(pickle_fname=pickle_fname):
             return _fillkeys(pickle.load(f))
     return _fillkeys({})
 def _picklesave(x, pickle_fname=pickle_fname):
-    if not os.path.exists(file_io.dump_folder):
-        os.makedirs(file_io.dump_folder)
+    if not os.path.exists(proj.dump_folder):
+        os.makedirs(proj.dump_folder)
     with open(pickle_fname,'wb') as f:
         return pickle.dump(x, f)
 
@@ -33,12 +34,14 @@ def remove_pickle(): # Removes all files. Only use on nuclear cleaning.
     _picklesave({})
 
 def _pem(key_name):
-    return file_io.dump_folder+'/'+key_name+'.pem'
+    return proj.dump_folder+'/'+key_name+'.pem'
 
 #### Dangerkey functions are create_once functions that return the public and private key ####
 
 def _save_ky1(fname, key_material):
     file_io.fsave(fname, key_material)
+    # See: https://stackoverflow.com/questions/51026026/how-to-pass-private-key-as-text-to-ssh
+    # Don't forget the chmod 600 on the keys!
     os.chmod(fname, 0o600) # Octal (not hex and not a string!)
 
 def vm_dangerkey(vm_name, vm_params):
@@ -117,19 +120,19 @@ def get_key(id_or_desc):
 
 def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickle_fname, printouts=True, preserve_dest=True):
     # Copies the keys and the Pickle.
-    dest_folder = skythonic_root_folder+'/'+file_io.dump_folder
+    dest_folder = skythonic_root_folder+'/'+proj.dump_folder
     id = AWS_format.obj2id(id_or_desc)
     x = _pickleload()
     file2contents = {}
     for v in x['instance_id2key_name'].values():
         fname = _pem(v)
-        file2contents[fname.replace(file_io.dump_folder,'')] = file_io.fload(fname)
+        file2contents[fname.replace(proj.dump_folder,'')] = file_io.fload(fname)
     if printouts:
         print(f'Copying secrets to {id}; list is {file2contents.keys()}; vm dest is {dest_folder}')
     vm.send_files(id, file2contents, dest_folder, printouts=printouts)
 
     # Add to any keys held remotely is held remotely:
-    tmp_local_folder = file_io.dump_folder+'/_covert_tmp/'
+    tmp_local_folder = proj.dump_folder+'/_covert_tmp/'
     file_io.make_folder(tmp_local_folder)
 
     tmp_pkl_file = tmp_local_folder+'/'+pickle_leaf

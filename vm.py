@@ -1,12 +1,7 @@
 # Tools for keeping track of virtual machines, such as the login keys
-# See: https://stackoverflow.com/questions/51026026/how-to-pass-private-key-as-text-to-ssh
-# Don't forget the chmod 600 on the keys!
-# And the fun of scp: https://www.simplified.guide/ssh/copy-file
 import paramiko, time, os
-import file_io
-import covert
-import waterworks.eye_term as eye_term
-import waterworks.plumber as plumber
+import covert, proj
+from waterworks import eye_term, plumber, file_io
 
 platform = 'AWS' # Different platforms will be supported here.
 if platform == 'AWS':
@@ -79,8 +74,8 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     #scp file.txt username@to_host:/remote/directory/
     public_ip = CLOUD_vm.get_ip(instance_id)
 
-    tmp_dump = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump')
-    file_io.empty_folder(tmp_dump, ignore_permiss_error=False, keeplist=None)
+    tmp_dump = os.path.realpath(proj.dump_folder+'/_vm_tmp_dump')
+    file_io.empty_folder(tmp_dump, keeplist=None)
 
     # Enclosing folders that need to be made:
     folders = set()
@@ -109,7 +104,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
 
 def download_remote_file(instance_id, remote_path, local_dest_folder=None, printouts=True, bin_mode=False):
     # Downalods to a local path or simply returns the file contents.
-    save_here = os.path.realpath(file_io.dump_folder+'/_vm_tmp_dump/') if local_dest_folder is None else local_dest_folder
+    save_here = os.path.realpath(proj.dump_folder+'/_vm_tmp_dump/') if local_dest_folder is None else local_dest_folder
     file_io.power_delete(save_here)
     file_io.make_folder(save_here)
 
@@ -126,9 +121,8 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
 
     return out, p.tubo
 
-def update_vms_skythonic(diff):
-    # Updates all skythonic files on VMs.
-    eye_term.bprint('Warning: TODO: implement this auto-update Skythonic function.')
+def update_vms_skythonic(diff): # Where is Skythonic installed?
+    eye_term.bprint('Warning: TODO: implement propagation of Skythonic updates to other Skythonic-bearing vms.')
 
 ########################Installation of packages################################
 
@@ -256,7 +250,7 @@ def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=N
 
     file2contents = file_io.folder_load('.', allowed_extensions='.py')
     for k in list(file2contents.keys()):
-        if file_io.dump_folder.split('/')[-1] in k:
+        if proj.dump_folder.split('/')[-1] in k:
             del file2contents[k]
     tubo = send_files(tubo.machine_id, file2contents, remote_root_folder, printouts=tubo.printouts)
 
@@ -281,10 +275,10 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     if package_name == 'skythonic': # Local copy.
         file2contents = file_io.folder_load('.', allowed_extensions='.py')
         for k in list(file2contents.keys()):
-            if file_io.dump_folder.split('/')[-1] in k:
+            if proj.dump_folder.split('/')[-1] in k:
                 del file2contents[k]
         dest_folder = '~/Skythonic'
-        test_pairs = [['cd Skythonic\npython3\nimport file_io\nprint(file_io)\nquit()','module']]
+        test_pairs = [['cd Skythonic\npython3\nfrom waterworks import file_io\nprint(file_io)\nquit()','module']]
         non_custom_packages = ['pip paramiko']
     elif package_name=='host-list':
         dest_folder = '/etc'
