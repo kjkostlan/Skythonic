@@ -40,6 +40,8 @@ def _pem(key_name):
 
 def _save_ky1(fname, key_material):
     file_io.fsave(fname, key_material)
+    # See: https://stackoverflow.com/questions/51026026/how-to-pass-private-key-as-text-to-ssh
+    # Don't forget the chmod 600 on the keys!
     os.chmod(fname, 0o600) # Octal (not hex and not a string!)
 
 def vm_dangerkey(vm_name, vm_params):
