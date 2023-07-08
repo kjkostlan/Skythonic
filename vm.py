@@ -1,7 +1,7 @@
 # Tools for keeping track of virtual machines, such as the login keys
 import paramiko, time, os
 import covert, proj
-from waterworks import eye_term, plumber, file_io
+from waterworks import eye_term, plumber, file_io, colorful
 
 platform = 'AWS' # Different platforms will be supported here.
 if platform == 'AWS':
@@ -56,7 +56,7 @@ def lazy_run_ssh(instance_id, bash_cmds, f_polls=None, printouts=True):
     _out, _err, _ = tubo.multi_API(bash_cmds, f_polls=f_polls)
     tubo.close()
     if tubo.printouts:
-        eye_term.bprint('\nWe closed the SSH\n')
+        colorful.bprint('\nWe closed the SSH\n')
     return _out, _err, tubo
 
 def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
@@ -64,7 +64,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     # Both local or non-local paths allowed.
     # Automatically creates folders.
     if printouts:
-        eye_term.bprint(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
+        colorful.bprint(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
 
     tubo = patient_ssh_pipe(instance_id, printouts=printouts)
     p = plumber.Plumber(tubo, [], {}, [f'mkdir -p {eye_term.quoteless(remote_root_folder)}'], [], dt=2.0)
@@ -99,7 +99,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
     tubo.API('echo scp_cmd_sent') # Getting the output from the scp command is ... tricky. Use echos instead:
 
     file_io.power_delete(tmp_dump)
-    eye_term.bprint('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
+    colorful.bprint('WARNING: TODO fix this code to allow deletions and check if the files really were transfered.')
     return tubo
 
 def download_remote_file(instance_id, remote_path, local_dest_folder=None, printouts=True, bin_mode=False):
@@ -122,7 +122,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     return out, p.tubo
 
 def update_vms_skythonic(diff): # Where is Skythonic installed?
-    eye_term.bprint('Warning: TODO: implement propagation of Skythonic updates to other Skythonic-bearing vms.')
+    colorful.bprint('Warning: TODO: implement propagation of Skythonic updates to other Skythonic-bearing vms.')
 
 ########################Installation of packages################################
 
@@ -213,7 +213,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
 
     if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
-        eye_term.bprint('awscli is a HEAVY installation. Should take about 5 min.')
+        colorful.bprint('awscli is a HEAVY installation. Should take about 5 min.')
         region_name = CLOUD_vm.get_region_name()
         user_id = covert.user_dangerkey(kwargs['user_name'])
         publicAWS_key, privateAWS_key = covert.get_key(user_id)
