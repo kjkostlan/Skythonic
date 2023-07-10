@@ -16,6 +16,28 @@ def _install_gitpacks():
             raise Exception('Forgot the ./<folder>')
         code_in_a_box.download(v, k, clear_folder=False)
 
+def which_cloud(): # Like sys.platform but different mega-cooperations rather than differnt kernels.
+    try:
+        import boto3
+        return 'aws'
+    except:
+        pass
+    TODO
+
+def platform_import_modules(into_this_module, strings):
+    # Different for different cloud platforms.
+    # The first argument should be "sys.modules[__name__]".
+    import importlib
+    wc = which_cloud().lower()
+    x = None
+    if wc == 'aws':
+        x = {'cloud_core':'AWS.AWS_core', 'cloud_query':'AWS.AWS_query',\
+             'cloud_format':'AWS.AWS_format', 'cloud_clean':'AWS.AWS_clean',\
+             'cloud_vm':'AWS.AWS_vm', 'cloud_permiss':'AWS.AWS_permiss'}
+    # TODO: other platforms go here.
+    for s in strings:
+        setattr(into_this_module, s, importlib.import_module(x[s]))
+
 ########################## Boilerplate code below ##############################
 ########### (some of our pacakges depend on global_get and proj.dump_folder) ##########
 def global_get(name, initial_value):

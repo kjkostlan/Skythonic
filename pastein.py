@@ -4,9 +4,9 @@ import os, sys, time
 
 def awsP(windows=False):
     imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean',\
-               'AWS.AWS_setup as AWS_setup','AWS.AWS_query as AWS_query',\
-               'AWS.AWS_format as AWS_format', 'tests.AWS_test as AWS_test', \
-               'boto3', 'vm']
+               'AWS.AWS_query as AWS_query',\
+               'AWS.AWS_format as AWS_format', \
+               'boto3', 'vm', 'tests.vms_setup as vms_setup', 'tests.core_tests as core_tests']
     lines = _importcode(imports)
     lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", "iam = boto3.client('iam')", 'who = AWS_query.get_resources']
     for line in lines:
@@ -22,7 +22,7 @@ def googleP(windows=False):
     lines = [] # TODO
     exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
 
-def CommonsCloudP(windows=False): # This one is special in that it is customer-owned.
+def commonsCloudP(windows=False): # This one is special in that it is customer-owned.
     raise Exception('TODO')
     lines = [] # TODO
     exec(_joinlines(lines, windows), vars(sys.modules['__main__']))

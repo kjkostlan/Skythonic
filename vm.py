@@ -3,14 +3,14 @@ import paramiko, time, os
 import covert, proj
 from waterworks import eye_term, plumber, file_io, colorful
 
-platform = 'AWS' # Different platforms will be supported here.
+platform = proj.which_cloud()
 if platform == 'AWS':
-    import AWS.AWS_vm as CLOUD_vm
+    import AWS.AWS_vm as cloud_vm
 else:
     raise Exception(f'Support not yet implemented for {platform}')
 
 def our_vm_id():
-    return CLOUD_vm.our_vm_id()
+    return cloud_vm.our_vm_id()
 
 ###############################SSH and SCP######################################
 

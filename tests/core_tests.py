@@ -1,14 +1,10 @@
-#Tests of AWS bsic querying and resource creation/deletion.
+#Tests of public cloud basic querying and resource creation/deletion.
 import time, sys
-import AWS.AWS_query as AWS_query
-import AWS.AWS_setup as AWS_setup
-import AWS.AWS_format as AWS_format
-import AWS.AWS_clean as AWS_clean
-import AWS.AWS_core as AWS_core
-import vm, covert
+import proj, vm, covert
 from waterworks import plumber, fittings
-import boto3
-ec2c = boto3.client('ec2')
+
+proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_query', 'cloud_format', 'cloud_clean'])
+which_cloud = proj.which_cloud.lower()
 
 def oprint(*args):
     print('\033[93m'+' '.join([str(a) for a in args])+'\033[0m')
@@ -53,13 +49,13 @@ class test_results:
 def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name, printouts=True):
     tubo = vm.patient_ssh_pipe(vm_id, printouts=False)
 
-    #tubo.send('echo AWS_test')
+    #tubo.send('echo jump_test')
     #import time
     #time.sleep(1.0)
     #print('BLitty:', tubo.blit())
     #TODO
 
-    out, err, _ = tubo.API('echo AWS_test')
+    out, err, _ = tubo.API('echo jump_test')
     tubo.empty(True)
     tubo.send(the_cmd)
     time.sleep(0.25) # Useful if we don't really need laconic_wait.
@@ -73,13 +69,13 @@ def _jump_ssh_cmd_test(results, the_cmd, look_for, vm_id, test_name, printouts=T
 
 def test_obj2id(printouts=True):
     out = True
-    all = AWS_query.get_resources()
+    all = cloud_query.get_resources()
     n = 0
     for k in all.keys():
         for x in all[k]:
-            the_id =AWS_format.obj2id(x)
-            x1 = AWS_format.id2obj(the_id)
-            the_id2 = AWS_format.obj2id(x1)
+            the_id =cloud_format.obj2id(x)
+            x1 = cloud_format.id2obj(the_id)
+            the_id2 = cloud_format.obj2id(x1)
             if printouts:
                 if type(x) is not dict:
                     print('Original qurey not a dict:\n', x)
@@ -105,24 +101,24 @@ def test_assoc_query(printouts=True):
     if printouts:
         print('This test is expensive O(n^2) for large amounts of resources.')
     safe_err_msgs = ['thier own kind', 'directly associated with']
-    all = AWS_query.get_resources()
+    all = cloud_query.get_resources()
     if printouts:
         print('Total resource counts:', [f'{k}={len(all[k])}' for k in all.keys()])
 
-    AWS_types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user', 'IAMpolicy']
+    resource_types = ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address','peering','user', 'IAMpolicy']
     has_resources = {}
     resc_count = 0; link_count = 0
     link_map = {} # {id:[resources]}
     err_map = {} #{type_type:error}, only one error at a time. Makes sure reciprocal.
-    for ty in AWS_types:
+    for ty in resource_types:
         if printouts:
             print('Working on connections to:', ty)
         for ky in all.keys():
             for x in all[ky]:
                 has_resources[ky] = True
-                the_id = AWS_format.obj2id(x)
+                the_id = cloud_format.obj2id(x)
                 try:
-                    links = AWS_query.assocs(x, ty)
+                    links = cloud_query.assocs(x, ty)
                     if the_id not in link_map:
                         link_map[the_id] = []
                     link_map[the_id].extend(links); link_count = link_count+len(links)
@@ -130,14 +126,14 @@ def test_assoc_query(printouts=True):
                     bad_err = True
                     for msg in safe_err_msgs:
                         if msg in str(e):
-                            _tmp = the_id+ AWS_format.enumr(the_id)+'_'+ty# DEBUG
-                            err_map[AWS_format.enumr(the_id)+'_'+ty] = msg
+                            _tmp = the_id+ cloud_format.enumr(the_id)+'_'+ty# DEBUG
+                            err_map[cloud_format.enumr(the_id)+'_'+ty] = msg
                             bad_err = False
                     if bad_err:
                         raise e
             resc_count += 1
     if printouts:
-        print('Done with heavy AWS API usage.')
+        print('Done with heavy cloud API usage.')
 
     if resc_count<10:
         raise Exception('So few resources that this test cannot be trusted.')
@@ -187,13 +183,13 @@ def test_ssh_jumpbox(printouts=True):
     #        B: Are the scp files actually copied over?
     # (printouts will not print everything, only test failures)
     out = test_results('weaker_jumpbox_tests')
-    vm_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')
+    vm_desc = cloud_query.get_by_name('machine', 'BYOC_jumpbox_VM')
     if vm_desc is None:
         raise Exception('Cant find BYOC_jumpbox_VM to test on. Is it named differently or not set up?')
 
     #tubo = vm.patient_ssh_pipe(vm_desc, printouts=True)
     #tubo.send('cd ~/Skythonic/\npython3\nx=1+2\nprint(x)\nquit()')
-    #out, err, _ = tubo.API('echo AWS_test')
+    #out, err, _ = tubo.API('echo jump_test')
     #tubo.empty(True)
     #out, err, _ = tubo.API('cd ~/Skythonic/')
     #tubo.send('python3\nx=1+2\nprint(x)\nquit()')
@@ -209,7 +205,10 @@ def test_ssh_jumpbox(printouts=True):
     #return False
 
     _jump_ssh_cmd_test(out, 'ping', 'ping: usage error: Destination address required', vm_desc, 'Test_ping', printouts)
-    _jump_ssh_cmd_test(out, 'aws ec2 describe-subnets', 'BYOC_jumpbox_subnet', vm_desc, 'Test_AWS_descsubnets', printouts)
+    if which_cloud == 'aws':
+        _jump_ssh_cmd_test(out, 'aws ec2 describe-subnets', 'BYOC_jumpbox_subnet', vm_desc, 'Test_cloud_descsubnets', printouts)
+    else:
+        raise Exception('TODO: handle this cloud type for the simple shell jumpbox command:', which_cloud)
 
     _jump_ssh_cmd_test(out, 'cd ~/Skythonic\n ls -a', 'eye_term.py', vm_desc, 'test files skythonic', printouts)
 
@@ -227,69 +226,53 @@ def test_ssh_jumpbox(printouts=True):
     return out
 
 def _new_machine(jump_subnet_id, jump_sgroup_id, machine_name, kpair_name, address_name, private_ip, printouts):
-    #if printouts and AWS_query.lingers(AWS_query.get_by_name('machine', machine_name, True)):
-    #    print(f'Instance {inst_id} was deleted but is lingering and so a new instance with the same name will be created.')
 
-    #addr0 = AWS_query.get_by_name('address', address_name)
-    #if addr0 is not None:
-    #    oprint('Address already created, but will still make vm and attach it.')
-    vm_ids = [AWS_format.obj2id(vm_obj) for vm_obj in AWS_query.get_resources('machine')]
-    oprint('AWS_test__new_machine: All current machines:', vm_ids, 'We want to make a machine with this name:', machine_name)
+    vm_ids = [cloud_format.obj2id(vm_obj) for vm_obj in cloud_query.get_resources('machine')]
+    oprint('core_test__new_machine: All current machines:', vm_ids, 'We want to make a machine with this name:', machine_name)
     for vid in vm_ids:
-        tags = AWS_format.tag_dict(vid)
-        print('AWS_test__new_machine: Vid:', vid, tags)
+        tags = cloud_format.tag_dict(vid)
+        print('core_test__new_machine: Vid:', vid, tags)
         if 'Name' in tags and tags['Name'] == machine_name:
             raise Exception(f'The machine already exists: {machine_name}')
 
+    inst_id = cloud_format.obj2id(net_setup.simple_vm(machine_name, private_ip, jump_subnet_id, jump_sgroup_id, kpair_name))
+    addr = cloud_core.create_once('address', address_name, printouts, Domain='vpc')
 
-    #inter_we_specify = kwargs['NetworkInterfaces'][0]
-    #subnet_id = inter_we_specify['SubnetId']
-    #address_we_want = inter_we_specify['PrivateIpAddress']
-    #subnet_interfaces = ec2c.describe_network_interfaces(Filters=[{'Name': 'subnet-id','Values': [subnet_id]}])['NetworkInterfaces']
-    #for subn_i in subnet_interfaces:
-    #    if subn_i['PrivateIpAddress'] == address_we_want and 'Attachment' in subn_i:
-    #        iid = subn_i['Attachment']['InstanceId']
-    #        print('Tags of instance which is conflict:', AWS_format.tag_dict(iid))
-
-
-    inst_id = AWS_format.obj2id(AWS_setup.simple_vm(machine_name, private_ip, jump_subnet_id, jump_sgroup_id, kpair_name))
-    addr = AWS_core.create_once('address', address_name, printouts, Domain='vpc')
-
-    AWS_setup.wait_and_attach_address(inst_id, addr)
+    net_setup.wait_and_attach_address(inst_id, addr)
     return inst_id
 
 def _del_machine(machine_name, kpair_name, address_name):
-    goners = [AWS_query.get_by_name('machine', machine_name), AWS_query.get_by_name('kpair', address_name),\
-              AWS_query.get_by_name('address', address_name)]
+    goners = [cloud_query.get_by_name('machine', machine_name), cloud_query.get_by_name('kpair', address_name),\
+              cloud_query.get_by_name('address', address_name)]
     goners = list(filter(lambda x: x is not None, goners))
-    AWS_clean.power_delete(goners)
+    cloud_clean.power_delete(goners)
 
 def test_new_machine_from_jumpbox(printouts=True):
     #Tests: A: Make a machine in the jumpbox and ssh to it.
     #       B: Make a machine OUTSIDE the jumpbox and ssh to it from the jumpbox.
-    jump_desc = AWS_query.get_by_name('machine', 'BYOC_jumpbox_VM')
+    jump_desc = cloud_query.get_by_name('machine', 'BYOC_jumpbox_VM')
     if jump_desc is None:
         raise Exception('Cant find BYOC_jumpbox_VM to test on. Is it named differently or not set up?')
 
-    jump_subnet_id = AWS_query.assocs(jump_desc,'subnet')[0]
-    jump_sgroup_id = AWS_query.assocs(jump_desc,'sgroup')[0]
-    jump_cidr = AWS_format.id2obj(jump_subnet_id)['CidrBlock']
+    jump_subnet_id = cloud_query.assocs(jump_desc,'subnet')[0]
+    jump_sgroup_id = cloud_query.assocs(jump_desc,'sgroup')[0]
+    jump_cidr = cloud_format.id2obj(jump_subnet_id)['CidrBlock']
 
     out = True
 
-    AWS_test = sys.modules['tests.AWS_test'] #Import ourselves!
+    core_tests = sys.modules['tests.core_tests'] #Import ourselves!
     def _qu(x):
         return "'"+x+"'"
     def _vm_code(x):
         # exec this locally or ran via ssh on another machine:
-        new_code = f'AWS_test._new_machine({_qu(jump_subnet_id)}, {_qu(jump_sgroup_id)}, {_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])}, {_qu(x["private_ip"])}, {printouts})'
-        del_code = f'AWS_test._del_machine({_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])})'
+        new_code = f'core_tests._new_machine({_qu(jump_subnet_id)}, {_qu(jump_sgroup_id)}, {_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])}, {_qu(x["private_ip"])}, {printouts})'
+        del_code = f'core_tests._del_machine({_qu(x["vm_name"])}, {_qu(x["kpair_name"])}, {_qu(x["address_name"])})'
         return new_code, del_code
 
     def clean_xtras(x):
-        y = AWS_query.get_by_name('kpair', x['kpair_name'], include_lingers=False)
+        y = cloud_query.get_by_name('kpair', x['kpair_name'], include_lingers=False)
         if y is not None:
-            AWS_core.delete(y)
+            cloud_core.delete(y)
 
     delete_skythonic_folder_jbox = True
     if delete_skythonic_folder_jbox:
@@ -305,7 +288,7 @@ def test_new_machine_from_jumpbox(printouts=True):
     vm.update_Skythonic(jump_desc, '~/Skythonic', printouts=printouts)
     oprint('...done update Skythonic')
 
-    x0 = {'kpair_name':'testing_vm_key_name', 'vm_name':'testing_vm_AWS_test', 'address_name':'testing_address', 'private_ip':'10.200.250.111'}
+    x0 = {'kpair_name':'testing_vm_key_name', 'vm_name':'testing_vm_cloud_test', 'address_name':'testing_address', 'private_ip':'10.200.250.111'}
 
     for x in [x0]:
         clean_xtras(x)
@@ -318,16 +301,17 @@ def test_new_machine_from_jumpbox(printouts=True):
         return ['echo '+msg, 'cd ~/Skythonic', 'python3']
 
     def _import_code():
-        return ['import AWS.AWS_core as AWS_core', 'import AWS.AWS_vm as AWS_vm', 'import vm', 'import AWS.AWS_query as AWS_query', 'import tests.AWS_test as AWS_test', 'import waterworks.plumber as plumber']
+        return ["proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_query', 'cloud_format', 'cloud_clean'])", \
+                'import tests.core_test as core_test', 'import waterworks.plumber as plumber']
 
     #Test A: SSH to jumpbox; make a machine in the jumpbox; ssh to it from jumpbox.
     oprint('Deleting test machine if it was created')
     exec(_vm_code(x0)[1])
-    vm_desc = AWS_query.get_by_name('machine', x0['vm_name'])
+    vm_desc = cloud_query.get_by_name('machine', x0['vm_name'])
     if vm_desc is not None:
         raise Exception('The test machine failed to end up deleted.')
 
-    _tmp = ec2c.describe_key_pairs(Filters=[{'Name': 'key-name', 'Values': [x0['kpair_name']]}])['KeyPairs']
+    _tmp = cloud_query.get_resources(which_types='kpairs', ids=True, include_lingers=False, filters=[{'Name': 'key-name', 'Values': [x0['kpair_name']]}])
     if len(_tmp)>0:
         raise Exception('The key pair did not get deleted.')
 
@@ -341,7 +325,7 @@ def test_new_machine_from_jumpbox(printouts=True):
     cmds = [l for l in _start_py_code('test vm ssh jmake')+_import_code()]
     cmds.append('print("MILESTONE HERE: About to make the machine *from* the jumpbox")')
     cmds.append(_vm_code(x0)[0])
-    cmds.append(f"test_desc = AWS_query.get_by_name('machine', {_qu(x0['vm_name'])})")
+    cmds.append(f"test_desc = cloud_query.get_by_name('machine', {_qu(x0['vm_name'])})")
     cmds.append('print("ABOUT TO GO DEEPER")')
     cmds.append('tubo = vm.patient_ssh_pipe(test_desc, printouts=False)')
     cmds.append('jump2new_vm = ["tmp=$(curl http://169.254.169.254/latest/meta-data/instance-id)", "echo $tmp"]')
@@ -354,10 +338,10 @@ def test_new_machine_from_jumpbox(printouts=True):
     p.run()
 
     dump = p.blit_all()
-    vm_desc = AWS_query.get_by_name('machine', x0['vm_name'])
+    vm_desc = cloud_query.get_by_name('machine', x0['vm_name'])
     if vm_desc is None:
         raise Exception('The jumpbox failed to produce the vm.')
-    vm_id = AWS_format.obj2id(vm_desc)
+    vm_id = cloud_format.obj2id(vm_desc)
     out = out and vm_id in dump
     oprint(f'Checking if the jumpbox making another machine worked {vm_id}; {vm_id in dump}')
 
@@ -366,10 +350,10 @@ def test_new_machine_from_jumpbox(printouts=True):
 
     return False
 
-    test_id_gold = AWS_format.obj2id(AWS_query.get_by_name('machine', x0['vm_name']))
+    test_id_gold = cloud_format.obj2id(cloud_query.get_by_name('machine', x0['vm_name']))
     out = out and test_id_gold in str(test_id_blabla)
 
-    #test_id_blabla = [tubo.API(f'tubo.API({_qu(l)})') for l in _start_py_code('test vm deeper lev')+_import_code()+['print(AWS_vm.our_vm_id())']][-1]
+    #test_id_blabla = [tubo.API(f'tubo.API({_qu(l)})') for l in _start_py_code('test vm deeper lev')+_import_code()+['print(vm.our_vm_id())']][-1]
     #print('test id bla bla bla:', test_id_blabla)
     # Note: we do not test jumpbox to cloud shell file xfer b/c ssh to cloud shell is a bit esoteric.
 
@@ -378,11 +362,11 @@ def test_new_machine_from_jumpbox(printouts=True):
     return False
 
     #Test 0: Query the ID of our machine in cloud shell (should be none) vs jumpbox:
-    cloud_shell_id = AWS_vm.our_vm_id()
-    jump_id = AWS_format.obj2id(jump_desc)
+    cloud_shell_id = vm.our_vm_id()
+    jump_id = cloud_format.obj2id(jump_desc)
     tubo = vm.patient_ssh_pipe(jump_desc, printouts=printouts)
     [tubo.API(l) for l in _start_py_code('test vm ssh ID0')+_import_code()]
-    jump_id_blabla = tubo.API('print(AWS_vm.our_vm_id())')
+    jump_id_blabla = tubo.API('print(vm.our_vm_id())')
     tubo.API('quit()')
     out = out and cloud_shell_id is None and jump_id in str(jump_id_blabla)
     oprint('ID CHECK:', out)

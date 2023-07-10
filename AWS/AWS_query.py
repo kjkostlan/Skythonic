@@ -21,10 +21,13 @@ def filtered_machines(filters): # For some reason describe_instances doesn't ret
         machines.extend(pack['Instances'])
     return machines
 
-def get_resources(which_types=None, ids=False, include_lingers=False):
+def get_resources(which_types=None, ids=False, include_lingers=False, filters=None):
+    # TODO: allow filtering.
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
     # Will not find routes directly, but does find rtables.
     # Will not find tags directly; use get_by_tag.
+    if filters is not None:
+        raise Exception('TODO: filters')
     out = {}
     splice = type(which_types) is str
     if splice:

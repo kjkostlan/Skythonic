@@ -235,3 +235,20 @@ def disassoc(A, B, _swapped=False):
     # Opposite of assoc and Idempotent.
     TODO
 dissoc = disassoc # For those familiar with Clojure...
+
+def modify_attribute(desc_or_id, k, v):
+    # TODO: fill out this function more.
+    the_id = AWS_format.obj2id(desc_or_id)
+    ty = AWS_format.enumr(the_id)
+    if ty == 'vpc':
+        ec2c.modify_vpc_attribute(VpcId=vpc_id, **{k:v})
+    else:
+        TODO # More cases please!
+
+def create_route(rtable_id, dest_cidr, gateway_id):
+    # TODO: This is a niche function, which should be refactors/abstracted.
+    ec2c.create_route(RouteTableId=rtable_id, DestinationCidrBlock=dest_cidr,GatewayId=gateway_id)
+
+def install_these():
+    # What to install on a jumpbox?
+    return ['apt aws']

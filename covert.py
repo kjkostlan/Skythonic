@@ -2,17 +2,16 @@
 # TODO: option to encrypt with a password.
 # TODO: remove circular covert <-> vm dependencies.
 import os, pickle, shutil
-import boto3
-from AWS import AWS_core, AWS_format
-from waterworks import file_io
 import vm, proj
+from waterworks import file_io
 
-iam = boto3.client('iam')
+proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_format', 'cloud_permiss'])
+
 pickle_leaf = 'vm_secrets.pypickle'
 pickle_fname = f'{proj.dump_folder}/{pickle_leaf}'
 
 def _fillkeys(x):
-    kys = ['instance_id2key_name', 'key_name2key_material', 'username2AWS_key']
+    kys = ['instance_id2key_name', 'key_name2key_material', 'username2key']
     for k in kys:
         if k not in x:
             x[k] = {}
@@ -50,7 +49,7 @@ def vm_dangerkey(vm_name, vm_params):
     key_mat = None
     fname = _pem(key_name)
     try: # Cant use create_once because of the ephemeral key_material.
-        key_pair = AWS_core.create('keypair', key_name, raw_object=True) # Don't use create once b/c we need to know if the user already exists.
+        key_pair = cloud_core.create('keypair', key_name, raw_object=True) # Don't use create once b/c we need to know if the user already exists.
         key_mat = key_pair.key_material
         x['key_name2key_material'][key_name] = key_mat
         _save_ky1(fname, key_mat)
@@ -61,57 +60,48 @@ def vm_dangerkey(vm_name, vm_params):
 
         # Key already exists, but make sure the file exists:
         if key_name not in x['key_name2key_material']:
-            ec2c = boto3.client('ec2')
-            pair = ec2c.describe_key_pairs(Filters=[{'Name': 'key-name', 'Values': [key_name]}])['KeyPairs'][0]
-            #for _ in range(16):
-            #    print('Tags of the key pair:', AWS_format.tag_dict(pair))
+            pair = cloud_query.get_resources(which_types='kpairs', ids=False, include_lingers=False, filters=Filters=[{'Name': 'key-name', 'Values': [key_name]}])
             raise Exception(f'The key-pair {key_name} already exists but the secret is not stored on this machine ({vm.our_vm_id()}).')
 
-    inst_id = AWS_core.create_once('machine', vm_name, True, **vm_params)
+    inst_id = cloud_core.create_once('machine', vm_name, True, **vm_params)
     x['instance_id2key_name'][inst_id] = key_name
     _picklesave(x)
     return inst_id
 
 def user_dangerkey(user_name):
     # WARNING: makes an ADMIN user.
-    user = AWS_core.create_once('user', user_name, True)
-    try:
-        iam.attach_user_policy(UserName=user_name, PolicyArn = 'arn:aws:iam::aws:policy/AdministratorAccess')
-    except Exception as e:
-        if 'already exists' not in str(e):
-            raise e
-    kys = iam.list_access_keys(UserName=user_name)['AccessKeyMetadata'] #Note: the user access keys are disjoint from the global access keys.
-    if len(kys)==0: # No keys attached to this user.
-        key_dict = iam.create_access_key(UserName=user_name)
-        k0 = key_dict['AccessKey']['AccessKeyId']
-        k1 = key_dict['AccessKey']['SecretAccessKey']
+    user = cloud_core.create_once('user', user_name, True)
+    cloud_permiss.attach_user_policy_once(user_name=user_name, policy_id=cloud_permiss.admin_policy_id())
+
+    if kpair := cloud_permiss.create_dangerkey_once(user_name):
         x = _pickleload()
-        x['username2AWS_key'][user_name] = [k0, k1]
+        x['username2key'][user_name] = [k0, k1]
         _picklesave(x)
         print('Created and saved user key for:', user_name)
 
-    return AWS_format.obj2id(user)
+    return cloud_format.obj2id(user)
 
 def get_key(id_or_desc):
     # Returns the public and private key. The public key is None if not needed.
-    id = AWS_format.obj2id(id_or_desc)
-    try: # Also allow pssing in a user name.
-        x = iam.list_access_keys(UserName=id_or_desc)['AccessKeyMetadata']; x = x[0]
-        return get_key(x)
+    the_id = cloud_core.obj2id(id_or_desc)
+    try: # Also allow passing in a user name.
+        y = cloud_permiss.keys_user_has(UserName=id_or_desc); x = x[0]
     except Exception as e:
-        pass
+        y = None
+    if y:
+        return get_key(y)
     x = _pickleload() # At very large scales this query can be some sort of SQL, etc.
-    if id.startswith('i-'):
+    if cloud_format.enumr(the_id) == 'machine':
         key_name = x['instance_id2key_name'].get(id,None)
         if key_name is None:
             raise Exception(f'No saved vm key found for {id}')
         fname = _pem(key_name)
         return None, os.path.realpath(fname)
-    elif id.startswith('AID'):
-        desc = AWS_format.id2obj(id); uname = desc['UserName']
-        if uname not in x['username2AWS_key'] and len(iam.list_access_keys(UserName=uname)['AccessKeyMetadata'])>0:
+    elif cloud_format.enumr(the_id) == 'user':
+        desc = cloud_core.id2obj(id); uname = desc['UserName']
+        if uname not in x['username2key'] and len(cloud_permiss.keys_user_has(user_name=uname))>0:
             raise Exception(f'The keys exist for {uname} but they are not in this keychain and are likely lost. This may mean that the vm is bricked.')
-        key_name = x['username2AWS_key'].get(uname, None)
+        key_name = x['username2key'].get(uname, None)
         if key_name is None:
             raise Exception(f'No saved user key found for {uname}')
         return key_name
@@ -121,7 +111,7 @@ def get_key(id_or_desc):
 def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickle_fname, printouts=True, preserve_dest=True):
     # Copies the keys and the Pickle.
     dest_folder = skythonic_root_folder+'/'+proj.dump_folder
-    id = AWS_format.obj2id(id_or_desc)
+    id = cloud_core.obj2id(id_or_desc)
     x = _pickleload()
     file2contents = {}
     for v in x['instance_id2key_name'].values():
