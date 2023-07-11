@@ -1,9 +1,9 @@
 # Scripts that setup common machines and simple networks.
-import time
+import sys, time
 import vm, covert, proj
 from waterworks import eye_term, fittings, plumber
 
-proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_format', 'cloud_query', 'cloud_vm'])
+proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_format', 'cloud_query', 'cloud_vm', 'cloud_permiss'])
 
 def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
     # Creates a new key if need be, but the subnet and securitygroup must be already made.

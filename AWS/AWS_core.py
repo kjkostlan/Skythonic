@@ -241,7 +241,7 @@ def modify_attribute(desc_or_id, k, v):
     the_id = AWS_format.obj2id(desc_or_id)
     ty = AWS_format.enumr(the_id)
     if ty == 'vpc':
-        ec2c.modify_vpc_attribute(VpcId=vpc_id, **{k:v})
+        ec2c.modify_vpc_attribute(VpcId=the_id, **{k:v})
     else:
         TODO # More cases please!
 

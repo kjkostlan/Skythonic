@@ -13,7 +13,7 @@ def cloudP(): # Makes common imports for interactive, command line use.
     which_cloud = proj.which_cloud()
     kys = ['cloud_core', 'cloud_clean', 'cloud_query', 'cloud_format']
     imports = [smodules[ky]+' as '+ky for ky in kys]
-    imports = imports+['tests.core_tests as core_tests', 'vm']
+    imports = imports+['tests.core_tests as core_tests', 'vm', 'net_setup']
     if which_cloud == 'aws':
         imports.append('boto3')
     lines = _importcode(imports)

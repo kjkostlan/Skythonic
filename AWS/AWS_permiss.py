@@ -1,6 +1,7 @@
 # Handles permissions. Does not handle saving keys and other secrets (covert does that).
 import boto3
 iam = boto3.client('iam')
+ec2c = boto3.client('ec2')
 
 def admin_policy_id(): # For AWS this is the ARN = Amazon Resource Name
     return 'arn:aws:iam::aws:policy/AdministratorAccess'
