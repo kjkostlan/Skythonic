@@ -3,12 +3,6 @@ import paramiko, time, os
 import covert, proj
 from waterworks import eye_term, plumber, file_io, colorful
 
-platform = proj.which_cloud()
-if platform == 'AWS':
-    import AWS.AWS_vm as cloud_vm
-else:
-    raise Exception(f'Support not yet implemented for {platform}')
-
 def our_vm_id():
     return cloud_vm.our_vm_id()
 
@@ -319,7 +313,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     if len(file2contents)>0:
         send_files(tubo.machine_id, file2contents, dest_folder, printouts=tubo.printouts)
 
-    response_map = {**cloud_entry, response_map}
+    response_map = {**cloud_entry, **response_map}
     p = plumber.Plumber(tubo, non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
     p.run()
 

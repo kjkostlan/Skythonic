@@ -4,7 +4,7 @@ import proj, vm, covert
 from waterworks import plumber, fittings
 
 proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_query', 'cloud_format', 'cloud_clean'])
-which_cloud = proj.which_cloud.lower()
+which_cloud = proj.which_cloud().lower()
 
 def oprint(*args):
     print('\033[93m'+' '.join([str(a) for a in args])+'\033[0m')

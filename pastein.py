@@ -1,58 +1,27 @@
 import os, sys, time
+import proj
 
 #######################Different code depending on which package################
 
-def awsP(windows=False):
-    imports = ['AWS.AWS_core as AWS_core','AWS.AWS_clean as AWS_clean',\
-               'AWS.AWS_query as AWS_query',\
-               'AWS.AWS_format as AWS_format', \
-               'boto3', 'vm', 'tests.vms_setup as vms_setup', 'tests.core_tests as core_tests']
-    lines = _importcode(imports)
-    lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", "iam = boto3.client('iam')", 'who = AWS_query.get_resources']
-    for line in lines:
-        exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
-
-def azureP(windows=False):
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
-
-def googleP(windows=False):
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
-
-def commonsCloudP(windows=False): # This one is special in that it is customer-owned.
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
-
-# All these below are lower prority (<=5%) and are unlikely to ever be implemented....
 #https://www.statista.com/chart/18819/worldwide-market-share-of-leading-cloud-infrastructure-service-providers/
-def alibabaP(windows=False):
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
+cloud_list = ['aws', 'azure', 'google', 'commonscloud', 'alibaba', 'ibm', 'salesforce', 'tencent', 'oracle']
+# Notes: The first three are the only ones with >5% market share and together have about 2/3.
+# commonscloud is much more obscure but it is supposed to be a pubnlicly-owned cloud.
 
-def ibmP(windows=False):
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
-
-def salesforceP(windows=False):
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
-
-def tencentP(windows=False):
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
-
-def oracleP(windows=False):
-    raise Exception('TODO')
-    lines = [] # TODO
-    exec(_joinlines(lines, windows), vars(sys.modules['__main__']))
+def cloudP(): # Makes common imports for interactive, command line use.
+    smodules = proj.cloud_switch()
+    which_cloud = proj.which_cloud()
+    kys = ['cloud_core', 'cloud_clean', 'cloud_query', 'cloud_format']
+    imports = [smodules[ky]+' as '+ky for ky in kys]
+    imports = imports+['tests.core_tests as core_tests', 'vm']
+    if which_cloud == 'aws':
+        imports.append('boto3')
+    lines = _importcode(imports)
+    lines.append('who = cloud_query.get_resources')
+    if which_cloud == 'aws':
+        lines = lines+["ec2r = boto3.resource('ec2')", "ec2c = boto3.client('ec2')", "iam = boto3.client('iam')"]
+    for line in lines:
+        exec(_joinlines(lines, windows=False), vars(sys.modules['__main__']))
 
 ####################### Non-platform specific code below########################
 

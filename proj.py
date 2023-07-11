@@ -23,36 +23,36 @@ except:
 def which_cloud(recompute=False): # Like sys.platform but different mega-cooperations rather than differnt kernels.
     if not recompute and _which_cloud[0] is not None:
         return _which_cloud[0]
-    import requests
+    import requests, os
 
     out = None
-    response = requests.get('http://169.254.169.254/latest/meta-data/ami-id')
-    if response.status_code == 200:
+    if os.environ.get("AWS_DEFAULT_REGION"): # Should work on a jbox as well as the cloud shell.
         out = 'aws'
-    response = requests.get('http://169.254.169.254/metadata/instance?api-version=2021-02-01')
-    if response.status_code == 200:
-        out = 'azure'
-    response = requests.get('http://metadata.google.internal/computeMetadata/v1/instance/id',
-                            headers={'Metadata-Flavor': 'Google'})
-    if response.status_code == 200:
-        out = 'google'
+    if out is None:
+        TODO # Other platforms need to be tested!
 
     if out is None:
         out = input('Cloud provider not found automatically, input cloud provider:').strip()
     _which_cloud[0] = out
     return out
 
-def platform_import_modules(into_this_module, strings):
-    # Different for different cloud platforms.
-    # The first argument should be "sys.modules[__name__]".
-    import importlib
+def cloud_switch():
+    # Different modules for different cloud providers.
     wc = which_cloud().lower()
     x = None
     if wc == 'aws':
         x = {'cloud_core':'AWS.AWS_core', 'cloud_query':'AWS.AWS_query',\
              'cloud_format':'AWS.AWS_format', 'cloud_clean':'AWS.AWS_clean',\
              'cloud_vm':'AWS.AWS_vm', 'cloud_permiss':'AWS.AWS_permiss'}
-    # TODO: other platforms go here.
+    else:
+        TODO # Other platforms go here.
+    return x
+
+def platform_import_modules(into_this_module, strings):
+    # Different for different cloud platforms.
+    # The first argument should be "sys.modules[__name__]".
+    import importlib
+    x = cloud_switch()
     for s in strings:
         setattr(into_this_module, s, importlib.import_module(x[s]))
 

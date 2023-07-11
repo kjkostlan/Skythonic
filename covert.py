@@ -1,7 +1,7 @@
 # Handles machine and user keys, which are saved in a dump folder.
 # TODO: option to encrypt with a password.
 # TODO: remove circular covert <-> vm dependencies.
-import os, pickle, shutil
+import sys, os, pickle, shutil
 import vm, proj
 from waterworks import file_io
 
@@ -60,7 +60,7 @@ def vm_dangerkey(vm_name, vm_params):
 
         # Key already exists, but make sure the file exists:
         if key_name not in x['key_name2key_material']:
-            pair = cloud_query.get_resources(which_types='kpairs', ids=False, include_lingers=False, filters=Filters=[{'Name': 'key-name', 'Values': [key_name]}])
+            pair = cloud_query.get_resources(which_types='kpairs', ids=False, include_lingers=False, filters=[{'Name': 'key-name', 'Values': [key_name]}])
             raise Exception(f'The key-pair {key_name} already exists but the secret is not stored on this machine ({vm.our_vm_id()}).')
 
     inst_id = cloud_core.create_once('machine', vm_name, True, **vm_params)
@@ -73,7 +73,8 @@ def user_dangerkey(user_name):
     user = cloud_core.create_once('user', user_name, True)
     cloud_permiss.attach_user_policy_once(user_name=user_name, policy_id=cloud_permiss.admin_policy_id())
 
-    if kpair := cloud_permiss.create_dangerkey_once(user_name):
+    kpair = cloud_permiss.create_dangerkey_once(user_name)
+    if kpair:
         x = _pickleload()
         x['username2key'][user_name] = [k0, k1]
         _picklesave(x)
