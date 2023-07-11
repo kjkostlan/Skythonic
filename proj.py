@@ -16,13 +16,31 @@ def _install_gitpacks():
             raise Exception('Forgot the ./<folder>')
         code_in_a_box.download(v, k, clear_folder=False)
 
-def which_cloud(): # Like sys.platform but different mega-cooperations rather than differnt kernels.
-    try:
-        import boto3
-        return 'aws'
-    except:
-        pass
-    TODO
+try:
+    _which_cloud
+except:
+    _which_cloud = [None]
+def which_cloud(recompute=False): # Like sys.platform but different mega-cooperations rather than differnt kernels.
+    if not recompute and _which_cloud[0] is not None:
+        return _which_cloud[0]
+    import requests
+
+    out = None
+    response = requests.get('http://169.254.169.254/latest/meta-data/ami-id')
+    if response.status_code == 200:
+        out = 'aws'
+    response = requests.get('http://169.254.169.254/metadata/instance?api-version=2021-02-01')
+    if response.status_code == 200:
+        out = 'azure'
+    response = requests.get('http://metadata.google.internal/computeMetadata/v1/instance/id',
+                            headers={'Metadata-Flavor': 'Google'})
+    if response.status_code == 200:
+        out = 'google'
+
+    if out is None:
+        out = input('Cloud provider not found automatically, input cloud provider:').strip()
+    _which_cloud[0] = out
+    return out
 
 def platform_import_modules(into_this_module, strings):
     # Different for different cloud platforms.

@@ -26,8 +26,11 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
     # Will not find routes directly, but does find rtables.
     # Will not find tags directly; use get_by_tag.
+    kwargs = {}
     if filters is not None:
-        raise Exception('TODO: filters')
+        if type(filters) is dict: # Filters must be a list.
+            filters = [filters]
+        kwargs = {'Filters':filters}
     out = {}
     splice = type(which_types) is str
     if splice:
@@ -36,27 +39,27 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
         which_types = set([AWS_format.enumr(ty) for ty in which_types])
 
     if which_types is None or 'vpc' in which_types: # Python only introduced the switch statement in 3.10
-        out['vpcs'] = ec2c.describe_vpcs()['Vpcs']
+        out['vpcs'] = ec2c.describe_vpcs(**kwargs)['Vpcs']
     if which_types is None or 'webgate' in which_types:
-        out['webgates'] = ec2c.describe_internet_gateways()['InternetGateways']
+        out['webgates'] = ec2c.describe_internet_gateways(**kwargs)['InternetGateways']
     if which_types is None or 'rtable' in which_types:
-        out['rtables'] = ec2c.describe_route_tables()['RouteTables']
+        out['rtables'] = ec2c.describe_route_tables(**kwargs)['RouteTables']
     if which_types is None or 'subnet' in which_types:
-        out['subnets'] = ec2c.describe_subnets()['Subnets']
+        out['subnets'] = ec2c.describe_subnets(**kwargs)['Subnets']
     if which_types is None or 'sgroup' in which_types:
-        out['sgroups'] = ec2c.describe_security_groups()['SecurityGroups']
+        out['sgroups'] = ec2c.describe_security_groups(**kwargs)['SecurityGroups']
     if which_types is None or 'kpair' in which_types:
-        out['kpairs'] = ec2c.describe_key_pairs()['KeyPairs']
+        out['kpairs'] = ec2c.describe_key_pairs(**kwargs)['KeyPairs']
     if which_types is None or 'machine' in which_types:
-        out['machines'] = filtered_machines(None)
+        out['machines'] = filtered_machines(filters)
     if which_types is None or 'address' in which_types:
-        out['addresses'] = ec2c.describe_addresses()['Addresses']
+        out['addresses'] = ec2c.describe_addresses(**kwargs)['Addresses']
     if which_types is None or 'peering' in which_types:
-        out['peerings'] = ec2c.describe_vpc_peering_connections()['VpcPeeringConnections']
+        out['peerings'] = ec2c.describe_vpc_peering_connections(**kwargs)['VpcPeeringConnections']
     if which_types is None or 'user' in which_types:
-        out['users'] = iam.list_users()['Users']
+        out['users'] = iam.list_users(**kwargs)['Users']
     if which_types is None or 'IAMpolicy' in which_types: # Only includes resources with a 'PolicyId'
-        out['IAMpolicies'] = list(iam.list_policies()['Policies'])
+        out['IAMpolicies'] = list(iam.list_policies(**kwargs)['Policies'])
     if ids:
         for k, v in out.items():
             out[k] = AWS_format.obj2id(k)
