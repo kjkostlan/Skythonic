@@ -12,6 +12,8 @@ else:
 def our_vm_id():
     return cloud_vm.our_vm_id()
 
+cloud_entry = {'Cloud provider not found automatically, input cloud provider:':proj.which_cloud()}
+
 ###############################SSH and SCP######################################
 
 def ssh_bash(instance_id, join_arguments=True):
@@ -155,7 +157,7 @@ def upgrade_os(inst_or_pipe, printouts=None):
     # Upgrades the Ubuntu version.
     raise Exception('TODO: Upgrading the OS over SSH seems to not work properly. Instead try to use a newer image in the initial vm.')
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    response_map = {**plumber.default_prompts(), **{}}
+    response_map = {**plumber.default_prompts(), **cloud_entry}
     p = plumber.Plumber(tubo, [], response_map, ['sudo do-release-upgrade', 'echo hopefully_upgraded_now'], [], dt=2.0)
     tubo = p.run()
 
@@ -233,7 +235,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     package_manager = package_name.split()
 
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    response_map = {**plumber.default_prompts(), **extra_prompts.get(package_name,{})}
+    response_map = {**{**plumber.default_prompts(), **cloud_entry}, **extra_prompts.get(package_name,{})}
     p = plumber.Plumber(tubo, [package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
     tubo = p.run()
 
@@ -317,6 +319,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     if len(file2contents)>0:
         send_files(tubo.machine_id, file2contents, dest_folder, printouts=tubo.printouts)
 
+    response_map = {**cloud_entry, response_map}
     p = plumber.Plumber(tubo, non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
     p.run()
 
