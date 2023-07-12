@@ -26,15 +26,15 @@ def which_cloud(recompute=False): # Like sys.platform but different mega-coopera
     import requests, os
 
     out = None
-    if os.environ.get("AWS_DEFAULT_REGION"): # Should work on a jbox as well as the cloud shell.
+    if os.environ.get('AWS_DEFAULT_REGION'): # Should work on a jbox as well as the cloud shell.
         out = 'aws'
-    if out is None:
-        TODO # Other platforms need to be tested!
+    elif os.environ.get('AZURE_HTTP_USER_AGENT') or os.environ.get('AZUREPS_HOST_ENVIRONMENT') or or.environ.get('AZURE_ACCESS_TOKEN_FILE'):
+        out = 'azure'
 
     if out is None:
-        out = input('Cloud provider not found automatically, input cloud provider:').strip()
+        out = input('Cloud provider not found automatically (possible TODO to add auto-detect to this function), input cloud provider:').strip()
     _which_cloud[0] = out
-    return out
+    return out.lower().strip()
 
 def cloud_switch():
     # Different modules for different cloud providers.
@@ -44,6 +44,10 @@ def cloud_switch():
         x = {'cloud_core':'AWS.AWS_core', 'cloud_query':'AWS.AWS_query',\
              'cloud_format':'AWS.AWS_format', 'cloud_clean':'AWS.AWS_clean',\
              'cloud_vm':'AWS.AWS_vm', 'cloud_permiss':'AWS.AWS_permiss'}
+    elif wc == 'azure':
+        x = {'cloud_core':'Azure.Azure_core', 'cloud_query':'Azure.Azure_query',\
+             'cloud_format':'Azure.Azure_format', 'cloud_clean':'Azure.Azure_clean',\
+             'cloud_vm':'Azure.Azure_vm', 'cloud_permiss':'Azure.Azure_permiss'}
     else:
         TODO # Other platforms go here.
     return x
