@@ -76,7 +76,7 @@ def user_dangerkey(user_name):
     kpair = cloud_permiss.create_dangerkey_once(user_name)
     if kpair:
         x = _pickleload()
-        x['username2key'][user_name] = [k0, k1]
+        x['username2key'][user_name] = kpair # Should be a length-2 list.
         _picklesave(x)
         print('Created and saved user key for:', user_name)
 
@@ -84,22 +84,22 @@ def user_dangerkey(user_name):
 
 def get_key(id_or_desc):
     # Returns the public and private key. The public key is None if not needed.
-    the_id = cloud_core.obj2id(id_or_desc)
     try: # Also allow passing in a user name.
         y = cloud_permiss.keys_user_has(UserName=id_or_desc); x = x[0]
     except Exception as e:
         y = None
     if y:
         return get_key(y)
+    the_id = cloud_format.obj2id(id_or_desc)
     x = _pickleload() # At very large scales this query can be some sort of SQL, etc.
     if cloud_format.enumr(the_id) == 'machine':
-        key_name = x['instance_id2key_name'].get(id,None)
+        key_name = x['instance_id2key_name'].get(the_id,None)
         if key_name is None:
-            raise Exception(f'No saved vm key found for {id}')
+            raise Exception(f'No saved vm key found for {the_id}')
         fname = _pem(key_name)
         return None, os.path.realpath(fname)
     elif cloud_format.enumr(the_id) == 'user':
-        desc = cloud_core.id2obj(id); uname = desc['UserName']
+        desc = cloud_format.id2obj(the_id); uname = desc['UserName']
         if uname not in x['username2key'] and len(cloud_permiss.keys_user_has(user_name=uname))>0:
             raise Exception(f'The keys exist for {uname} but they are not in this keychain and are likely lost. This may mean that the vm is bricked.')
         key_name = x['username2key'].get(uname, None)
@@ -107,12 +107,12 @@ def get_key(id_or_desc):
             raise Exception(f'No saved user key found for {uname}')
         return key_name
     else:
-        raise Exception('No key associated with this kind of resource id: '+id)
+        raise Exception('No key associated with this kind of resource id: '+the_id)
 
 def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickle_fname, printouts=True, preserve_dest=True):
     # Copies the keys and the Pickle.
     dest_folder = skythonic_root_folder+'/'+proj.dump_folder
-    id = cloud_core.obj2id(id_or_desc)
+    the_id = cloud_format.obj2id(id_or_desc)
     x = _pickleload()
     file2contents = {}
     for v in x['instance_id2key_name'].values():
@@ -120,7 +120,7 @@ def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickl
         file2contents[fname.replace(proj.dump_folder,'')] = file_io.fload(fname)
     if printouts:
         print(f'Copying secrets to {id}; list is {file2contents.keys()}; vm dest is {dest_folder}')
-    vm.send_files(id, file2contents, dest_folder, printouts=printouts)
+    vm.send_files(the_id, file2contents, dest_folder, printouts=printouts)
 
     # Add to any keys held remotely is held remotely:
     tmp_local_folder = proj.dump_folder+'/_covert_tmp/'
@@ -128,7 +128,7 @@ def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickl
 
     tmp_pkl_file = tmp_local_folder+'/'+pickle_leaf
     if preserve_dest:
-        vm.download_remote_file(id, tmp_local_folder, printouts=printouts)
+        vm.download_remote_file(the_id, tmp_local_folder, printouts=printouts)
         if os.path.exists(tmp_pkl_file):
             x_remote = _pickleload(pickle_fname=tmp_pkl_file)
             for k in x_remote.keys():
@@ -140,5 +140,5 @@ def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickl
         if printouts:
             print('No remote file to add to (or preserve_dest set to false), using the local file only.')
         shutil.copyfile(pickle_fname, tmp_pkl_file)
-    vm.send_files(id, {pickle_leaf:file_io.fload(tmp_pkl_file, bin_mode=True)}, dest_folder, printouts=printouts)
+    vm.send_files(the_id, {pickle_leaf:file_io.fload(tmp_pkl_file, bin_mode=True)}, dest_folder, printouts=printouts)
     file_io.power_delete(tmp_local_folder) #Security: delete the file in case of sensitive information on it.

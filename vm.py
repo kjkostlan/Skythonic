@@ -1,7 +1,9 @@
 # Tools for keeping track of virtual machines, such as the login keys
-import paramiko, time, os
+import sys, os, time, paramiko
 import covert, proj
 from waterworks import eye_term, plumber, file_io, colorful
+
+proj.platform_import_modules(sys.modules[__name__], ['cloud_vm'])
 
 def our_vm_id():
     return cloud_vm.our_vm_id()
@@ -16,7 +18,7 @@ def ssh_bash(instance_id, join_arguments=True):
     # https://stackoverflow.com/questions/65726435/the-authenticity-of-host-cant-be-established-when-i-connect-to-the-instance
     # Python or os.system?
     # https://stackoverflow.com/questions/3586106/perform-commands-over-ssh-with-python
-    public_ip = CLOUD_vm.get_ip(instance_id)
+    public_ip = cloud_vm.get_ip(instance_id)
     out = ['ssh', '-i', covert.get_key(instance_id)[1], 'ubuntu@'+str(public_ip)]
     if join_arguments:
         out[2] = '"'+out[2]+'"'
@@ -26,17 +28,17 @@ def ssh_bash(instance_id, join_arguments=True):
 
 def ssh_proc_args(instance_id):
     # Splat into into MessyPipe.
-    username = 'ubuntu'; hostname = CLOUD_vm.get_ip(instance_id) #username@hostname
+    username = 'ubuntu'; hostname = cloud_vm.get_ip(instance_id) #username@hostname
     key_filename = covert.get_key(instance_id)[1]
     return{'username':username,'hostname':hostname, 'key_filename':key_filename}
 
 def patient_ssh_pipe(instance_id, printouts=True, binary_mode=False):
-    CLOUD_vm.start_vm(instance_id)
+    cloud_vm.start_vm(instance_id)
 
     pargs = ssh_proc_args(instance_id)
     tubo = eye_term.MessyPipe(proc_type='ssh', proc_args=pargs, printouts=printouts, binary_mode=binary_mode)
     tubo.machine_id = instance_id
-    tubo.restart_fn = lambda: CLOUD_vm.restart_vm(instance_id)
+    tubo.restart_fn = lambda: cloud_vm.restart_vm(instance_id)
 
     p = plumber.Plumber(tubo, [], {}, [], 'default', dt=0.5)
     p.run()
@@ -68,7 +70,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
     #scp file.txt username@to_host:/remote/directory/
-    public_ip = CLOUD_vm.get_ip(instance_id)
+    public_ip = cloud_vm.get_ip(instance_id)
 
     tmp_dump = os.path.realpath(proj.dump_folder+'/_vm_tmp_dump')
     file_io.empty_folder(tmp_dump, keeplist=None)
@@ -104,7 +106,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     file_io.power_delete(save_here)
     file_io.make_folder(save_here)
 
-    public_ip = CLOUD_vm.get_ip(instance_id); pem_fname = covert.get_key(instance_id)[1]
+    public_ip = cloud_vm.get_ip(instance_id); pem_fname = covert.get_key(instance_id)[1]
     tubo = eye_term.MessyPipe('shell', None, printouts=printouts)
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
@@ -210,7 +212,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
 
     if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
         colorful.bprint('awscli is a HEAVY installation. Should take about 5 min.')
-        region_name = CLOUD_vm.get_region_name()
+        region_name = cloud_vm.get_region_name()
         user_id = covert.user_dangerkey(kwargs['user_name'])
         publicAWS_key, privateAWS_key = covert.get_key(user_id)
 

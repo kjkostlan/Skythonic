@@ -148,10 +148,10 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     rtables = cloud_query.get_resources('rtables')
 
     print("Creating route on hub rtable id:", jbox_rtable_id)
-    cloud_core.create_route(rtable_id, '10.201.0.0/16', peering_id)
+    cloud_core.create_route(jbox_rtable_id, '10.201.0.0/16', peering_id)
 
     print("Creating route on Spoke1 rtable id:", routetable_id)
-    cloud_core.create_route(rtable_id, '10.200.0.0/16', peering_id)
+    cloud_core.create_route(routetable_id, '10.200.0.0/16', peering_id)
 
     # Testing time:
     jbox_id = cloud_format.obj2id(fittings.flat_lookup(cloud_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
