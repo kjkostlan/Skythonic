@@ -1,10 +1,10 @@
-# Misc formatting.
+# Formatting.
 import re, boto3
 ec2r = boto3.resource('ec2')
 ec2c = boto3.client('ec2')
 iam = boto3.client('iam')
 
-def enumr(txt0): # Projection into one of a dozen or so resource types.
+def enumr(txt0): # ENUMerate Resourse type. Different clouds may call it by different names.
     txt = txt0.strip().lower().replace('_','')
     if txt[-1] == 's':
         txt = txt[0:-1]

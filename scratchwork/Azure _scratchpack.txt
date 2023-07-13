@@ -49,3 +49,35 @@ Error: That code didn't work. Check the code and try again. Oops it's a one time
     "type": "Microsoft.Resources/resourceGroups"
   }
 ]
+
+
+
+# Azure get resources:
+from azure.mgmt.network import NetworkManagementClient
+from azure.identity import DefaultAzureCredential
+from azure.identity import AzureCliCredential
+credential = DefaultAzureCredential()
+#from azure.mgmt.resource import SubscriptionClient
+#subscription_client = SubscriptionClient(credential)
+#subscription_id = next(subscription_client.subscriptions.list()).subscription_id
+subscription_id = credential.get_token("https://management.azure.com/.default").subscription_id
+
+network_client = NetworkManagementClient(subscription_id=subscription_id, credential=None)
+vnets = network_client.virtual_networks.list_all()
+print('Vnet:', vnets[0])
+
+# List all resource groups
+resource_groups = network_client.resource_groups.list()
+
+for resource_group in resource_groups:
+    print('Resource Group:', resource_group.name)
+    print('---')
+
+    # List VNets in the current resource group
+    vnets = network_client.virtual_networks.list(resource_group.name)
+
+    for vnet in vnets:
+        print('VNet Name:', vnet.name)
+        print('VNet ID:', vnet.id)
+        print('Address Space:', vnet.address_space.address_prefixes)
+        print('---')

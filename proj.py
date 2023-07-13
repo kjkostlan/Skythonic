@@ -28,7 +28,7 @@ def which_cloud(recompute=False): # Like sys.platform but different mega-coopera
     out = None
     if os.environ.get('AWS_DEFAULT_REGION'): # Should work on a jbox as well as the cloud shell.
         out = 'aws'
-    elif os.environ.get('AZURE_HTTP_USER_AGENT') or os.environ.get('AZUREPS_HOST_ENVIRONMENT') or or.environ.get('AZURE_ACCESS_TOKEN_FILE'):
+    elif os.environ.get('AZURE_HTTP_USER_AGENT') or os.environ.get('AZUREPS_HOST_ENVIRONMENT') or os.environ.get('AZURE_ACCESS_TOKEN_FILE'):
         out = 'azure'
 
     if out is None:
@@ -45,6 +45,7 @@ def cloud_switch():
              'cloud_format':'AWS.AWS_format', 'cloud_clean':'AWS.AWS_clean',\
              'cloud_vm':'AWS.AWS_vm', 'cloud_permiss':'AWS.AWS_permiss'}
     elif wc == 'azure':
+        # Needs "pip install azure-identity".
         x = {'cloud_core':'Azure.Azure_core', 'cloud_query':'Azure.Azure_query',\
              'cloud_format':'Azure.Azure_format', 'cloud_clean':'Azure.Azure_clean',\
              'cloud_vm':'Azure.Azure_vm', 'cloud_permiss':'Azure.Azure_permiss'}
