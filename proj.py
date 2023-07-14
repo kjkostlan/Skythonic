@@ -45,7 +45,9 @@ def cloud_switch():
              'cloud_format':'AWS.AWS_format', 'cloud_clean':'AWS.AWS_clean',\
              'cloud_vm':'AWS.AWS_vm', 'cloud_permiss':'AWS.AWS_permiss'}
     elif wc == 'azure':
-        # Needs "pip install azure-identity".
+        # Must install these modules in the cloud shell:
+        #    pip install azure-identity
+        #    pip install paramiko
         x = {'cloud_core':'Azure.Azure_core', 'cloud_query':'Azure.Azure_query',\
              'cloud_format':'Azure.Azure_format', 'cloud_clean':'Azure.Azure_clean',\
              'cloud_vm':'Azure.Azure_vm', 'cloud_permiss':'Azure.Azure_permiss'}

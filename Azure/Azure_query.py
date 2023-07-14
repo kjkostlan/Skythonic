@@ -8,7 +8,7 @@ except Exception as e:
 import os, subprocess
 
 def get_subscription_id():
-    # No easy way around this
+    # No easy way around a bash call:
     return str(subprocess.check_output("az account show --query 'id' -o tsv", shell=True))
 
 try:
@@ -17,7 +17,7 @@ except:
     _subs_id = get_subscription_id()
 
 credential = AzureCliCredential()
-network_client = NetworkManagementClient(credential, subscription_id)
+network_client = NetworkManagementClient(credential, get_subscription_id())
 
 def lingers(desc_or_id):
     #Do all cloud providors have this lingering resource problem?
@@ -258,7 +258,7 @@ def assocs(desc_or_id, with_which_type, filter_exists=True):
             raise Exception('Users cannot be associated with thier own kind (except in real life).')
         if ty=='IAMpolicy':
             TODO
-    elif ty0='IAMpolicy':
+    elif ty0=='IAMpolicy':
         if ty in ['webgate', 'vpc', 'subnet', 'kpair', 'sgroup', 'rtable', 'machine', 'address', 'peering']:
             raise Exception(f'IAMpolicies cannot be directly associated with {ty}s.')
         if ty == 'IAMpolicy':
