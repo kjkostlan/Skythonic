@@ -4,7 +4,6 @@ def has_been_deleted(id):
 def dep_check_delete(id_or_obj, xdeps=None):
     TODO
 
-
 def _nuclear_clean(only_skythonic_stuff=True, restrict_to_these=None, remove_lingers=False): # DELETE EVERYTHING DANGER!
     TODO
 

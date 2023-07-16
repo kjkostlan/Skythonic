@@ -17,20 +17,6 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
 
     return covert.vm_dangerkey(vm_name, vm_params)
 
-def wait_and_attach_address(machine_id, address_id):
-    # TODO: build this into cloud_core.py
-    addr = cloud_format.id2obj(address_id)
-    if 'InstanceId' in addr:
-        if addr['InstanceId']==machine_id:
-            print('Address already attached.')
-            return
-        else:
-            raise Exception('Address attached to the wrong machine.')
-    f_try = lambda: cloud_core.assoc(addr['AllocationId'], machine_id)
-    f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
-    msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
-    plumber.loop_try(f_try, f_catch, msg, delay=4)
-
 def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC', key_name='BYOC_keypair'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
     vpc_id = cloud_core.create_once('VPC', user_name+'_Service', True, CidrBlock='10.200.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
@@ -50,7 +36,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     inst_id = simple_vm(user_name+'_'+basename+'_VM', '10.200.250.100', subnet_id, securitygroup_id, key_name)
 
     addr = cloud_core.create_once('address', user_name+'_'+basename+'_address', True, Domain='vpc')
-    wait_and_attach_address(inst_id, addr)
+    cloud_core.assoc(inst_id, addr)
 
     ssh_bash = vm.ssh_bash(inst_id, True)
 
@@ -128,7 +114,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
 
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
         addr = cloud_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
-        wait_and_attach_address(inst_ids[i], addr)
+        cloud_core.assoc(inst_ids[i], addr)
         #vm.update_apt(inst_ids[i], printouts=True, full_restart_here=True)
         cmds.append(vm.ssh_bash(inst_ids[i], True))
 

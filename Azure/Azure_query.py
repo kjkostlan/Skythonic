@@ -1,29 +1,11 @@
-from . import Azure_format
-try:
-    from azure.identity import AzureCliCredential
-    from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet
-    from azure.mgmt.network import NetworkManagementClient
-except Exception as e:
-    raise Exception('Some pip packages may be missing:'+str(e))
-import os, subprocess
-
-def get_subscription_id():
-    # No easy way around a bash call:
-    return str(subprocess.check_output("az account show --query 'id' -o tsv", shell=True))
-
-try:
-    _subs_id
-except:
-    _subs_id = get_subscription_id()
-
-credential = AzureCliCredential()
-network_client = NetworkManagementClient(credential, get_subscription_id())
+import os
+from . import Azure_format, Azure_nugget
 
 def lingers(desc_or_id):
     #Do all cloud providors have this lingering resource problem?
     if desc_or_id is None:
         return False
-    TODO
+    return Azure_format.tag_dict(desc_or_id).get('__deleted__',False)
 
 def get_resources(which_types=None, ids=False, include_lingers=False, filters=None):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
@@ -42,7 +24,7 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
         which_types = set([Azure_format.enumr(ty) for ty in which_types])
 
     if which_types is None or 'vpc' in which_types or 'vnet' in which_types: # Python only introduced the switch statement in 3.10
-        out['vpcs'] = TODO
+        out['vpcs'] = list([Azure_format.id2obj(x) for x in Azure_nugget.network_client.virtual_networks.list_all()])
     if which_types is None or 'webgate' in which_types:
         out['webgates'] = TODO
     if which_types is None or 'rtable' in which_types:
@@ -73,7 +55,6 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
 
     if splice: # Splice for a str, which is different than a one element collection.
         out = out[list(out.keys())[0]]
-
     return out
 
 def get_by_tag(rtype, k, v, include_lingers=False): # Returns None if no such resource exists.

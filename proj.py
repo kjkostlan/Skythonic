@@ -48,6 +48,7 @@ def cloud_switch():
         # Must install these modules in the cloud shell:
         #    pip install azure-identity
         #    pip install paramiko
+        #    pip install azure-mgmt-resource
         x = {'cloud_core':'Azure.Azure_core', 'cloud_query':'Azure.Azure_query',\
              'cloud_format':'Azure.Azure_format', 'cloud_clean':'Azure.Azure_clean',\
              'cloud_vm':'Azure.Azure_vm', 'cloud_permiss':'Azure.Azure_permiss'}

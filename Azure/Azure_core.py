@@ -82,7 +82,7 @@ def delete(desc_or_id):
         else:
             raise Exception('Once-per-session deletion confirmation denied by user.')
 
-    rtype = Azure_format.enumr(the_id)
+    rtype = Azure_format.to_dict(the_id)
 
     if rtype == 'webgate':
         TODO

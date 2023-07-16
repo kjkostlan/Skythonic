@@ -203,6 +203,19 @@ def delete(desc_or_id):
 
     return True
 
+def _wait_and_attach_address(machine_id, address_id):
+    # Lots of concurrency issues with the cloud: is X setup so we can set up Y. Does Z need either X or Y, or both, or only X? Etc.
+    addr = AWS_format.id2obj(address_id)
+    if 'InstanceId' in addr:
+        if addr['InstanceId']==machine_id:
+            print('Address already attached.')
+            return
+        else:
+            raise Exception('Address attached to the wrong machine.')
+    f_try = lambda: ec2c.associate_address(AllocationId=A,InstanceId=B)
+    f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
+    msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
+    plumber.loop_try(f_try, f_catch, msg, delay=4)
 def assoc(A, B, _swapped=False):
     # Association, attachment, etc. Order does not matter unless both directions have meaning.
     # Idempotent (like Clojures assoc).
@@ -220,7 +233,7 @@ def assoc(A, B, _swapped=False):
     elif A.startswith('subnet-') and B.startswith('rtb-'):
         ec2c.associate_route_table(SubnetId=A, RouteTableId=B)
     elif A.startswith('eipalloc-') and B.startswith('i-'):
-        ec2c.associate_address(AllocationId=A,InstanceId=B)
+        _wait_and_attach_address(machine_id, address_id):
     elif A.startswith('vpc-') and B.startswith('vpc-'): # Peering can be thought of as an association.
         peering = ec2c.create_vpc_peering_connection(VpcId=A, PeerVpcId=B)
         ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=peering['VpcPeeringConnection']['VpcPeeringConnectionId'])
