@@ -78,7 +78,7 @@ def get_by_tag(rtype, k, v, include_lingers=False): # Returns None if no such re
         if AWS_format.tag_dict(r).get(k,None) == v:
             return r
 
-def get_by_name(rtype, name, include_lingers=False): # Convenience fn.
+def get_by_name(rtype, name, include_lingers=False): # We use 'Name' tags for AWS.
     return get_by_tag(rtype, 'Name', name, include_lingers)
 
 def exists(desc_or_id):

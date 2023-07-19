@@ -14,14 +14,14 @@ except:
     delete_user_input_check = [True] # Safety.
 
 def add_tags(desc_or_id, d, ignore_none_desc=False):
-    #botocore.exceptions.ClientError: An error occurred (InvalidInstanceID.NotFound) when calling the CreateTags operation: The instance ID 'i-0fb7af9af917db726' does not exist
+    # Adds a dict of tags to the currently exist k-v pairs, overwriting if need be.
     tags = [{'Key':str(k),'Value':str(d[k])} for k in d.keys()]
     if type(desc_or_id) is dict:
         if 'UserId' in desc_or_id: # Users arr handleded differently.
             iam.tag_user(UserName=desc_or_id['UserName'],Tags=tags)
         else:
-            id = AWS_format.obj2id(desc_or_id)
-            ec2c.create_tags(Tags=tags,Resources=[id])
+            the_id = AWS_format.obj2id(desc_or_id)
+            ec2c.create_tags(Tags=tags,Resources=[the_id])
     elif type(desc_or_id) is str:
         if desc_or_id.startswith('AID'): # Users arr handleded differently.
             add_tags(AWS_format.id2obj(desc_or_id), d, ignore_none_desc)
@@ -35,6 +35,10 @@ def add_tags(desc_or_id, d, ignore_none_desc=False):
                 return # Race conditions when deleting things (probably).
             desc_or_id.create_tags(Tags=tags)
 
+def ensure_skythonic_rgroup(the_region):
+    resource_group_params = ResourceGroup(location=the_region)
+    Azure_nugget.resource_client.resource_groups.create_or_update(Azure_nugget.skythonic_rgroup_name, resource_group_params)
+
 def create(rtype0, name, **kwargs):
     # Returns the ID, which is commonly introduced into other objects.
     raw = False # needed for keypairs.
@@ -42,6 +46,9 @@ def create(rtype0, name, **kwargs):
         raw = True
     if 'raw_object' in kwargs:
         del kwargs['raw_object']
+    if 'location' in kwargs:
+        ensure_skythonic_rgroup(kwargs['location'])
+
     rtype = AWS_format.enumr(rtype0)
     if rtype == 'vpc': # Python introduced "switch" in 3.10 but AWS shell is 3.7
         x = ec2r.create_vpc(**kwargs)
@@ -124,9 +131,11 @@ def create_once(rtype, name, printouts, **kwargs):
             ec2c.start_instances(InstanceIds=[AWS_format.obj2id(r0)])
         return AWS_format.obj2id(r0)
     else:
-        out = create(rtype, name, **kwargs)
         if do_print:
             print(str(printouts)+'creating:', rtype, name)
+        out = create(rtype, name, **kwargs)
+        if do_print:
+            print('...done')
         return out
 
 def delete(desc_or_id):
