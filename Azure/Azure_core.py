@@ -1,8 +1,20 @@
 # Lower level Azure functions.
-from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet
+from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet, VirtualNetworkGateway
+from . import Azure_query, Azure_format, Azure_nugget
+import waterworks.plumber as plumber
 
-def add_tags(desc_or_id, d, ignore_none_desc=False):
-    TODO
+def add_tags(desc_or_id, tags_to_add, ignore_none_desc=False):
+    if not desc_or_id:
+        if ignore_none_desc:
+            raise Exception('None object')
+        return False
+    the_id = Azure_format.obj2id(desc_or_id)
+    the_obj = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
+
+    if the_obj.tags is None:
+        the_obj.tags = tags_to_add
+    else:
+        the_obj.tags.update(tags_to_add)
 
 def create(rtype0, name, **kwargs):
     # Returns the ID, which is commonly introduced into other objects.
@@ -11,15 +23,30 @@ def create(rtype0, name, **kwargs):
         raw = True
     if 'raw_object' in kwargs:
         del kwargs['raw_object']
+    if not name:
+        raise Exception('Name must be non-None')
     rtype = Azure_format.enumr(rtype0)
     if rtype == 'vpc' or rtype == 'vnet':
-        TODO
-    elif rtype == 'webgate':
-        TODO
+        vnet_params = VirtualNetwork(**kwargs)
+        x = Azure_nugget.network_client.virtual_networks.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, name, vnet_params).result()
+    elif rtype == 'webgate': # Strangely, the tutorials still use *virtual* gateways to connect to the *real* internet. There is no InternetGateway model.
+        kwargs1 = {**kwargs, 'name':name}
+        gateway_params = VirtualNetworkGateway(**kwargs1)
+        gateway_params.name = name # Really want that name!
+        print('User gate params:', kwargs1)
+        x = Azure_nugget.network_client.virtual_network_gateways.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, name, gateway_params).result()
     elif rtype == 'rtable':
         TODO
     elif rtype == 'subnet':
-        TODO
+        kwargs1 = {k: v for k, v in kwargs.items() if k not in ['vnet_name', 'vnet_id']}
+        if 'vnet_name' in kwargs and 'vnet_id' in kwargs:
+            raise Exception('Must specify a vnet_name, a vnet_id, but not both.')
+        vnet_name_or_id = kwargs.get('vnet_name', kwargs.get('vnet_id', None))
+        if not vnet_name_or_id:
+            raise Exception('Must specify a vnet_name xor a vnet_id.')
+        kwargs1['name'] = name # Redundant?
+        subnet_params = Subnet(**kwargs1)
+        x = Azure_nugget.network_client.subnets.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, vnet_name_or_id.split('/')[-1], name, subnet_params).result()
     elif rtype == 'route':
         TODO
     elif rtype =='sgroup':
@@ -41,12 +68,11 @@ def create(rtype0, name, **kwargs):
     f_catch = lambda e: 'does not exist' in repr(e).lower()
     msg = 'created a resource of type '+rtype+' waiting for it to start existing.'
     plumber.loop_try(f, f_catch, msg, delay=4)
+
     if raw: # Generally discouraged to work with, except for keypairs.
         return x
-    elif type(x) is dict:
+    elif type(x) is not str:
         return Azure_format.obj2id(x)
-    else:
-        return TODO
 
 def create_once(rtype, name, printouts, **kwargs):
     # Creates a resource unless the name is already there.
@@ -64,9 +90,11 @@ def create_once(rtype, name, printouts, **kwargs):
             TODO
         return Azure_format.obj2id(r0)
     else:
-        out = create(rtype, name, **kwargs)
         if do_print:
             print(str(printouts)+'creating:', rtype, name)
+        out = create(rtype, name, **kwargs)
+        if do_print:
+            print('...done')
         return out
 
 def delete(desc_or_id):
@@ -145,13 +173,10 @@ def disassoc(A, B, _swapped=False):
 dissoc = disassoc # For those familiar with Clojure...
 
 def modify_attribute(desc_or_id, k, v):
-    # TODO: fill out this function more.
+    # Is this simplier than AWS since the API isn't as dependent on different resource types?
     the_id = Azure_format.obj2id(desc_or_id)
-    ty = Azure_format.enumr(the_id)
-    if ty == 'vpc':
-        TODO
-    else:
-        TODO # More cases please!
+    resource = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
+    setattr(resource, k, v)
 
 def create_route(rtable_id, dest_cidr, gateway_id):
     # TODO: This is a niche function, which should be refactors/abstracted.

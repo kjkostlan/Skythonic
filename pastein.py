@@ -16,6 +16,8 @@ def cloudP(): # Makes common imports for interactive, command line use.
     imports = imports+['tests.core_tests as core_tests', 'vm', 'net_setup']
     if which_cloud == 'aws':
         imports.append('boto3')
+    if which_cloud == 'azure':
+        imports.append('Azure.Azure_nugget as cloud_nugget')
     lines = _importcode(imports)
     lines.append('who = cloud_query.get_resources')
     if which_cloud == 'aws':

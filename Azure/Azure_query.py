@@ -1,4 +1,4 @@
-import os
+import os, requests
 from . import Azure_format, Azure_nugget
 
 def lingers(desc_or_id):
@@ -13,9 +13,11 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
     # Will not find tags directly; use get_by_tag.
     kwargs = {}
     if filters is not None:
-        if type(filters) is dict: # Filters must be a list.
-            filters = [filters]
-        kwargs = {'Filters':filters}
+        raise Exception('Filters not supported in Azure_query.get_resources TODO.')
+        #if type(filters) is dict: # Filters must be a list.
+        #    filters = [filters]
+        #kwargs = {'Filters':filters}
+        #TODO # Support filters.
     out = {}
     splice = type(which_types) is str
     if splice:
@@ -24,35 +26,56 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
         which_types = set([Azure_format.enumr(ty) for ty in which_types])
 
     if which_types is None or 'vpc' in which_types or 'vnet' in which_types: # Python only introduced the switch statement in 3.10
-        out['vpcs'] = list([Azure_format.id2obj(x) for x in Azure_nugget.network_client.virtual_networks.list_all()])
+        out['vnets'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.virtual_networks.list_all()]
     if which_types is None or 'webgate' in which_types:
-        out['webgates'] = TODO
+        #out['webgates'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.virtual_network_gateways.list_all()] # No method list_all()
+        out['webgates'] = [Azure_format.to_dict(x) for x in Azure_nugget.resource_client.resources.list(filter="resourceType eq 'Microsoft.Network/virtualNetworkGateways'")]
     if which_types is None or 'rtable' in which_types:
-        out['rtables'] = TODO
+        out['rtables'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.route_tables.list_all()]
     if which_types is None or 'subnet' in which_types:
-        out['subnets'] = TODO
+        #out['subnets'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.subnets.list_all()] # No method list_all()
+        out['subnets'] = [Azure_format.to_dict(x) for x in Azure_nugget.resource_client.resources.list(filter="resourceType eq 'Microsoft.Network/virtualNetworks/subnets'")]
     if which_types is None or 'sgroup' in which_types:
-        out['sgroups'] = TODO
+        out['sgroups'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.network_security_groups.list_all()]
     if which_types is None or 'kpair' in which_types:
-        out['kpairs'] = TODO
+        #out['kpairs'] = [Azure_format.to_dict(x) for x in Azure_nugget.compute_client.virtual_machine_scale_set_vm_extensions.list_all()] # No method list_all()
+        #filter_txt = "resourceType eq 'Microsoft.Compute/virtualMachines/extensions' and properties.type eq 'Microsoft.Azure.KeyVault.VaultSecretReference'"
+        #filter_txt = "propertiesType eq 'Microsoft.Azure.KeyVault.VaultSecretReference'"
+        filter_txt = "resourceType eq 'Microsoft.Compute/virtualMachines/extensions'"
+        kpairs_plus_gunk = [Azure_format.to_dict(x) for x in Azure_nugget.resource_client.resources.list(filter=filter_txt)]
+        if len(kpairs_plus_gunk)>0:
+            TODO # The property filter isn't working well.
+        out['kpairs'] = []
     if which_types is None or 'machine' in which_types:
-        out['machines'] = TODO
-    if which_types is None or 'address' in which_types:
-        out['addresses'] = TODO
+        out['machines'] = [Azure_format.to_dict(x) for x in Azure_nugget.compute_client.virtual_machines.list_all()]
+    if which_types is None or 'address' in which_types: #Public addresses mean more when querying resources.
+        out['addresses'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.public_ip_addresses.list_all()]
     if which_types is None or 'peering' in which_types:
-        out['peerings'] = TODO
-    if which_types is None or 'user' in which_types:
-        out['users'] = TODO
-    if which_types is None or 'IAMpolicy' in which_types: # Only includes resources with a 'PolicyId'
-        out['IAMpolicies'] = TODO
+        vnets = list(Azure_nugget.network_client.virtual_networks.list_all())
+        out['peerings'] = []
+        for vnet in vnets:
+            resource_group_name = vnet.id.split('/')[4]
+            peering_list = Azure_nugget.network_client.virtual_network_peerings.list(resource_group_name, vnet.name)
+            out['peerings'].extend(peering_list)
+    #if which_types is None or 'user' in which_types:
+        # This one is unusually difficult, so we are disabling it for now.
+        #url = "https://graph.microsoft.com/v1.0/users"
+        #headers = {"Authorization": "Bearer " + Azure_nugget.token["access_token"]}
+        #response = requests.get(url, headers=headers)
+        #if response.status_code == 200:
+        #    users = response.json().get("value", [])
+        #    out['users'] = [Azure_format.to_dict(x) for x in users]
+        #else:
+        #    raise Exception("Failed to retrieve users. Status code: "+str(response.status_code))
+    #if which_types is None or 'IAMpolicy' in which_types:
+        #out['IAMpolicies'] = [Azure_format.to_dict(x) for x in Azure_nugget.policy_client.policy_states.list()]
+    #    out['IAMpolicies'] = [Azure_format.to_dict(x) for x in Azure_nugget.resource_client.policy_assignments.list()]
     if ids:
         for k, v in out.items():
-            out[k] = Azure_format.obj2id(k)
-
+            out[k] = [Azure_format.obj2id(x) for x in v]
     if not include_lingers:
         for k in out.keys():
             out[k] = list(filter(lambda x: not lingers(x), out[k]))
-
     if splice: # Splice for a str, which is different than a one element collection.
         out = out[list(out.keys())[0]]
     return out
@@ -63,8 +86,14 @@ def get_by_tag(rtype, k, v, include_lingers=False): # Returns None if no such re
         if Azure_format.tag_dict(r).get(k,None) == v:
             return r
 
-def get_by_name(rtype, name, include_lingers=False): # Convenience fn.
-    return get_by_tag(rtype, 'Name', name, include_lingers)
+def get_by_name(rtype, name, include_lingers=False):
+    # Maybe a more efficient way?
+    ids_of_rtype = get_resources(which_types=rtype, ids=True, include_lingers=include_lingers, filters=None)
+
+    for the_id in ids_of_rtype:
+        if '/'+name+'/' in the_id+'/':
+            return Azure_format.to_dict(the_id)
+    return None
 
 def exists(desc_or_id):
     the_id = Azure_format.obj2id(desc_or_id)

@@ -4,6 +4,7 @@ import vm, covert, proj
 from waterworks import eye_term, fittings, plumber
 
 proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_format', 'cloud_query', 'cloud_vm', 'cloud_permiss'])
+platform = proj.which_cloud().lower().strip()
 
 def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
     # Creates a new key if need be, but the subnet and securitygroup must be already made.
@@ -17,18 +18,44 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name):
 
     return covert.vm_dangerkey(vm_name, vm_params)
 
-def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC', key_name='BYOC_keypair'): # The jumpbox is much more configurable than the cloud shell.
+def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC', key_name='BYOC_keypair'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
-    vpc_id = cloud_core.create_once('VPC', user_name+'_Service', True, CidrBlock='10.200.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
+    if platform=='aws':
+        vpc_id = cloud_core.create_once('VPC', user_name+'_Service', True, CidrBlock='10.200.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
+    elif platform=='azure':
+        _addr = {"address_prefixes": ['10.200.0.0/16']}
+        vpc_id = cloud_core.create_once('VPC', user_name+'_Service', True, address_space=_addr, location=cloud_format.enumloc(the_region))
+    else:
+        raise Exception('TODO get net_setup working on this cloud platform: '+platform)
 
-    cloud_core.modify_attribute(vpc_id, 'EnableDnsSupport', {'Value': True})
-    cloud_core.modify_attribute(vpc_id, 'EnableDnsHostnames', {'Value': True})
+    if platform=='aws':
+        cloud_core.modify_attribute(vpc_id, 'EnableDnsSupport', {'Value': True})
+        cloud_core.modify_attribute(vpc_id, 'EnableDnsHostnames', {'Value': True})
+    elif platform=='azure':
+        cloud_core.modify_attribute(vpc_id, 'enable_dns_support', True)
+        cloud_core.modify_attribute(vpc_id, 'enable_dns_hostnames', True)
+    else:
+        raise Exception('TODO get net_setup working on this cloud platform: '+platform)
 
-    webgate_id = cloud_core.create_once('webgate', user_name+'_'+basename+'_gate', True)
+    if platform=='aws':
+        subnet_id = cloud_core.create_once('subnet', user_name+'_'+basename+'_subnet', True, CidrBlock='10.200.250.0/24', VpcId=vpc_id, AvailabilityZone=the_region)
+    elif platform=='azure':
+        subnet_id = cloud_core.create_once('subnet', user_name+'_'+basename+'_subnet', True, address_prefix='10.200.250.0/24', vnet_id=vpc_id)
+    else:
+        raise Exception('TODO get net_setup working on this cloud platform: '+platform)
+
+    if platform=='aws':
+        webgate_id = cloud_core.create_once('webgate', user_name+'_'+basename+'_gate', True)
+    elif platform=='azure':
+        ip_configurations=[{"subnet": {"id": subnet_id}}]
+        sku = {'name':'Basic', 'tier':'Basic'} # Include this?
+        webgate_id = cloud_core.create_once('webgate', user_name+'_'+basename+'_gate', True, location=cloud_format.enumloc(the_region), ip_configurations=ip_configurations, sku=sku)
+    else:
+        raise Exception('TODO get net_setup working on this cloud platform: '+platform)
+
     cloud_core.assoc(vpc_id, webgate_id)
     routetable_id = cloud_core.create_once('rtable', user_name+'_'+basename+'_rtable', True, VpcId=vpc_id) # TODO: Use the default one.
     cloud_core.create_route(rtable_id=routetable_id, dest_cidr='0.0.0.0/0', gateway_id=webgate_id)
-    subnet_id = cloud_core.create_once('subnet',user_name+'_'+basename+'_subnet', True, CidrBlock='10.200.250.0/24', VpcId=vpc_id, AvailabilityZone=subnet_zone)
     cloud_core.assoc(routetable_id, subnet_id)
     securitygroup_id = cloud_core.create_once('securitygroup', user_name+'_'+basename+'_sGroup', True, GroupName='SSH-ONLY', Description='only allow SSH traffic', VpcId=vpc_id)
     cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', port0=22, port1=22)
@@ -41,7 +68,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     ssh_bash = vm.ssh_bash(inst_id, True)
 
     print(f'---Setting up {proj.which_cloud()} on the jump box (WARNING: long term secret credentials posted to VM)---')
-    region_name = subnet_zone
+    region_name = the_region
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
@@ -58,7 +85,7 @@ def setup_jumpbox(basename='jumpbox', subnet_zone='us-west-2c', user_name='BYOC'
     print("\033[38;5;208mJumpbox appears to be setup and working (minus a restart which is happening now).\033[0m")
     return ssh_bash, inst_id
 
-def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', subnet_zone='us-west-2c'):
+def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', the_region='us-west-2c'):
     vpc_id = cloud_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
     cloud_core.modify_attribute(vpc_id, 'EnableDnsSupport', {'Value': True})
     cloud_core.modify_attribute(vpc_id, 'EnableDnsHostnames', {'Value': True})
@@ -98,7 +125,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     cmds = []
     for i in range(3):
         cloud_core.create_route(routetable_id, '0.0.0.0/0', webgate_id)
-        subnet_id = cloud_core.create_once('subnet',basenames[i], True, CidrBlock=subnet_cidrs[i], VpcId=vpc_id, AvailabilityZone=subnet_zone)
+        subnet_id = cloud_core.create_once('subnet',basenames[i], True, CidrBlock=subnet_cidrs[i], VpcId=vpc_id, AvailabilityZone=the_region)
         cloud_core.assoc(routetable_id, subnet_id)
 
         # They have different security groups for different types of servers, so we will do so as well rather than use only one for all three:
