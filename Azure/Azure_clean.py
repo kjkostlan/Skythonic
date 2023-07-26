@@ -1,5 +1,5 @@
 import covert
-from . import Azure_query, Azure_nugget
+from . import Azure_query, Azure_nugget, Azure_core
 
 def has_been_deleted(id):
     TODO
@@ -16,14 +16,12 @@ def _nuclear_clean(only_skythonic_stuff=True, restrict_to_these=None, remove_lin
         for the_id in big_stuff[k]:
             if only_skythonic_stuff and '/'+Azure_nugget.skythonic_rgroup_name+'/' not in the_id:
                 continue
-            del_tag = {'tags':{'__deleted__':True}}
-            Azure_nugget.resource_client.resources.begin_create_or_update_by_id(the_id, api_version=Azure_nugget.api_version,  parameters=del_tag) # Not working?
-            Azure_nugget.resource_client.resources.begin_delete_by_id(the_id, api_version=Azure_nugget.api_version)
+            Azure_core.delete(the_id)
             n_delete = n_delete+1
     print('Deleted:', n_delete, 'resources.')
 
 def nuclear_clean(remove_lingers=False):
-    confirm = input('\033[95mWarning: will delete EVERYTHING in the WHOLE ACCOUNT (not just the lab) leaving just the default resources; input y to proceed:\033[0m')
+    confirm = input('\033[95mWarning: will delete EVERYTHING in the WHOLE ACCOUNT (not just the labs or Skythonic resource group) leaving just the default resources; input y to proceed:\033[0m')
     if confirm.strip().lower() !='y':
         print("Cancelled by user.")
         return None

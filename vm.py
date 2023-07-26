@@ -211,6 +211,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
 
     if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
+        # TODO: Move this (aws specific code) to the AWS folder.
         colorful.bprint('awscli is a HEAVY installation. Should take about 5 min.')
         region_name = cloud_vm.get_region_name()
         user_id = covert.user_dangerkey(kwargs['user_name'])

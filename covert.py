@@ -6,6 +6,7 @@ import vm, proj
 from waterworks import file_io
 
 proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_format', 'cloud_permiss'])
+platform = proj.which_cloud().lower().strip()
 
 pickle_leaf = 'vm_secrets.pypickle'
 pickle_fname = f'{proj.dump_folder}/{pickle_leaf}'
@@ -43,25 +44,62 @@ def _save_ky1(fname, key_material):
     # Don't forget the chmod 600 on the keys!
     os.chmod(fname, 0o600) # Octal (not hex and not a string!)
 
-def vm_dangerkey(vm_name, vm_params):
-    key_name = vm_params['KeyName']
+def create_vm_dangerkey(vm_name, vm_params, key_name):
+    # Creates a new vm with key_name, making a new key and saving the secrets if key_name does not exist.
     x = _pickleload()
     key_mat = None
     fname = _pem(key_name)
-    try: # Cant use create_once because of the ephemeral key_material.
-        key_pair = cloud_core.create('keypair', key_name, raw_object=True) # Don't use create once b/c we need to know if the user already exists.
-        key_mat = key_pair.key_material
-        x['key_name2key_material'][key_name] = key_mat
+
+    new_key_mat = None
+    if key_name not in x['key_name2key_material']: # Must create a new key.
+        # Is this platform specific code better moved into the cooresponding folders?
+        if platform == 'aws':
+            try: # Cant use create_once because of the ephemeral key_material.
+                key_pair = cloud_core.create('keypair', key_name, raw_object=True) # Don't use create once b/c we need to know if the user already exists.
+                new_key_mat = key_pair.key_material
+            except Exception as e:
+                if 'The keypair already exists' in str(e)+repr(e):
+                    raise Exception('The keypair exists, but the secret private key cannot be found. If it was lost the VM will be bricked.')
+                else:
+                    raise e
+        elif platform=='azure':
+            #from Crypto.PublicKey import RSA
+            #the_key = RSA.generate(2048)
+            #new_key_mat = the_key.export_key("PEM")
+            from cryptography.hazmat.primitives.asymmetric import rsa
+            from cryptography.hazmat.primitives import serialization
+            the_key = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=default_backend())
+            new_key_mat = private_key.private_bytes(encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8, encryption_algorithm=serialization.NoEncryption())
+        else:
+            raise Exception('TODO: covery.py support of platform: '+platform)
+
+    if new_key_mat:
+        if type(new_key_mat) is not bytes:
+            raise Exception('New key material must be in bytes.')
+        x['key_name2key_material'][key_name] = new_key_mat
         _save_ky1(fname, key_mat)
         print('PEM Key saved to:', fname)
-    except Exception as e:
-        if 'The keypair already exists' not in str(e)+repr(e): # Key already exists = skip all these steps.
-            raise e
+    else:
+        print('Reusing this key that was already made:', key_name)
 
-        # Key already exists, but make sure the file exists:
-        if key_name not in x['key_name2key_material']:
-            pair = cloud_query.get_resources(which_types='kpairs', ids=False, include_lingers=False, filters=[{'Name': 'key-name', 'Values': [key_name]}])
-            raise Exception(f'The key-pair {key_name} already exists but the secret is not stored on this machine ({vm.our_vm_id()}).')
+    if platform=='aws':
+        vm_params['KeyName'] = key_name
+    elif platform == 'azure':
+        #from Crypto.PublicKey import RSA
+        #the_key = RSA.import_key(x['key_name2key_material'][key_name])
+        #public_key = the_key.publickey().export_key("OpenSSH").decode()
+        from azure.mgmt.compute.models import OSProfile
+        from cryptography.hazmat.primitives import serialization
+        import cryptography.hazmat.backends
+
+        private_key = serialization.load_pem_private_key(x['key_name2key_material'][key_name], backend=backends.default_backend())
+        public_key = private_key.public_key()
+        public_bytes = public_key.public_bytes(encoding=serialization.Encoding.OpenSSH, format=serialization.PublicFormat.OpenSSH)
+
+        lx_conf = {"ssh": {"public_keys": [{"path": "/home/{}/.ssh/authorized_keys".format(vm_username), "key_data": public_bytes.decode()}]}}
+        vm_params['os_profile'] = OSProfile(computer_name=vm_name, admin_username=username, linux_configuration=lx_conf)
+    else:
+        raise Exception('TODO: covery.py support of platform: '+platform)
 
     inst_id = cloud_core.create_once('machine', vm_name, True, **vm_params)
     x['instance_id2key_name'][inst_id] = key_name

@@ -3,17 +3,17 @@ from . import Azure_nugget
 
 def enumr(txt0): # ENUMerate Resourse type. Different clouds may call it by different names.
     txt = txt0.strip().lower().replace('_','')
-    if txt[-1] == 's':
+    if txt[-1] == 's' and '/' not in txt:
         txt = txt[0:-1]
-    if txt in ['vpc', 'vnet'] or 'Microsoft.Network/virtualNetworks'.lower() in txt:
+    if txt in ['vpc', 'vnet'] or ('Microsoft.Network/virtualNetworks'.lower() in txt and '/subnets/' not in txt):
         return 'vnet'
     if txt in ['webgate', 'internetgateway', 'gateway', 'gate', 'networkgate']:
         return 'webgate'
-    if txt in ['rtable', 'routetable']:
+    if txt in ['rtable', 'routetable'] or 'Microsoft.Network/routeTables'.lower() in txt:
         return 'rtable'
-    if txt in ['subnet']:
+    if txt in ['subnet'] or '/subnets/' in txt:
         return 'subnet'
-    if txt in ['securitygroup', 'sgroup']:
+    if txt in ['securitygroup', 'sgroup'] or '/networkSecurityGroups/'.lower() in txt:
         return 'sgroup'
     if txt in ['keypair', 'kpair', 'key', 'secret']:
         return 'kpair'
@@ -29,7 +29,7 @@ def enumr(txt0): # ENUMerate Resourse type. Different clouds may call it by diff
         return 'route'
     if txt in ['policy','policies','policie','iampolicy','iampolicies','iampolicie']:
         return 'IAMpolicy'
-    raise Exception(f'{txt0} is not an understood type or type of id (OR this is a TODO in the code; we need to parse id strings).')
+    raise Exception(f'{txt0} is not an understood type or type of id (OR this is a TODO in the code; the id parsing is incomplete).')
 
 def enumloc(txt0):
     # Make sure a location is in Azure-syntax. Will map the AWS location to the matching Azure location, if applicable.
