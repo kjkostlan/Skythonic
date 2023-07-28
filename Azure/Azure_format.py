@@ -17,18 +17,22 @@ def enumr(txt0): # ENUMerate Resourse type. Different clouds may call it by diff
         return 'sgroup'
     if txt in ['keypair', 'kpair', 'key', 'secret']:
         return 'kpair'
-    if txt in ['instance', 'machine']:
+    if txt in ['instance', 'machine'] or '/Microsoft.Compute/virtualMachines/'.lower() in txt:
         return 'machine'
-    if txt in ['address', 'addres', 'addresses', 'addresse']:
+    if txt in ['address', 'addres', 'addresses', 'addresse'] or '/Microsoft.Network/publicIPAddresses/'.lower() in txt:
         return 'address'
     if txt in ['vpcpeer', 'vpcpeering', 'peer', 'peering']:
         return 'peering'
+    if txt in ['disk', 'drive', 'diskdrive', 'disk_drive']:
+        return 'disk'
     if txt in ['user']:
         return 'user'
     if txt in ['route', 'path', 'pathway']: # Not a top-level resource.
         return 'route'
     if txt in ['policy','policies','policie','iampolicy','iampolicies','iampolicie']:
         return 'IAMpolicy'
+    if txt in ['network_interface', 'networkinterface', 'nic'] or '/Microsoft.Network/networkInterfaces/'.lower() in txt:
+        return 'nic'
     raise Exception(f'{txt0} is not an understood type or type of id (OR this is a TODO in the code; the id parsing is incomplete).')
 
 def enumloc(txt0):
@@ -77,10 +81,18 @@ def obj2id(obj_desc): # Gets the ID from a description.
     elif type(obj_desc) is dict:
         if 'id' in obj_desc:
             return obj_desc['id']
+        if 'Skythonic_extracted_id' in obj_desc:
+            return obj_desc['Skythonic_extracted_id']
         if 'properties' in obj_desc:
+            if 'vmSize' in str(obj_desc) and 'osProfile' in str(obj_desc): # Found a VM!
+                vm_name = obj_desc['properties']['osProfile']['computerName']
+                resource_group_name = obj_desc['properties']['storageProfile']['osDisk']['managedDisk']['id'].split('/')[4] # Somewhat brittle? Other ways to get the rgroup exist.
+                vm = Azure_nugget.compute_client.virtual_machines.get(resource_group_name, vm_name)
+                return vm.id
             if 'resourceGuid' in obj_desc['properties'] and 'virtualNetworkPeerings' in obj_desc['properties']:
                 raise Exception('resourceGuides are very mysterious (vnets; sometimes [properties][subnets][0][id][all but last two pieces] would work).')
-        raise Exception('Cannot extract the id.')
+        print('Uh ho obj desc is:', obj_desc)
+        raise Exception('Cannot extract the id for object-as-dict with keys:'+str(obj_desc.keys()))
     elif hasattr(obj_desc, 'serialize'):
         return obj_desc.serialize()['id'] # Azures uses these to make a dict representation.
     raise Exception('Azure obj2id fail on type: '+str(type(obj_desc)))
@@ -96,7 +108,10 @@ def id2obj(the_id, assert_exist=True):
             out['id'] = x.id
         return out
     if hasattr(the_id, 'serialize'):
-        return the_id.serialize() # Azures uses these to make a dict representation.
+        x = the_id.serialize() # Azures uses these to make a dict representation.
+        if 'id' not in x and hasattr(the_id, 'id'): # Disks serialize() seems to eliminate both the name and the id from the JSON, so adding in id can help.
+            x['Skythonic_extracted_id'] = the_id.id
+        return x
     raise Exception('Azure id2obj fail on type: '+str(type(the_id)))
 to_dict = id2obj # Alternate name for converting Azure objects to dict.
 

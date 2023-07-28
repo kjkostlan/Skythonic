@@ -270,7 +270,3 @@ def modify_attribute(desc_or_id, k, v):
 def create_route(rtable_id, dest_cidr, gateway_id):
     # TODO: This is a niche function, which should be refactors/abstracted.
     ec2c.create_route(RouteTableId=rtable_id, DestinationCidrBlock=dest_cidr,GatewayId=gateway_id)
-
-def install_these():
-    # What to install on a jumpbox?
-    return ['apt aws']

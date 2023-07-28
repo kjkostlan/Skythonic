@@ -46,8 +46,8 @@ def _save_ky1(fname, key_material):
 
 def create_vm_dangerkey(vm_name, vm_params, key_name):
     # Creates a new vm with key_name, making a new key and saving the secrets if key_name does not exist.
+    # The login name to the vm is 'ubuntu'.
     x = _pickleload()
-    key_mat = None
     fname = _pem(key_name)
 
     new_key_mat = None
@@ -57,6 +57,8 @@ def create_vm_dangerkey(vm_name, vm_params, key_name):
             try: # Cant use create_once because of the ephemeral key_material.
                 key_pair = cloud_core.create('keypair', key_name, raw_object=True) # Don't use create once b/c we need to know if the user already exists.
                 new_key_mat = key_pair.key_material
+                if type(new_key_mat) is bytes:
+                    new_key_mat = new_key_mat.decode()
             except Exception as e:
                 if 'The keypair already exists' in str(e)+repr(e):
                     raise Exception('The keypair exists, but the secret private key cannot be found. If it was lost the VM will be bricked.')
@@ -66,21 +68,24 @@ def create_vm_dangerkey(vm_name, vm_params, key_name):
             #from Crypto.PublicKey import RSA
             #the_key = RSA.generate(2048)
             #new_key_mat = the_key.export_key("PEM")
+            import cryptography.hazmat.backends as backends
             from cryptography.hazmat.primitives.asymmetric import rsa
             from cryptography.hazmat.primitives import serialization
-            the_key = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=default_backend())
+            private_key = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=backends.default_backend())
             new_key_mat = private_key.private_bytes(encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8, encryption_algorithm=serialization.NoEncryption())
+            new_key_mat = new_key_mat.decode()
         else:
             raise Exception('TODO: covery.py support of platform: '+platform)
 
     if new_key_mat:
-        if type(new_key_mat) is not bytes:
-            raise Exception('New key material must be in bytes.')
+        if type(new_key_mat) is not str:
+            raise Exception('New key material must be a str.')
         x['key_name2key_material'][key_name] = new_key_mat
-        _save_ky1(fname, key_mat)
+        _save_ky1(fname, new_key_mat)
         print('PEM Key saved to:', fname)
     else:
         print('Reusing this key that was already made:', key_name)
+    _picklesave(x)
 
     if platform=='aws':
         vm_params['KeyName'] = key_name
@@ -90,20 +95,22 @@ def create_vm_dangerkey(vm_name, vm_params, key_name):
         #public_key = the_key.publickey().export_key("OpenSSH").decode()
         from azure.mgmt.compute.models import OSProfile
         from cryptography.hazmat.primitives import serialization
-        import cryptography.hazmat.backends
+        import cryptography.hazmat.backends as backends
 
-        private_key = serialization.load_pem_private_key(x['key_name2key_material'][key_name], backend=backends.default_backend())
+        key_mat = x['key_name2key_material'][key_name].encode()
+        private_key = serialization.load_pem_private_key(key_mat, backend=backends.default_backend(), password=None) # WARNING: We don't password-protect the keys here.
         public_key = private_key.public_key()
         public_bytes = public_key.public_bytes(encoding=serialization.Encoding.OpenSSH, format=serialization.PublicFormat.OpenSSH)
 
-        lx_conf = {"ssh": {"public_keys": [{"path": "/home/{}/.ssh/authorized_keys".format(vm_username), "key_data": public_bytes.decode()}]}}
-        vm_params['os_profile'] = OSProfile(computer_name=vm_name, admin_username=username, linux_configuration=lx_conf)
+        lx_conf = {"ssh": {"public_keys": [{"path": "/home/{}/.ssh/authorized_keys".format('ubuntu'), "key_data": public_bytes.decode()}]}}
+        vm_params['os_profile'] = OSProfile(computer_name=vm_name, admin_username='ubuntu', linux_configuration=lx_conf)
     else:
         raise Exception('TODO: covery.py support of platform: '+platform)
 
     inst_id = cloud_core.create_once('machine', vm_name, True, **vm_params)
     x['instance_id2key_name'][inst_id] = key_name
     _picklesave(x)
+
     return inst_id
 
 def user_dangerkey(user_name):

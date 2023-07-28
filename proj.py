@@ -50,6 +50,7 @@ def cloud_switch():
         #    pip install paramiko
         #    pip install azure-mgmt-resource
         #    pip install azure-mgmt-compute
+        #    pip install azure-mgmt-storage
         x = {'cloud_core':'Azure.Azure_core', 'cloud_query':'Azure.Azure_query',\
              'cloud_format':'Azure.Azure_format', 'cloud_clean':'Azure.Azure_clean',\
              'cloud_vm':'Azure.Azure_vm', 'cloud_permiss':'Azure.Azure_permiss'}

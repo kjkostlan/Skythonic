@@ -1,4 +1,4 @@
-# It's much harder than boto3.
+# The initialization is much harder than AWS boto3.
 import subprocess
 try:
     from azure.identity import AzureCliCredential
@@ -7,6 +7,7 @@ try:
     from azure.mgmt.network import NetworkManagementClient
     from azure.mgmt.resource import ResourceManagementClient, SubscriptionClient
     from azure.mgmt.compute import ComputeManagementClient
+    from azure.mgmt.storage import StorageManagementClient
 except Exception as e:
     raise Exception('Some pip packages may be missing:'+str(e))
 
@@ -15,7 +16,7 @@ def get_subscription_id():
     the_id = subprocess.check_output("az account show --query 'id' -o tsv", shell=True)
     return the_id.decode('utf-8').strip()
 
-api_version = '2023-04-01'
+api_version = '2022-11-01'# Mix-n-match versions. Can you block all the holes in the swiss cheese? #'2023-07-01'#'2023-04-01'
 
 try: # One-time setup.
     _subs_id
@@ -26,6 +27,7 @@ except:
     resource_client = ResourceManagementClient(credential, _subs_id)
     subscription_client = SubscriptionClient(credential)
     skythonic_rgroup_name = 'Skythonic_resource_group'
+    storage_client = StorageManagementClient(credential, _subs_id)
 
     subscription = subscription_client.subscriptions.get(_subs_id)
     all_locations = [x.name for x in list(subscription_client.subscriptions.list_locations(_subs_id))]

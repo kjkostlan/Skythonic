@@ -1,5 +1,8 @@
 # Lower level Azure functions.
+# The API is much more consistent than AWS boto3.
 from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet, VirtualNetworkGateway, RouteTable, Route, NetworkSecurityGroup, PublicIPAddress, NetworkInterface
+from azure.mgmt.compute.models import VirtualMachine
+
 from . import Azure_query, Azure_format, Azure_nugget
 import waterworks.plumber as plumber
 
@@ -20,6 +23,13 @@ def add_tags(desc_or_id, tags_to_add, ignore_none_desc=False):
         the_obj.tags = tags_to_add
     else:
         the_obj.tags.update(tags_to_add)
+    try:
+        Azure_nugget.resource_client.resources.begin_create_or_update_by_id(the_id, api_version=Azure_nugget.api_version,  parameters=the_obj)
+    except Exception as e:
+        if "Could not find member 'tags' on" in str(e):
+            print('Warning: This resource cannot accept tags:', the_id)
+        else:
+            raise e
 
 def create(rtype0, name, **kwargs):
     # Returns the ID, which is commonly introduced into other objects.
@@ -68,9 +78,16 @@ def create(rtype0, name, **kwargs):
     elif rtype == 'kpair':
         TODO
     elif rtype =='machine':
-        TODO
+        kwargs['location'] = Azure_format.enumloc(kwargs['location'])
+        vm_parameters = VirtualMachine(**kwargs)
+        x0 = Azure_nugget.compute_client.virtual_machines.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, name, vm_parameters)
+        x0.wait() # Is this needed, or is it implict in the result() call?
+        x = x0.result()
     elif rtype == 'address':
-        TODO
+        kwargs['location'] = Azure_format.enumloc(kwargs['location'])
+        addr_params = PublicIPAddress(**kwargs)
+        x0 = Azure_nugget.network_client.public_ip_addresses.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, name, addr_params)
+        x = x0.result()
     elif rtype == 'user':
         TODO
     elif rtype == 'peering':
@@ -83,7 +100,7 @@ def create(rtype0, name, **kwargs):
     msg = 'created a resource of type '+rtype+' waiting for it to start existing.'
     plumber.loop_try(f, f_catch, msg, delay=4)
 
-    if raw: # Generally discouraged to work with, except for keypairs.
+    if raw: # Generally discouraged to work with.
         return x
     elif type(x) is not str:
         return Azure_format.obj2id(x)
@@ -91,6 +108,7 @@ def create(rtype0, name, **kwargs):
 def create_once(rtype, name, printouts, **kwargs):
     # Creates a resource unless the name is already there.
     # Returns the created or already-there resource.
+    # NOTE: most Azure functions are idempotent (big difference with AWS), so this function is (mostly) redundant.
     r0 = Azure_query.get_by_name(rtype, name)
     do_print = printouts is not None and printouts is not False
     if printouts is True:
@@ -100,8 +118,6 @@ def create_once(rtype, name, printouts, **kwargs):
     if r0 is not None:
         if do_print:
             print(str(printouts)+'already exists:', rtype, name)
-        if Azure_format.enumr(rtype) == 'machine':
-            TODO
         return Azure_format.obj2id(r0)
     else:
         if do_print:
@@ -128,6 +144,7 @@ def delete(desc_or_id):
     def _first_way(): # Multible ways to do something, which one is better?
         Azure_nugget.resource_client.resources.begin_create_or_update_by_id(the_id, api_version=Azure_nugget.api_version,  parameters=del_tag)
     def _second_way():
+        # TODO: duplicate code with add tags.
         x = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
         if not x:
             raise Exception('None resource')
@@ -136,6 +153,8 @@ def delete(desc_or_id):
         #Azure_nugget.resource_client.resources.begin_create_or_update(the_id, x)
         Azure_nugget.resource_client.resources.begin_create_or_update_by_id(the_id, api_version=Azure_nugget.api_version,  parameters=x)
     _second_way()
+
+    #ty = Azure_format.enumr(the_id)
     Azure_nugget.resource_client.resources.begin_delete_by_id(the_id, api_version=Azure_nugget.api_version)
 
     return True
@@ -195,7 +214,3 @@ def connect_to_internet(rtable_id, vnet_id):
     vnet_params = Azure_nugget.network_client.virtual_networks.get(vnet_rgroup, vnet_name)
     vnet_params.route_table = {'id': rtable_id}
     vnet = Azure_nugget.network_client.virtual_networks.begin_create_or_update(vnet_rgroup, vnet_name, vnet_params).result()
-
-def install_these():
-    # What to install on a jumpbox?
-    return [TODO]

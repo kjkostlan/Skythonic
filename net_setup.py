@@ -21,23 +21,27 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public
         return inst_id
     elif platform=='azure':
         from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet, VirtualNetworkGateway, RouteTable, Route, NetworkSecurityGroup, PublicIPAddress, NetworkInterface # DEBUG.
-        from . import Azure_nugget # DEBUG (will move these to Azure_core).
-        nic = NetworkInterface(id="", location=location, ip_configurations=[{"name": "my_ip_config", "subnet": {"id": subnet_id}, "public_ip_address": {"id": public_ip_id}}])
-        nic.network_security_group = Azure_nugget.resource_client.resources.get_by_id(securitygroup_id, api_version=Azure_nugget.api_version)
-        nic = network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, "my_nic", nic).result()
+        from Azure import Azure_nugget, Azure_format # DEBUG (will move making a nic to Azure_core).
+        nic = NetworkInterface(id="", location=Azure_format.enumloc(the_region), ip_configurations=[{"name": "my_ip_config", "subnet": {"id": subnet_id}, "public_ip_address": {"id": public_ip_id}}])
+
+        nic = Azure_nugget.network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, "my_nic", nic).result()
+        print('Adding the network security group:', securitygroup_id)
+        nic.network_security_group = {'id': securitygroup_id}
+        Azure_nugget.network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, "my_nic", nic).result()
 
         #vm = VirtualMachine(location=location, os_profile=OSProfile(computer_name=vm_name, admin_username=username, linux_configuration={"ssh": {"public_keys": [{"path": "/home/{}/.ssh/authorized_keys".format(username), "key_data": public_key}]}}))
         #vm.storage_profile = StorageProfile(os_disk={"os_type": "Linux", "name": os_disk_name, "create_option": "FromImage"}, image_reference=ImageReference(publisher="Canonical", offer="UbuntuServer", sku="20_04-lts-gen2", version="latest"))
         #vm.hardware_profile = {"vm_size": vm_size}
         #vm.network_profile = {"network_interfaces": [{"id": nic.id}]}
         #vm = compute_client.virtual_machines.begin_create_or_update(resource_group_name, vm_name, vm).result()
-        from azure.mgmt.compute.models import OSProfile, StorageProfile, DataDisk, ImageReference # But these are NOT debug since there are multible levels of params.
+        from azure.mgmt.compute.models import OSProfile, StorageProfile, DataDisk # But these are NOT debug since there are multible levels of params.
         vm_params = {}
-        vm_params['location'] = location
-        vm_username = 'ubuntu' # The default username across Skythonic for vms.
+        vm_params['location'] = Azure_format.enumloc(the_region)
         # Covert will fill out vm_params['os_profile']
         vm_params['network_profile'] = {"network_interfaces": [{"id": nic.id}]}
         vm_params['hardware_profile'] = {"vm_size": "Standard_DS1_v2"}  # Different options here.
+        os_disk_name = vm_name+'-osdisk' # Aesthetic (I think).
+        vm_params['storage_profile'] = StorageProfile(os_disk={"os_type": "Linux", "name": os_disk_name, "create_option": "FromImage"}, image_reference=cloud_vm.ubuntu_aim_image(the_region))
         inst_id = covert.create_vm_dangerkey(vm_name, vm_params, key_name) # Already assoced with the address.
         return inst_id
     else:
@@ -47,6 +51,12 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public
 
 def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC', key_name='BYOC_keypair'): # The jumpbox is much more configurable than the cloud shell.
     # Note: for some reason us-west-2d fails for this vm, so us-west-2c is the default.
+    vm_name = user_name+'_'+basename+'_VM'
+    if platform=='azure':
+        vm_name = vm_name.replace('_','0') # Why the !@#$ do they not allow underscores.
+        if len(vm_name)>64:
+            raise Exception('Oops the vm_name was too long because the user_name or basename is too long.')
+
     if platform=='aws':
         vpc_id = cloud_core.create_once('VPC', user_name+'_Service', True, CidrBlock='10.200.0.0/16') #vpc = ec2r.create_vpc(CidrBlock='172.16.0.0/16')
     elif platform=='azure':
@@ -106,10 +116,11 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
     if platform == 'aws':
         addr_id = cloud_core.create_once('address', user_name+'_'+basename+'_address', True, Domain='vpc')
     elif platform == 'azure':
-        addr_id = TODO
+        # What does this do? dns_settings=PublicIPAddressDnsSettings(domain_name_label="your-domain-label")
+        addr_id = cloud_core.create_once('address', user_name+'_'+basename+'_address', True, location=the_region, public_ip_allocation_method='Dynamic', idle_timeout_in_minutes=4)
     else:
         raise Exception('TODO get net_setup working on this cloud platform: '+platform)
-    inst_id = simple_vm(user_name+'_'+basename+'_VM', '10.200.250.100', subnet_id, securitygroup_id, key_name, addr_id, the_region)
+    inst_id = simple_vm(vm_name, '10.200.250.100', subnet_id, securitygroup_id, key_name, addr_id, the_region)
 
     ssh_bash = vm.ssh_bash(inst_id, True)
 
@@ -119,13 +130,20 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
         region_name = region_name[0:-1]
 
     #tubo = vm.upgrade_os(inst_id, printouts=True)
-    tubo = vm.install_package(inst_id, 'apt python3')
-    for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
+    tubo = vm.install_package(inst_id, 'apt python3', tests=[['python3\nprint(id)\nquit()', '<built-in function id>']])
+    for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump']:
         tubo = vm.install_package(tubo, pk_name)
+    tubo = vm.install_package(tubo, ['apt pint'], tests=[['ping -c 1 localhost', '0% packet loss']])
     for pk_name in ['skythonic', 'host-list']:
         tubo = vm.install_custom_package(tubo, pk_name)
-    for package_cmd in cloud_core.install_these():
-        tubo = vm.install_package(tubo, package_cmd, user_name=user_name)
+    if platform == 'aws':
+        tubo = vm.install_package(tubo, 'apt aws-cli', tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']], user_name=user_name)
+        tubo = vm.install_package(tubo, 'pip boto3', tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
+    elif platform == 'azure':
+        for package_cmd in ['pip azure-core', 'pip azure-identity', 'pip paramiko', 'pip azure-mgmt-resource', 'pip azure-mgmt-compute', 'pip azure-mgmt-storage', 'pip azure-mgmt-network', 'pip install azure-mgmt-storage']:
+            tubo = vm.install_package(tubo, package_cmd)
+    else:
+        raise Exception('TODO get net_setup working on this cloud platform: '+platform)
     cloud_vm.restart_vm(inst_id)
 
     print("\033[38;5;208mJumpbox appears to be setup and working (minus a restart which is happening now).\033[0m")
@@ -199,7 +217,9 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             tubo = vm.install_package(tubo, pk_name, printouts=True)
     vm.install_custom_package(inst_ids[1], 'app-server')
     vm.install_package(inst_ids[0], 'apt apache')
-    vm.install_custom_package(inst_ids[0], 'web-server')
+    web_s_tests = [['sudo service apache2 start',''], ['curl -k http://localhost', ['apache2', '<div>', '<html']],
+                   ['systemctl status apache2.service', ['The Apache HTTP Server', 'Main PID:']]]
+    vm.install_custom_package(inst_ids[0], 'web-server', tests=web_s_tests)
     vm.install_package(inst_ids[2], 'apt mysql-server', printouts=True)
 
     #The gateway is the VpcPeeringConnectionId

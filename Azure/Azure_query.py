@@ -38,6 +38,7 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
     if which_types is None or 'sgroup' in which_types:
         out['sgroups'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.network_security_groups.list_all()]
     if which_types is None or 'kpair' in which_types:
+        # Azure generally doesn't use keypairs?
         #out['kpairs'] = [Azure_format.to_dict(x) for x in Azure_nugget.compute_client.virtual_machine_scale_set_vm_extensions.list_all()] # No method list_all()
         #filter_txt = "resourceType eq 'Microsoft.Compute/virtualMachines/extensions' and properties.type eq 'Microsoft.Azure.KeyVault.VaultSecretReference'"
         #filter_txt = "propertiesType eq 'Microsoft.Azure.KeyVault.VaultSecretReference'"
@@ -46,10 +47,14 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
         if len(kpairs_plus_gunk)>0:
             TODO # The property filter isn't working well.
         out['kpairs'] = []
+    if which_types is None or 'nic' in which_types:
+        out['nics'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.network_interfaces.list_all()]
     if which_types is None or 'machine' in which_types:
         out['machines'] = [Azure_format.to_dict(x) for x in Azure_nugget.compute_client.virtual_machines.list_all()]
     if which_types is None or 'address' in which_types: #Public addresses mean more when querying resources.
         out['addresses'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.public_ip_addresses.list_all()]
+    if which_types is None or 'disk' in which_types:
+        out['disks'] = [Azure_format.to_dict(x) for x in Azure_nugget.compute_client.disks.list()]
     if which_types is None or 'peering' in which_types:
         vnets = list(Azure_nugget.network_client.virtual_networks.list_all())
         out['peerings'] = []

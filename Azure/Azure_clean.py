@@ -8,14 +8,15 @@ def dep_check_delete(id_or_obj, xdeps=None):
     TODO
 
 def _nuclear_clean(only_skythonic_stuff=True, restrict_to_these=None, remove_lingers=False): # DELETE EVERYTHING DANGER!
-    big_stuff = Azure_query.get_resources(ids=True, include_lingers=False)
+    big_stuff = Azure_query.get_resources(ids=True, include_lingers=remove_lingers)
     if restrict_to_these:
         TODO # How to handle this?
     n_delete = 0
-    for k in ['peerings','addresses', 'machines', 'subnets', 'rtables','webgates','sgroups','vnets','kpairs']: # How much does order matter?
+    for k in ['peerings','addresses', 'machines', 'disks', 'nics', 'subnets', 'rtables','webgates','sgroups','vnets','kpairs']: # How much does order matter?
         for the_id in big_stuff[k]:
             if only_skythonic_stuff and '/'+Azure_nugget.skythonic_rgroup_name+'/' not in the_id:
                 continue
+            print('About to delete:', the_id)
             Azure_core.delete(the_id)
             n_delete = n_delete+1
     print('Deleted:', n_delete, 'resources.')

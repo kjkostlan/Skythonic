@@ -161,10 +161,11 @@ def upgrade_os(inst_or_pipe, printouts=None):
         p.tubo.close()
     return tubo
 
-def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
+def install_package(inst_or_pipe, package_name, tests=None, printouts=None, **kwargs):
     # Includes configuration for common packages;
     # package_name = "apt apache2" or "pip boto3".
     # Some pacakges will require kwards for configuration.
+    # Include tests so that the Plumber can ensure that the packages installed properly.
     package_name = package_name.lower() # Lowercase, 0-9 -+ only.
     if package_name.startswith('pip '):
         package_name = 'pip3 '+package_name[3:].strip()
@@ -189,21 +190,11 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
     xtra_cmds['apt awscli'] = ['aws configure']
     xtra_cmds['apt python3-pip'] = ['PYTHON3_PATH=$(which python3)', 'sudo ln -sf $PYTHON3_PATH /usr/local/bin/python', 'sudo apt upgrade python3']
 
-    xtra_packages = {}
-    xtra_packages['apt awscli'] = ['pip boto3']
-    #xtra_packages['apt python3-pip'] = ['apt python-is-python3'] # This package can't always be found for some reason.
-
     timeouts = {'apt awscli':128, 'apt python3-pip':128}
     timeout = timeouts.get(package_name, 64)
 
-    tests = {}
-    tests['apt iputils-ping'] = [['ping -c 1 localhost', '0% packet loss']]
-    tests['apt apache2'] = [['sudo service apache2 start',''],
-                            ['curl -k http://localhost', ['apache2', '<div>', '<html']],
-                            ['systemctl status apache2.service', ['The Apache HTTP Server', 'Main PID:']]]
-    tests['apt python3-pip'] = [['python3\nprint(id)\nquit()', '<built-in function id>']]
-    tests['apt awscli'] = [['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET'],
-                           ["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]]
+    if tests is None:
+        tests = []
 
     extra_prompts = {}
     boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
@@ -233,7 +224,7 @@ def install_package(inst_or_pipe, package_name, printouts=None, **kwargs):
 
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     response_map = {**{**plumber.default_prompts(), **cloud_entry}, **extra_prompts.get(package_name,{})}
-    p = plumber.Plumber(tubo, [package_name]+xtra_packages.get(package_name,[]), response_map, xtra_cmds.get(package_name, []), tests.get(package_name, []), dt=2.0)
+    p = plumber.Plumber(tubo, [package_name], response_map, xtra_cmds.get(package_name, []), tests, dt=2.0)
     tubo = p.run()
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
