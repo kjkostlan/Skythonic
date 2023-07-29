@@ -35,3 +35,18 @@ def authorize_ingress(sgroup_id, cidr, protocol, port0, port1):
         sgroup_name,
         "Allow_"+protocol,
         ssh_rule_params)
+
+def empower_vm(instance_id):
+    # Give a vm access to the Azure account.
+    # Azure_permiss.empower_vm(Azure_query.get_resources('instances', ids=True)[0])
+    import vm
+    from . import Azure_format
+    instance_id = Azure_format.obj2id(instance_id)
+    core_cmds = ['cd ~/Skythonic', 'python', 'from azure.mgmt.network.models import SecurityRule']
+    tubo = vm.patient_ssh_pipe(instance_id, printouts=True, binary_mode=False)
+    response_map = {**plumber.default_prompts(), **{}}
+    tests = [['python\nx=2*6\nprint(x)', '12']]
+
+    p = plumber.Plumber(tubo, [], response_map, core_cmds, tests, dt=2.0)
+    tubo = p.run()
+    TODO

@@ -161,21 +161,33 @@ def upgrade_os(inst_or_pipe, printouts=None):
         p.tubo.close()
     return tubo
 
-def install_package(inst_or_pipe, package_name, tests=None, printouts=None, **kwargs):
+def install_packages(inst_or_pipe, package_names, tests=None, printouts=None, **kwargs):
     # Includes configuration for common packages;
     # package_name = "apt apache2" or "pip boto3".
     # Some pacakges will require kwards for configuration.
     # Include tests so that the Plumber can ensure that the packages installed properly.
-    package_name = package_name.lower() # Lowercase, 0-9 -+ only.
-    if package_name.startswith('pip '):
-        package_name = 'pip3 '+package_name[3:].strip()
-
+    if type(package_names) is str:
+        package_names = [package_names]
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
+    if tests is None:
+        tests = []
+
+    package_names1 = []
+    timeout = 64
     renames = {'apt ping':'apt iputils-ping','apt apache':'apt apache2',
                'apt python':'apt python3-pip', 'apt python3':'apt python3-pip',
                'apt aws':'apt awscli', 'apt netcat':'apt netcat-openbsd'}
-    package_name = renames.get(package_name, package_name)
+    for package_name in package_names:
+        package_name = package_name.lower().replace('_','-')
+        package_name = renames.get(package_name, package_name) # Lowercase, 0-9 -+ only.
+        if package_name.startswith('pip '):
+            package_name = 'pip3 '+package_name[3:].strip()
+        package_name = renames.get(package_name, package_name)
+        package_names1.append(package_name)
+        timeouts = {'apt awscli':128, 'apt python3-pip':128}
+        timeout = max(timeout, timeouts.get(package_name, 64))
+    package_names = package_names1
 
     xtra_cmds = {}
     xtra_cmds['apt apache2'] = ['sudo apt install libcgi-session-perl',
@@ -189,42 +201,36 @@ def install_package(inst_or_pipe, package_name, tests=None, printouts=None, **kw
             'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
     xtra_cmds['apt awscli'] = ['aws configure']
     xtra_cmds['apt python3-pip'] = ['PYTHON3_PATH=$(which python3)', 'sudo ln -sf $PYTHON3_PATH /usr/local/bin/python', 'sudo apt upgrade python3']
-
-    timeouts = {'apt awscli':128, 'apt python3-pip':128}
-    timeout = timeouts.get(package_name, 64)
-
-    if tests is None:
-        tests = []
-
     extra_prompts = {}
+
+    # The null prompts (empty string) may help to keep ssh alive:
+    publicAWS_key = 'NO AWS PACAKGE'
+    privateAWS_key = 'NO AWS PACKAGE'
+    AWSregion_name = 'NO AWS REGION'
     boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
     boto3_fix = 'sudo apt upgrade openssl\npip3 install --upgrade boto3 botocore'
+    for package_name in package_names:
+        if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
+            colorful.bprint('awscli is a HEAVY installation. Should take about 5 min.')
+            region_name = cloud_vm.get_region_name()
+            user_id = covert.user_dangerkey(kwargs['user_name'])
+            publicAWS_key, privateAWS_key = covert.get_key(user_id)
     extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
-
-    if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
-        # TODO: Move this (aws specific code) to the AWS folder.
-        colorful.bprint('awscli is a HEAVY installation. Should take about 5 min.')
-        region_name = cloud_vm.get_region_name()
-        user_id = covert.user_dangerkey(kwargs['user_name'])
-        publicAWS_key, privateAWS_key = covert.get_key(user_id)
-
-        # The null prompts (empty string) may help to keep ssh alive:
-        extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
-                                    'region name':region_name, 'output format':'json',
-                                    'Geographic area':11, #11 = SystemV
-                                    boto3_err:boto3_fix,
-                                    'Get:42':'', 'Unpacking awscli':'',
-                                    'Setting up fontconfig':'', 'Extracting templates from packages':'',
-                                    'Unpacking libaom3:amd64':''}
+    extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+                                'region name':AWSregion_name, 'output format':'json',
+                                'Geographic area':11, #11 = SystemV
+                                boto3_err:boto3_fix,
+                                'Get:42':'', 'Unpacking awscli':'',
+                                'Setting up fontconfig':'', 'Extracting templates from packages':'',
+                                'Unpacking libaom3:amd64':''}
 
     ### Core installation:
-    package_name = package_name.lower().replace('_','-')
-    package_name = renames.get(package_name, package_name) # Lowercase, 0-9 -+ only.
-    package_manager = package_name.split()
-
+    extras = []
+    for package_name in package_names:
+        extras.extend(xtra_cmds.get(package_name, []))
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     response_map = {**{**plumber.default_prompts(), **cloud_entry}, **extra_prompts.get(package_name,{})}
-    p = plumber.Plumber(tubo, [package_name], response_map, xtra_cmds.get(package_name, []), tests, dt=2.0)
+    p = plumber.Plumber(tubo, package_names, response_map, extras, tests, dt=2.0)
     tubo = p.run()
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:

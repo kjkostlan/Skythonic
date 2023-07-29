@@ -130,18 +130,18 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
         region_name = region_name[0:-1]
 
     #tubo = vm.upgrade_os(inst_id, printouts=True)
-    tubo = vm.install_package(inst_id, 'apt python3', tests=[['python3\nprint(id)\nquit()', '<built-in function id>']])
+    tubo = vm.install_packages(inst_id, 'apt python3', tests=[['python3\nprint(id)\nquit()', '<built-in function id>']])
     for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump']:
-        tubo = vm.install_package(tubo, pk_name)
-    tubo = vm.install_package(tubo, ['apt pint'], tests=[['ping -c 1 localhost', '0% packet loss']])
+        tubo = vm.install_packages(tubo, pk_name)
+    tubo = vm.install_packages(tubo, 'apt ping', tests=[['ping -c 1 localhost', '0% packet loss']])
     for pk_name in ['skythonic', 'host-list']:
         tubo = vm.install_custom_package(tubo, pk_name)
     if platform == 'aws':
-        tubo = vm.install_package(tubo, 'apt aws-cli', tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']], user_name=user_name)
-        tubo = vm.install_package(tubo, 'pip boto3', tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
+        tubo = vm.install_packages(tubo, 'apt aws-cli', tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']], user_name=user_name)
+        tubo = vm.install_packages(tubo, 'pip boto3', tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
     elif platform == 'azure':
         for package_cmd in ['pip azure-core', 'pip azure-identity', 'pip paramiko', 'pip azure-mgmt-resource', 'pip azure-mgmt-compute', 'pip azure-mgmt-storage', 'pip azure-mgmt-network', 'pip install azure-mgmt-storage']:
-            tubo = vm.install_package(tubo, package_cmd)
+            tubo = vm.install_packages(tubo, package_cmd)
     else:
         raise Exception('TODO get net_setup working on this cloud platform: '+platform)
     cloud_vm.restart_vm(inst_id)
@@ -212,15 +212,15 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     for i in range(3):
         inst_id = inst_ids[i]
 
-        tubo = vm.install_package(inst_id, 'apt mysql-client', printouts=True)
+        tubo = vm.install_packages(inst_id, 'apt mysql-client', printouts=True)
         for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
-            tubo = vm.install_package(tubo, pk_name, printouts=True)
+            tubo = vm.install_packages(tubo, pk_name, printouts=True)
     vm.install_custom_package(inst_ids[1], 'app-server')
-    vm.install_package(inst_ids[0], 'apt apache')
+    vm.install_packages(inst_ids[0], 'apt apache')
     web_s_tests = [['sudo service apache2 start',''], ['curl -k http://localhost', ['apache2', '<div>', '<html']],
                    ['systemctl status apache2.service', ['The Apache HTTP Server', 'Main PID:']]]
     vm.install_custom_package(inst_ids[0], 'web-server', tests=web_s_tests)
-    vm.install_package(inst_ids[2], 'apt mysql-server', printouts=True)
+    vm.install_packages(inst_ids[2], 'apt mysql-server', printouts=True)
 
     #The gateway is the VpcPeeringConnectionId
     peering_id = cloud_core.create_once('vpcpeer', 'BYOC_3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #cloud_core.assoc(jbox_vpc_id, vpc_id)

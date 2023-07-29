@@ -53,23 +53,23 @@ def ubuntu_aim_image(precompute=True):
     # Attemts to return the latest "stable" minimal AIM Ubuntu image.
     TODO
 
-def restart_vm(instance_id):
-    if instance_id is None:
-        raise Exception('None instance.')
-    if type(instance_id) is list or type(instance_id) is tuple: # Many at once should be faster in parallel?
-        instance_ids = [AWS_format.obj2id(iid) for iid in instance_id]
-    else:
-        instance_ids = [AWS_format.obj2id(instance_id)]
-    TODO
+def shutdown_vm(instance_id):
+    instance_id = Azure_format.obj2id(instance_id)
+    resource_group_name = instance_id.split("/")[4]
+    vm_name = instance_id.split("/")[-1]
+    Azure_nugget.compute_client.virtual_machines.begin_power_off(resource_group_name, vm_name)
 
 def start_vm(instance_id): # Idempotent if already started.
     instance_id = Azure_format.obj2id(instance_id)
-    #in_state = TODO
-    #if in_state == 'terminated':
-    #    raise Exception(f'The instance {instance_id} has been terminated and can never ever be used again.')
     resource_group_name = instance_id.split("/")[4]
     vm_name = instance_id.split("/")[-1]
     Azure_nugget.compute_client.virtual_machines.begin_start(resource_group_name, vm_name)
+
+def restart_vm(instance_id):
+    instance_id = Azure_format.obj2id(instance_id)
+    resource_group_name = instance_id.split("/")[4]
+    vm_name = instance_id.split("/")[-1]
+    Azure_nugget.compute_client.virtual_machines.begin_restart(resource_group_name, vm_name)
 
 def ubuntu_aim_image(location):
     # Find a good image.
