@@ -5,7 +5,8 @@ def lingers(desc_or_id):
     #Do all cloud providors have this lingering resource problem?
     if desc_or_id is None:
         return False
-    return Azure_format.tag_dict(desc_or_id).get('__deleted__',False)
+    x = Azure_format.tag_dict(desc_or_id).get('__deleted__', False)
+    return x is True or str(x).lower() == 'true'
 
 def get_resources(which_types=None, ids=False, include_lingers=False, filters=None):
     # The most common resources. Filter by which to shave off a few 100 ms from this query.
@@ -26,7 +27,7 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
         which_types = set([Azure_format.enumr(ty) for ty in which_types])
 
     if which_types is None or 'vpc' in which_types or 'vnet' in which_types: # Python only introduced the switch statement in 3.10
-        out['vnets'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.virtual_networks.list_all()]
+        out['vnets'] = Azure_nugget.basic_looptry(lambda: [Azure_format.to_dict(x) for x in Azure_nugget.network_client.virtual_networks.list_all()], 'vnet_query')
     if which_types is None or 'webgate' in which_types:
         #out['webgates'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.virtual_network_gateways.list_all()] # No method list_all()
         out['webgates'] = [Azure_format.to_dict(x) for x in Azure_nugget.resource_client.resources.list(filter="resourceType eq 'Microsoft.Network/virtualNetworkGateways'")]
@@ -34,7 +35,12 @@ def get_resources(which_types=None, ids=False, include_lingers=False, filters=No
         out['rtables'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.route_tables.list_all()]
     if which_types is None or 'subnet' in which_types:
         #out['subnets'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.subnets.list_all()] # No method list_all()
-        out['subnets'] = [Azure_format.to_dict(x) for x in Azure_nugget.resource_client.resources.list(filter="resourceType eq 'Microsoft.Network/virtualNetworks/subnets'")]
+        #out['subnets'] = [Azure_format.to_dict(x) for x in Azure_nugget.resource_client.resources.list(filter="resourceType eq 'Microsoft.Network/virtualNetworks/subnets'")]
+        vnets = get_resources(which_types='vnets', ids=False, include_lingers=include_lingers, filters=filters)
+        subnetss = []
+        for vnet in vnets:
+            subnetss.extend(vnet['properties'].get('subnets',[]))
+        out['subnets'] = subnetss
     if which_types is None or 'sgroup' in which_types:
         out['sgroups'] = [Azure_format.to_dict(x) for x in Azure_nugget.network_client.network_security_groups.list_all()]
     if which_types is None or 'kpair' in which_types:
@@ -94,7 +100,6 @@ def get_by_tag(rtype, k, v, include_lingers=False): # Returns None if no such re
 def get_by_name(rtype, name, include_lingers=False):
     # Maybe a more efficient way?
     ids_of_rtype = get_resources(which_types=rtype, ids=True, include_lingers=include_lingers, filters=None)
-
     for the_id in ids_of_rtype:
         if '/'+name+'/' in the_id+'/':
             return Azure_format.to_dict(the_id)

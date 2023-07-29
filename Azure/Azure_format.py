@@ -17,7 +17,7 @@ def enumr(txt0): # ENUMerate Resourse type. Different clouds may call it by diff
         return 'sgroup'
     if txt in ['keypair', 'kpair', 'key', 'secret']:
         return 'kpair'
-    if txt in ['instance', 'machine'] or '/Microsoft.Compute/virtualMachines/'.lower() in txt:
+    if txt in ['instance', 'machine', 'vm', 'virtual_machine', 'virtualmachine'] or '/Microsoft.Compute/virtualMachines/'.lower() in txt:
         return 'machine'
     if txt in ['address', 'addres', 'addresses', 'addresse'] or '/Microsoft.Network/publicIPAddresses/'.lower() in txt:
         return 'address'
@@ -93,8 +93,10 @@ def obj2id(obj_desc): # Gets the ID from a description.
                 raise Exception('resourceGuides are very mysterious (vnets; sometimes [properties][subnets][0][id][all but last two pieces] would work).')
         print('Uh ho obj desc is:', obj_desc)
         raise Exception('Cannot extract the id for object-as-dict with keys:'+str(obj_desc.keys()))
+    elif hasattr(obj_desc, 'id'): # Does this ever lead us astray?
+        return obj_desc.id
     elif hasattr(obj_desc, 'serialize'):
-        return obj_desc.serialize()['id'] # Azures uses these to make a dict representation.
+        return obj2id(obj_desc.serialize()) # Azures uses these to make a dict representation.
     raise Exception('Azure obj2id fail on type: '+str(type(obj_desc)))
 
 def id2obj(the_id, assert_exist=True):
@@ -102,7 +104,7 @@ def id2obj(the_id, assert_exist=True):
     if type(the_id) is dict:
         return the_id # Already a description.
     if type(the_id) is str:
-        x = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
+        x = Azure_nugget.try_versions(Azure_nugget.resource_client.resources.get_by_id, the_id)
         out = x.serialize()
         if 'id' not in out:
             out['id'] = x.id
@@ -117,5 +119,5 @@ to_dict = id2obj # Alternate name for converting Azure objects to dict.
 
 def tag_dict(desc_or_id):
     the_id = obj2id(desc_or_id)
-    resource = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
+    resource = Azure_nugget.try_versions(Azure_nugget.resource_client.resources.get_by_id, the_id)
     return {} if resource.tags is None else resource.tags

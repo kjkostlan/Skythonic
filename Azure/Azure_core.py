@@ -17,16 +17,16 @@ def add_tags(desc_or_id, tags_to_add, ignore_none_desc=False):
             raise Exception('None object')
         return False
     the_id = Azure_format.obj2id(desc_or_id)
-    the_obj = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
+    the_obj = Azure_nugget.try_versions(Azure_nugget.resource_client.resources.get_by_id, the_id)
 
     if the_obj.tags is None:
         the_obj.tags = tags_to_add
     else:
         the_obj.tags.update(tags_to_add)
     try:
-        Azure_nugget.resource_client.resources.begin_create_or_update_by_id(the_id, api_version=Azure_nugget.api_version,  parameters=the_obj)
+        Azure_nugget.try_versions(Azure_nugget.resource_client.resources.begin_create_or_update_by_id, the_id,  parameters=the_obj)
     except Exception as e:
-        if "Could not find member 'tags' on" in str(e):
+        if "Could not find member 'tags' on" in str(e) or ('PUT operation on resource' in str(e) and 'is not supported' in str(e)):
             print('Warning: This resource cannot accept tags:', the_id)
         else:
             raise e
@@ -127,7 +127,7 @@ def create_once(rtype, name, printouts, **kwargs):
             print('...done')
         return out
 
-def delete(desc_or_id):
+def delete(desc_or_id, raise_not_founds=True):
     # Deletes an object (returns True if sucessful, False if object wasn't existing).
     the_id = Azure_format.obj2id(desc_or_id)
     if the_id is None:
@@ -140,22 +140,20 @@ def delete(desc_or_id):
         else:
             raise Exception('Once-per-session deletion confirmation denied by user.')
 
-    del_tag = {'__deleted__':True}
-    def _first_way(): # Multible ways to do something, which one is better?
-        Azure_nugget.resource_client.resources.begin_create_or_update_by_id(the_id, api_version=Azure_nugget.api_version,  parameters=del_tag)
-    def _second_way():
-        # TODO: duplicate code with add tags.
-        x = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
-        if not x:
-            raise Exception('None resource')
-        tags1 = {**x.tags, **del_tag} if (hasattr(x,'tags') and x.tags) else del_tag
-        x.tags = tags1
-        #Azure_nugget.resource_client.resources.begin_create_or_update(the_id, x)
-        Azure_nugget.resource_client.resources.begin_create_or_update_by_id(the_id, api_version=Azure_nugget.api_version,  parameters=x)
-    _second_way()
-
-    #ty = Azure_format.enumr(the_id)
-    Azure_nugget.resource_client.resources.begin_delete_by_id(the_id, api_version=Azure_nugget.api_version)
+    try:
+        Azure_nugget.basic_looptry(lambda:add_tags(the_id, {'__deleted__':True}), 'set deleted tag')
+        try:
+            Azure_nugget.try_versions(Azure_nugget.resource_client.resources.begin_delete_by_id, the_id)
+        except Exception as e:
+            add_tags(the_id, {'__deleted__':False}) # Errors thrown at deletion mean that no deletion has commenced.
+            raise e
+    except Exception as e:
+        if 'was not found' in str(e) or str(e).strip().endswith('not found.'):
+            if raise_not_founds:
+                raise Exception('Resource not found for deletion, suppress this error with raise_not_founds=False: ' + the_id)
+            return False
+        else:
+            raise e
 
     return True
 
@@ -168,15 +166,15 @@ def assoc(A, B, _swapped=False):
     if (rA=='vpc' or rA=='vnet') and rB=='webgate':
         TODO
     elif (rA=='vpc' or rA=='vnet') and rB == 'sgroup':
-        vnet = Azure_nugget.resource_client.resources.get_by_id(A, api_version=Azure_nugget.api_version)
+        vnet = Azure_nugget.try_versions(Azure_nugget.resource_client.resources.get_by_id, A)
         vnet.network_security_group = {'id': B}
 
         vnet_rgroup =  A.split('/')[A.split('/').index('resourceGroups')+1]
         Azure_nugget.network_client.virtual_networks.begin_create_or_update(vnet_rgroup, vnet.name, vnet)
     elif rA=='subnet' and rB=='rtable':
-        subnet = Azure_nugget.resource_client.resources.get_by_id(A, api_version=Azure_nugget.api_version)
+        subnet = Azure_nugget.try_versions(Azure_nugget.resource_client.resources.get_by_id, A)
         subnet.route_table = {'id':B}
-        Azure_nugget.resource_client.resources.begin_create_or_update_by_id(A, api_version=Azure_nugget.api_version, parameters=subnet)
+        Azure_nugget.try_versions(Azure_nugget.resource_client.resources.begin_create_or_update_by_id, A, parameters=subnet)
     elif rA=='address' and rB=='machine':
         TODO
     elif (rA=='vpc' or rA=='vnet') and (rB=='vpc' or rB=='vnet'): # Peering can be thought of as an association.
@@ -194,7 +192,7 @@ dissoc = disassoc # For those familiar with Clojure...
 def modify_attribute(desc_or_id, k, v):
     # Is this simplier than AWS since the API isn't as dependent on different resource types?
     the_id = Azure_format.obj2id(desc_or_id)
-    resource = Azure_nugget.resource_client.resources.get_by_id(the_id, api_version=Azure_nugget.api_version)
+    resource = Azure_nugget.try_versions(Azure_nugget.resource_client.resources.get_by_id, the_id)
     setattr(resource, k, v)
 
 def connect_to_internet(rtable_id, vnet_id):

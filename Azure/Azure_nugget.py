@@ -1,5 +1,6 @@
 # The initialization is much harder than AWS boto3.
 import subprocess
+from waterworks import plumber
 try:
     from azure.identity import AzureCliCredential
     from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet
@@ -16,7 +17,26 @@ def get_subscription_id():
     the_id = subprocess.check_output("az account show --query 'id' -o tsv", shell=True)
     return the_id.decode('utf-8').strip()
 
-api_version = '2022-11-01'# Mix-n-match versions. Can you block all the holes in the swiss cheese? #'2023-07-01'#'2023-04-01'
+def try_versions(f, *args, **kwargs):
+    # We have to guess the API versions. Different functions have different API versions!
+    versions = ['2023-04-01', '2023-04-02', '2023-07-01'] # TODO: fill out with the latest for all the different programmers.
+    for v in versions:
+        kwargs['api_version'] = v
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            if 'and API version' in str(e):
+                pass # We guessed wrong.
+            else:
+                raise e
+    print('Uh no API version works here, lets see the list of valid versions:')
+    f(*args, **kwargs)
+
+def basic_looptry(f, msg):
+    def f_catch(e):
+        txt = str(e)
+        return 'Failed to invoke the Azure CLI' in txt or 'is in progress' in txt
+    return plumber.loop_try(f, f_catch, msg, delay=1)
 
 try: # One-time setup.
     _subs_id

@@ -72,7 +72,9 @@ def create_vm_dangerkey(vm_name, vm_params, key_name):
             from cryptography.hazmat.primitives.asymmetric import rsa
             from cryptography.hazmat.primitives import serialization
             private_key = rsa.generate_private_key(public_exponent=65537,key_size=2048,backend=backends.default_backend())
-            new_key_mat = private_key.private_bytes(encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.PKCS8, encryption_algorithm=serialization.NoEncryption())
+            #_format = serialization.PrivateFormat.PKCS8# Incorrect for Paramiko I think.
+            _format = serialization.PrivateFormat.TraditionalOpenSSL
+            new_key_mat = private_key.private_bytes(encoding=serialization.Encoding.PEM, format=_format, encryption_algorithm=serialization.NoEncryption())
             new_key_mat = new_key_mat.decode()
         else:
             raise Exception('TODO: covery.py support of platform: '+platform)

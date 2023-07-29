@@ -19,8 +19,12 @@ def our_vm_id():
     #return stuff['Reservations'][0]['Instances'][0]['InstanceId']
 
 def get_ip(x): # Address or machine.
-    if type(x) is str and '.' in x: # Actually an ip address.
-        return x
+    if type(x) is str and len(x)<64: # Idempotent if actually an IP address.
+        x1 = x.replace('db8','')
+        for c in '0123456789.:':
+            x1 = x1.replace(c,'')
+        if len(x1) == 0: # IPV4 or IPV6 address detected.
+            return x
     if type(x) is str:
         x = AWS_format.id2obj(x)
     if 'PublicIp' in x:
