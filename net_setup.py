@@ -140,8 +140,11 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
         tubo = vm.install_packages(tubo, 'apt aws-cli', tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']], user_name=user_name)
         tubo = vm.install_packages(tubo, 'pip boto3', tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
     elif platform == 'azure':
-        for package_cmd in ['pip azure-core', 'pip azure-identity', 'pip paramiko', 'pip azure-mgmt-resource', 'pip azure-mgmt-compute', 'pip azure-mgmt-storage', 'pip azure-mgmt-network', 'pip install azure-mgmt-storage']:
+        for package_cmd in ['pip azure-core', 'pip azure-identity', 'pip paramiko', 'pip azure-mgmt-resource', 'pip azure-mgmt-compute', 'pip azure-mgmt-storage', 'pip azure-mgmt-network', 'pip install azure-mgmt-storage', 'azure-cli']:
             tubo = vm.install_packages(tubo, package_cmd)
+            tubo.close()
+        from Azure import Azure_permiss # TODO: also put AWS permission fns into AWS_permiss.
+        Azure_permiss.empower_vm(inst_id)
     else:
         raise Exception('TODO get net_setup working on this cloud platform: '+platform)
     cloud_vm.restart_vm(inst_id)

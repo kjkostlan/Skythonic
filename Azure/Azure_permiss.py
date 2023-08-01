@@ -36,17 +36,55 @@ def authorize_ingress(sgroup_id, cidr, protocol, port0, port1):
         "Allow_"+protocol,
         ssh_rule_params)
 
-def empower_vm(instance_id):
+def empower_vm(instance_id, redo_login=False):
     # Give a vm access to the Azure account.
-    # Azure_permiss.empower_vm(Azure_query.get_resources('instances', ids=True)[0])
+    import time
+    from waterworks import plumber, eye_term # Plumbers are debuggy.
     import vm
     from . import Azure_format
     instance_id = Azure_format.obj2id(instance_id)
-    core_cmds = ['cd ~/Skythonic', 'python', 'from azure.mgmt.network.models import SecurityRule']
-    tubo = vm.patient_ssh_pipe(instance_id, printouts=True, binary_mode=False)
-    response_map = {**plumber.default_prompts(), **{}}
-    tests = [['python\nx=2*6\nprint(x)', '12']]
 
-    p = plumber.Plumber(tubo, [], response_map, core_cmds, tests, dt=2.0)
+    tubo = vm.patient_ssh_pipe(instance_id, printouts=True, binary_mode=False)
+    tubo.send('echo using_az_login')
+    while not eye_term.standard_is_done(tubo.blit(include_history=False)): # Initial startup cmd, not sure if necessary.
+        time.sleep(0.25)
+
+    need_to_log_in = True
+    if not redo_login:
+        tubo.send('az account show -o jsonc')
+        while not eye_term.standard_is_done(tubo.blit(include_history=False)):
+            time.sleep(0.25)
+        txt = tubo.blit()
+        need_to_log_in = "Please run 'az login' to setup account." in txt
+        if not need_to_log_in:
+            if 'environmentName' in txt and 'tenantId' in txt:
+                pass
+            else:
+                raise Exception('Cannot confirm or deny if this vm is "az login"ed or not.')
+
+    if need_to_log_in:
+        tubo.send('az login --use-device-code\n')
+        print('MANUAL step: paste this URL and code into your browser and then log into Azure if need be.')
+        while not eye_term.standard_is_done(tubo.blit(include_history=False)):
+            time.sleep(0.25)
+    else:
+        print('SKIPPING log in step, already logged in. Use redo_login=True to force a redo')
+
+    # Testing:
+    core_cmds = ['cd ~/Skythonic', 'python3', 'import subprocess', 'from azure.mgmt.network.models import SecurityRule']
+    core_cmds.extend(['print(SecurityRule)'])
+    core_cmds.extend(['''_subs_id = subprocess.check_output("az account show --query 'id' -o tsv", shell=True).decode('utf-8').strip()'''])
+    core_cmds.extend(['print("The subs_id:", _subs_id)'])
+    core_cmds.extend(["print(745*2430 if '-' in _subs_id else None)"])
+
+    response_map = {**plumber.default_prompts(), **{}}
+    tests = [['python\nx=2*6\nprint(x)\nquit()', '12']]
+
+    tasks = {'commands':core_cmds}
+    p = plumber.Plumber(tubo, tasks, response_map, dt=2.0)
     tubo = p.run()
-    TODO
+
+    if str(745*2430) not in p.blit_all():
+        raise Exception('Cannot verify the Python Azure test.')
+
+    return True

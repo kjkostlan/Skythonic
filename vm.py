@@ -207,8 +207,14 @@ def _package_info(**kwargs):
     toverrides = {}
     make_pip_test = lambda _lib:[f'python3\nimport sys\nimport {_lib}\nx=456*789 if "{_lib}" in sys.modules else 123*456\nprint(x)\nquit()', str(456*789)] # TODO: duplicate code with tmp_plumb.
     toverrides['pip3 azure-core'] = [make_pip_test('azure')]
-    return {'slowness':slowness, 'extra_prompts':extra_prompts, 'extra_cmds':xtra_cmds, 'renames':renames, 'test_overrides':toverrides}
+    fulloverrides = {}
+    #https://github.com/Azure/azure-cli/issues/23915
+    fulloverrides['azure-cli'] = {'commands':['curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash'], 'tests':[['az', 'Manage Internet of Things (IoT) assets.']]}
+    for k in ['apt azure-cli', 'azurecli', 'apt azurecli']:
+        fulloverrides[k] = fulloverrides['azure-cli']
+    return {'slowness':slowness, 'extra_prompts':extra_prompts, 'extra_cmds':xtra_cmds, 'renames':renames, 'test_overrides':toverrides, 'total_overrides':fulloverrides}
 
+#curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=None, **kwargs):
     # Includes configuration for common packages;
     # package_name = "apt apache2" or "pip boto3".
@@ -260,10 +266,15 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=No
     ## Tasks:
     tasks = []
     for pkg in package_names:
-        x = {'packages':[pkg], 'commands':details['extra_cmds'].get(pkg,[])}
-        if details['test_overrides'].get(pkg):
-            x['tests'] = details['test_overrides'].get(pkg)
+        if details['total_overrides'].get(pkg):
+            x = details['total_overrides'].get(pkg)
+        else:
+            x = {'packages':[pkg], 'commands':details['extra_cmds'].get(pkg,[])}
+            if details['test_overrides'].get(pkg):
+                x['tests'] = details['test_overrides'].get(pkg)
         tasks.append(x)
+    if len(extra_tests)>0: # Better practice is to use tests when there is only one package to install.
+        tasks[-1]['tests'] = tasks[-1].get('tests', [])+extra_tests
 
     p = plumber.Plumber(tubo, tasks, response_map, fn_override=None, dt=2.0)
     tubo = p.run()
