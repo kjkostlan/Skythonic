@@ -131,3 +131,5 @@ dmypy.json
 # External packages.
 waterworks/
 code_in_a_box.py
+
+./user_pastein.txt

@@ -1,4 +1,5 @@
 import os, sys, time
+from waterworks import file_io
 import proj
 
 #######################Different code depending on which package################
@@ -119,22 +120,28 @@ if __name__ == '__main__': # For running on your local machine.
 
     while True:
         sourcecode_before_input = file_io.python_source_load()
-        x = input('<None> = load diffs, gm = Github with main branch bootstrap, gd = Github with dev fetch bootstrap, q = quit:')
+        x = input('<None> = load diffs, gm = Github with main branch bootstrap, gd = Github with dev fetch bootstrap, q = quit; add "p" to include user paste-in:')
         x = x.lower().strip()
         if x=='q' or x=='quit()':
             quit()
         sourcecode_afr_input = file_io.python_source_load()
         source_diff = _src_diff(sourcecode_before_input, sourcecode_afr_input)
 
+        user_pastein = ''
+        if x.endswith('p'):
+            x = x[0:-1]
+            user_pastein = '\n'+file_io.fload('./user_pastein.txt')
+            print('User pastein has been choosen.')
+
         if x == 'gd' or x == 'gm':
             branch = 'main' if x == 'gm' else 'dev'
             txt = _gitHub_bootstrap_txt(branch=branch)
-            clipboard.copy(txt)
+            clipboard.copy(txt+user_pastein+'\n')
             print(f'Bootstrap ready using GitHub fetch ({branch} branch).')
         elif x == '' or not x:
             big_txt = file_io.pickle64(source_diff)
             txt = _get_update_txt(big_txt)
-            clipboard.copy(txt)
+            clipboard.copy(txt+user_pastein+'\n')
             n = len(source_diff)
             if n==0:
                 print('No pickled files but code has been copied to jumpstart your Python work.')
