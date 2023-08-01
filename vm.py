@@ -1,7 +1,8 @@
 # Tools for keeping track of virtual machines, such as the login keys
 import sys, os, time, paramiko
 import covert, proj
-from waterworks import eye_term, plumber, file_io, colorful
+from waterworks import eye_term, file_io, colorful, plumber
+import waterworks.plumber_tools as ptools
 
 proj.platform_import_modules(sys.modules[__name__], ['cloud_vm'])
 
@@ -40,7 +41,7 @@ def patient_ssh_pipe(instance_id, printouts=True, binary_mode=False):
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: cloud_vm.restart_vm(instance_id)
 
-    p = plumber.Plumber(tubo, [], {}, [], 'default', dt=0.5)
+    p = plumber.Plumber(tubo, [], {}, dt=0.5)
     p.run()
     return p.tubo
 
@@ -65,7 +66,8 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
         colorful.bprint(f'Sending {len(file2contents)} files to {remote_root_folder} {instance_id}')
 
     tubo = patient_ssh_pipe(instance_id, printouts=printouts)
-    p = plumber.Plumber(tubo, [], {}, [f'mkdir -p {eye_term.quoteless(remote_root_folder)}'], [], dt=2.0)
+
+    p = plumber.Plumber(tubo, [{'commands':[f'mkdir -p {eye_term.quoteless(remote_root_folder)}']}], {}, dt=2.0)
     p.run()
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
@@ -111,7 +113,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
-    p = plumber.Plumber(tubo, [], {}, [scp_cmd+'\necho download_cmd_ran'], 'default', dt=2.0)
+    p = plumber.Plumber(tubo, [{'commands':[scp_cmd+'\necho download_cmd_ran']}], dt=2.0)
     p.run()
 
     if local_dest_folder is None:
@@ -139,10 +141,10 @@ def update_apt(inst_or_pipe, printouts=None):
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
-    pairs = [['sudo apt-get update\nsudo apt-get upgrade', 'Reading state information... Done']]
+    test_pairs = [['sudo apt-get update\nsudo apt-get upgrade', 'Reading state information... Done']]
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
 
-    p = plumber.Plumber(tubo, [], {}, ['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], pairs, dt=0.5)
+    p = plumber.Plumber(tubo, [{'commands':['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], 'tests':test_pairs}], {}, dt=0.5)
     p.run()
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
@@ -154,41 +156,20 @@ def upgrade_os(inst_or_pipe, printouts=None):
     raise Exception('TODO: Upgrading the OS over SSH seems to not work properly. Instead try to use a newer image in the initial vm.')
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     response_map = {**plumber.default_prompts(), **cloud_entry}
-    p = plumber.Plumber(tubo, [], response_map, ['sudo do-release-upgrade', 'echo hopefully_upgraded_now'], [], dt=2.0)
+
+    p = plumber.Plumber(tubo, [{'commands':['sudo do-release-upgrade', 'echo hopefully_upgraded_now']}], response_map, dt=2.0)
     tubo = p.run()
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         p.tubo.close()
     return tubo
 
-def install_packages(inst_or_pipe, package_names, tests=None, printouts=None, **kwargs):
-    # Includes configuration for common packages;
-    # package_name = "apt apache2" or "pip boto3".
-    # Some pacakges will require kwards for configuration.
-    # Include tests so that the Plumber can ensure that the packages installed properly.
-    if type(package_names) is str:
-        package_names = [package_names]
-    if inst_or_pipe is None:
-        raise Exception('None instance/pipe')
-    if tests is None:
-        tests = []
 
-    package_names1 = []
-    timeout = 64
+def _package_info(**kwargs):
     renames = {'apt ping':'apt iputils-ping','apt apache':'apt apache2',
                'apt python':'apt python3-pip', 'apt python3':'apt python3-pip',
                'apt aws':'apt awscli', 'apt netcat':'apt netcat-openbsd'}
-    for package_name in package_names:
-        package_name = package_name.lower().replace('_','-')
-        package_name = renames.get(package_name, package_name) # Lowercase, 0-9 -+ only.
-        if package_name.startswith('pip '):
-            package_name = 'pip3 '+package_name[3:].strip()
-        package_name = renames.get(package_name, package_name)
-        package_names1.append(package_name)
-        timeouts = {'apt awscli':128, 'apt python3-pip':128}
-        timeout = max(timeout, timeouts.get(package_name, 64))
-    package_names = package_names1
-
+    slowness = {'apt awscli':2, 'apt python3-pip':2} # Longer timeouts here.
     xtra_cmds = {}
     xtra_cmds['apt apache2'] = ['sudo apt install libcgi-session-perl',
             'sudo systemctl enable apache2',
@@ -201,36 +182,90 @@ def install_packages(inst_or_pipe, package_names, tests=None, printouts=None, **
             'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
     xtra_cmds['apt awscli'] = ['aws configure']
     xtra_cmds['apt python3-pip'] = ['PYTHON3_PATH=$(which python3)', 'sudo ln -sf $PYTHON3_PATH /usr/local/bin/python', 'sudo apt upgrade python3']
-    extra_prompts = {}
 
-    # The null prompts (empty string) may help to keep ssh alive:
-    publicAWS_key = 'NO AWS PACAKGE'
+    boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
+    boto3_fix = 'sudo apt upgrade openssl\npip3 install --upgrade boto3 botocore'
+    publicAWS_key = 'NO AWS PACKAGE'
     privateAWS_key = 'NO AWS PACKAGE'
     AWSregion_name = 'NO AWS REGION'
     boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
     boto3_fix = 'sudo apt upgrade openssl\npip3 install --upgrade boto3 botocore'
+    if proj.which_cloud()=='aws':
+        AWSregion_name = cloud_vm.get_region_name()
+        AWSuser_id = covert.user_dangerkey(kwargs['user_name'])
+        publicAWS_key, privateAWS_key = covert.get_key(user_id)
+    extra_prompts = {}
+    extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
+    extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+                                   'region name':AWSregion_name, 'output format':'json',
+                                   'Geographic area':11, #11 = SystemV
+                                   boto3_err:boto3_fix,
+                                   'Get:42':'', 'Unpacking awscli':'', # The null prompts (empty string) may help to keep ssh alive
+                                   'Setting up fontconfig':'', 'Extracting templates from packages':'',
+                                   'Unpacking libaom3:amd64':''}
+
+    toverrides = {}
+    make_pip_test = lambda _lib:[f'python3\nimport sys\nimport {_lib}\nx=456*789 if "{_lib}" in sys.modules else 123*456\nprint(x)\nquit()', str(456*789)] # TODO: duplicate code with tmp_plumb.
+    toverrides['pip3 azure-core'] = [make_pip_test('azure')]
+    return {'slowness':slowness, 'extra_prompts':extra_prompts, 'extra_cmds':xtra_cmds, 'renames':renames, 'test_overrides':toverrides}
+
+def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=None, **kwargs):
+    # Includes configuration for common packages;
+    # package_name = "apt apache2" or "pip boto3".
+    # Some pacakges will require kwards for configuration.
+    # Include tests so that the Plumber can ensure that the packages installed properly.
+    details = _package_info(**kwargs)
+    if type(package_names) is str:
+        package_names = [package_names]
+    if extra_tests is not None:
+        TODO # Allocation per package, etc.
+
+    if inst_or_pipe is None:
+        raise Exception('None instance/pipe')
+    if extra_tests is None:
+        extra_tests = [] # The basic "get-ready for cloud" packages come with thier own tests.
+    package_names = [x.lower().replace('_','-').strip() for x in package_names]
+    package_names = ['pip3 '+x[3:].strip() if x.startswith('pip ') else x for x in package_names]
+    package_names = [details['renames'].get(x, x) for x in package_names]
+
     for package_name in package_names:
         if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
             colorful.bprint('awscli is a HEAVY installation. Should take about 5 min.')
-            region_name = cloud_vm.get_region_name()
-            user_id = covert.user_dangerkey(kwargs['user_name'])
-            publicAWS_key, privateAWS_key = covert.get_key(user_id)
-    extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
-    extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
-                                'region name':AWSregion_name, 'output format':'json',
-                                'Geographic area':11, #11 = SystemV
-                                boto3_err:boto3_fix,
-                                'Get:42':'', 'Unpacking awscli':'',
-                                'Setting up fontconfig':'', 'Extracting templates from packages':'',
-                                'Unpacking libaom3:amd64':''}
 
-    ### Core installation:
-    extras = []
+    tasks = []
+    timeout = 64 # TODO: Do we even use this?
     for package_name in package_names:
-        extras.extend(xtra_cmds.get(package_name, []))
+        timeout = max(timeout, 64*details['slowness'].get(package_name, 1))
+
+    response_map = {**plumber.default_prompts(), **cloud_entry}
+    for package_name in package_names:
+        response_map = {**response_map, **details['extra_prompts'].get(package_name, {})}
+
+    # Apt response maps:
+    response_map['Unable to acquire the dpkg frontend lock'] = 'ps aux | grep -i apt --color=never'
+    response_map["you must manually run 'sudo dpkg --configure -a'"] = 'sudo dpkg --configure -a'
+    response_map['Unable to locate package'] = 'sudo apt update\nsudo apt upgrade'
+    response_map['has no installation candidate'] = 'sudo apt update\nsudo apt upgrade'
+    response_map['Some packages could not be installed. This may mean that you have requested an impossible situation'] = 'sudo apt update\nsudo apt upgrade'
+
+    # Pip response maps:
+    response_map["Command 'pip' not found"] = 'sudo apt install python3-pip'
+    response_map['pip: command not found'] = 'sudo apt install python3-pip'
+    response_map['No matching distribution found for'] = 'package not found'
+    response_map['Upgrade to the latest pip and try again'] = 'pip3 install --upgrade pip'
+
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    response_map = {**{**plumber.default_prompts(), **cloud_entry}, **extra_prompts.get(package_name,{})}
-    p = plumber.Plumber(tubo, package_names, response_map, extras, tests, dt=2.0)
+    plumber.Plumber(tubo, tasks, response_map, fn_override=None, dt=2.0)
+
+    ## Tasks:
+    tasks = []
+    for pkg in package_names:
+        x = {'packages':[pkg], 'commands':details['extra_cmds'].get(pkg,[])}
+        if details['test_overrides'].get(pkg):
+            x['tests'] = details['test_overrides'].get(pkg)
+        tasks.append(x)
+
+    p = plumber.Plumber(tubo, tasks, response_map, fn_override=None, dt=2.0)
     tubo = p.run()
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
@@ -261,9 +296,9 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
     file2contents = {}
     response_map = {}
     dest_folder = ''
-    test_pairs = None
+    test_pairs = []
     extra_prompts = {}
-    cmd_list = None
+    cmd_list = []
     timeout = 12
     non_custom_packages = []
 
@@ -314,7 +349,10 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
         send_files(tubo.machine_id, file2contents, dest_folder, printouts=tubo.printouts)
 
     response_map = {**cloud_entry, **response_map}
-    p = plumber.Plumber(tubo, non_custom_packages, response_map, cmd_list, test_pairs, dt=2.0)
+
+    tubo = install_packages(tubo, non_custom_packages, extra_tests=None, printouts=None)
+
+    p = plumber.Plumber(tubo, [{'commands':cmd_list, 'tests':test_pairs}], response_map, dt=2.0)
     p.run()
 
     return p.tubo
