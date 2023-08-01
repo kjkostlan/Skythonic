@@ -12,7 +12,6 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public
     if platform=='aws':
         inst_networkinter = [{'SubnetId': subnet_id, 'DeviceIndex': 0, 'PrivateIpAddress': private_ip,
                               'AssociatePublicIpAddress': False, 'Groups': [securitygroup_id]}]
-        # ami-0735c191cf914754d; ami-0a695f0d95cefc163; ami-0fcf52bcf5db7b003
         vm_params = {'ImageId':cloud_vm.ubuntu_aim_image(), 'InstanceType':'t2.micro',
                      'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter,
                      'KeyName':key_name}
@@ -153,12 +152,23 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
     return ssh_bash, inst_id
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', the_region='us-west-2c'):
-    vpc_id = cloud_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
-    cloud_core.modify_attribute(vpc_id, 'EnableDnsSupport', {'Value': True})
-    cloud_core.modify_attribute(vpc_id, 'EnableDnsHostnames', {'Value': True})
 
-    webgate_id = cloud_core.create_once('webgate', new_vpc_name+'_gate', True)
-    cloud_core.assoc(vpc_id, webgate_id)
+    if platform=='aws':
+        vpc_id = cloud_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
+        cloud_core.modify_attribute(vpc_id, 'EnableDnsSupport', {'Value': True})
+        cloud_core.modify_attribute(vpc_id, 'EnableDnsHostnames', {'Value': True})
+    elif platform=='azure':
+        TODO
+    else:
+        raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
+
+    if platform=='aws':
+        webgate_id = cloud_core.create_once('webgate', new_vpc_name+'_gate', True)
+        cloud_core.assoc(vpc_id, webgate_id)
+    elif platform=='azure':
+        TODO
+    else:
+        raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
     def _nameget(ty, name):
         x = cloud_query.get_by_name(ty, name)
@@ -166,51 +176,71 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             raise Exception(f'Cannot find this name: {name}; make sure setup_jumpbox has been called.')
         return cloud_format.obj2id(x)
 
-    jbox_id = _nameget('machine',jbox_name)
-    jbox_subnet_id = cloud_format.id2obj(jbox_id)['SubnetId']
-    jbox_vpc_id = cloud_format.id2obj(jbox_subnet_id)['VpcId']
     rtables = cloud_query.get_resources('rtable')
-    matching_rtable_ids = []
-    for rt in rtables: # TODO: better connectivity querying.
-        for a in rt.get('Associations', []):
-            if a.get('SubnetId',None)==jbox_subnet_id:
-                matching_rtable_ids.append(cloud_format.obj2id(rt))
-    if len(matching_rtable_ids)==1:
-        jbox_rtable_id = matching_rtable_ids[0]
-    elif len(matching_rtable_ids)>1:
-        raise Exception('Too many routetables match the Jumbbox.')
-    elif len(matching_rtable_ids)==0:
-        raise Exception('Too few routetables match the Jumpbox')
+    jbox_id = _nameget('machine',jbox_name)
+    if platform=='aws':
+        jbox_subnet_id = cloud_format.id2obj(jbox_id)['SubnetId']
+        jbox_vpc_id = cloud_format.id2obj(jbox_subnet_id)['VpcId']
+        matching_rtable_ids = []
+        for rt in rtables: # TODO: better connectivity querying.
+            for a in rt.get('Associations', []):
+                if a.get('SubnetId',None)==jbox_subnet_id:
+                    matching_rtable_ids.append(cloud_format.obj2id(rt))
+        if len(matching_rtable_ids)==1:
+            jbox_rtable_id = matching_rtable_ids[0]
+        elif len(matching_rtable_ids)>1:
+            raise Exception('Too many routetables match the Jumbbox.')
+        elif len(matching_rtable_ids)==0:
+            raise Exception('Too few routetables match the Jumpbox')
+        routetable_id = cloud_core.create_once('rtable', new_vpc_name+'_rtable', True, VpcId=vpc_id)
+    elif platform=='azure':
+        TODO
+    else:
+        raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
-    print('Jumpbox machine ID:', jbox_id, jbox_subnet_id, jbox_vpc_id)
-    routetable_id = cloud_core.create_once('rtable', new_vpc_name+'_rtable', True, VpcId=vpc_id)
+    print('Jumpbox machine ID:', jbox_id, 'Subnet ID:', jbox_subnet_id, 'route table ID:', jbox_vpc_id)
 
     basenames = ['BYOC_web', 'BYOC_app', 'BYOC_db']
     subnet_cidrs = ['10.201.101.0/24', '10.201.102.0/24', '10.201.103.0/24']
-    ips =          ['10.201.101.100',  '10.201.102.100',  '10.201.103.100']
+    private_ips =  ['10.201.101.100',  '10.201.102.100',  '10.201.103.100']
     inst_ids = []
     cmds = []
+    addrs = []
+
+    for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
+        addrs[i] = cloud_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
+        #cloud_core.assoc(inst_ids[i], addrs[i]) # Will be done in the simple_vm function.
+        #vm.update_apt(inst_ids[i], printouts=True, full_restart_here=True)
+        cmds.append(vm.ssh_bash(inst_ids[i], True))
+
     for i in range(3):
         cloud_core.create_route(routetable_id, '0.0.0.0/0', webgate_id)
-        subnet_id = cloud_core.create_once('subnet',basenames[i], True, CidrBlock=subnet_cidrs[i], VpcId=vpc_id, AvailabilityZone=the_region)
+
+        if platform=='aws':
+            subnet_id = cloud_core.create_once('subnet',basenames[i], True, CidrBlock=subnet_cidrs[i], VpcId=vpc_id, AvailabilityZone=the_region)
+        elif platform=='azure':
+            TODO
+        else:
+            raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
         cloud_core.assoc(routetable_id, subnet_id)
 
-        # They have different security groups for different types of servers, so we will do so as well rather than use only one for all three:
-        #https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html
-        securitygroup_id = cloud_core.create_once('securitygroup', basenames[i]+'_sGroup', True, GroupName='From Hub'+basenames[i], Description='Allow Hub Ip cidr', VpcId=vpc_id)
+        if platform=='aws':
+            # They have different security groups for different types of servers, so we will do so as well rather than use only one for all three:
+            #https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html
+            securitygroup_id = cloud_core.create_once('securitygroup', basenames[i]+'_sGroup', True, GroupName='From Hub'+basenames[i], Description='Allow Hub Ip cidr', VpcId=vpc_id)
+        elif platform=='azure':
+            TODO
+        else:
+            raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
+
         cloud_permiss.authorize_ingress(securitygroup_id, '10.0.0.0/8', '-1', 22, 22)
         cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', 22, 22)
         if i==0:
             cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', 443, 443) # BYOC_web accepts https traffic from https (port 443).
-        inst_id = simple_vm(basenames[i], ips[i], subnet_id, securitygroup_id, key_name)
+
+        inst_id = simple_vm(basenames[i], private_ips[i], subnet_id, securitygroup_id, key_name, public_ip_id=addrs[i]['id'], the_region=the_region)
         #_ = vm.upgrade_os(inst_id, printouts=True)
         inst_ids.append(inst_id)
-
-    for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
-        addr = cloud_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
-        cloud_core.assoc(inst_ids[i], addr)
-        #vm.update_apt(inst_ids[i], printouts=True, full_restart_here=True)
-        cmds.append(vm.ssh_bash(inst_ids[i], True))
 
     for i in range(3):
         inst_id = inst_ids[i]
@@ -225,8 +255,14 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     vm.install_custom_package(inst_ids[0], 'web-server', tests=web_s_tests)
     vm.install_packages(inst_ids[2], 'apt mysql-server', printouts=True)
 
-    #The gateway is the VpcPeeringConnectionId
-    peering_id = cloud_core.create_once('vpcpeer', 'BYOC_3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #cloud_core.assoc(jbox_vpc_id, vpc_id)
+    if platform=='aws':
+        #The gateway is the VpcPeeringConnectionId
+        peering_id = cloud_core.create_once('vpcpeer', 'BYOC_3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #cloud_core.assoc(jbox_vpc_id, vpc_id)
+    elif platform=='azure':
+        TODO
+    else:
+        raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
+
     rtables = cloud_query.get_resources('rtables')
 
     print("Creating route on hub rtable id:", jbox_rtable_id)
@@ -236,7 +272,12 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     cloud_core.create_route(routetable_id, '10.200.0.0/16', peering_id)
 
     # Testing time:
-    jbox_id = cloud_format.obj2id(fittings.flat_lookup(cloud_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+    if platform=='aws':
+        jbox_id = cloud_format.obj2id(fittings.flat_lookup(cloud_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+    elif platform=='azure':
+        TODO
+    else:
+        raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
     print(f'Testing ssh ping from machine {jbox_id}')
 
     #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
@@ -244,12 +285,12 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     tubo = vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
     ping_check = '0% packet loss'
     test_pairs = [['ping -c 2 localhost',ping_check]]
-    for ip in ips:
+    for ip in private_ips:
         test_pairs.append([f'ping -c 2 {ip}', ping_check])
     p = plumber.Plumber(tubo, [], {}, [], test_pairs, fn_override=None, dt=2.0)
     p.run()
     tubo.API('ping -c 2 localhost')
-    for ip in ips:
+    for ip in private_ips:
         cmd = f'ping -c 2 {ip}'
         tubo.API(cmd, timeout=16)
 

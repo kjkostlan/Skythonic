@@ -212,3 +212,6 @@ def connect_to_internet(rtable_id, vnet_id):
     vnet_params = Azure_nugget.network_client.virtual_networks.get(vnet_rgroup, vnet_name)
     vnet_params.route_table = {'id': rtable_id}
     vnet = Azure_nugget.network_client.virtual_networks.begin_create_or_update(vnet_rgroup, vnet_name, vnet_params).result()
+
+def create_route(rtable_id, dest_cidr, gateway_id):
+    TODO #ec2c.create_route(RouteTableId=rtable_id, DestinationCidrBlock=dest_cidr,GatewayId=gateway_id)
