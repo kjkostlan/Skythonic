@@ -89,8 +89,9 @@ def create(rtype0, name, **kwargs):
         x0 = Azure_nugget.network_client.public_ip_addresses.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, name, addr_params)
         x = x0.result()
     elif rtype == 'user':
-        TODO
+        TODO # The "standard" way to authenticate (az login) does involve making a user.
     elif rtype == 'peering':
+        # Are peerings not really a kind of resource?
         TODO
     else:
         raise Exception('Create ob type unrecognized: '+rtype0)

@@ -158,7 +158,10 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         cloud_core.modify_attribute(vpc_id, 'EnableDnsSupport', {'Value': True})
         cloud_core.modify_attribute(vpc_id, 'EnableDnsHostnames', {'Value': True})
     elif platform=='azure':
-        TODO
+        _addr = {"address_prefixes": ['10.200.0.0/16']}
+        vpc_id = cloud_core.create_once('VPC', new_vpc_name, True, address_space=_addr, location=cloud_format.enumloc(the_region))
+        cloud_core.modify_attribute(vpc_id, 'enable_dns_support', True)
+        cloud_core.modify_attribute(vpc_id, 'enable_dns_hostnames', True)
     else:
         raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
@@ -166,7 +169,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         webgate_id = cloud_core.create_once('webgate', new_vpc_name+'_gate', True)
         cloud_core.assoc(vpc_id, webgate_id)
     elif platform=='azure':
-        TODO
+        pass # Azure needs no internet gateways.
     else:
         raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
@@ -194,7 +197,9 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             raise Exception('Too few routetables match the Jumpbox')
         routetable_id = cloud_core.create_once('rtable', new_vpc_name+'_rtable', True, VpcId=vpc_id)
     elif platform=='azure':
-        TODO
+        # TODO: rtable queries to test that things are working as in AWS.
+        routetable_id = cloud_core.create_once('rtable', new_vpc_name+'_rtable', True, location=the_region)
+        cloud_core.connect_to_internet(routetable_id, vpc_id)
     else:
         raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
@@ -208,18 +213,28 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     addrs = []
 
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
-        addrs[i] = cloud_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
+        if platform == 'aws':
+            addrs[i] = cloud_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
+        elif platform == 'azure':
+            # What does this do? dns_settings=PublicIPAddressDnsSettings(domain_name_label="your-domain-label")
+            addr_id = cloud_core.create_once('address', basenames[i]+'_address', True, location=the_region, public_ip_allocation_method='Dynamic', idle_timeout_in_minutes=4)
         #cloud_core.assoc(inst_ids[i], addrs[i]) # Will be done in the simple_vm function.
         #vm.update_apt(inst_ids[i], printouts=True, full_restart_here=True)
         cmds.append(vm.ssh_bash(inst_ids[i], True))
 
-    for i in range(3):
+    if platform=='aws':
         cloud_core.create_route(routetable_id, '0.0.0.0/0', webgate_id)
+    elif platform=='azure':
+        cloud_core.connect_to_internet(routetable_id, vpc_id)
+    else:
+        raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
+
+    for i in range(3):
 
         if platform=='aws':
             subnet_id = cloud_core.create_once('subnet',basenames[i], True, CidrBlock=subnet_cidrs[i], VpcId=vpc_id, AvailabilityZone=the_region)
         elif platform=='azure':
-            TODO
+            subnet_id = cloud_core.create_once('subnet',basenames[i], True, address_prefix=subnet_cidrs[i], vnet_id=vpc_id)
         else:
             raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
         cloud_core.assoc(routetable_id, subnet_id)
@@ -229,7 +244,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             #https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html
             securitygroup_id = cloud_core.create_once('securitygroup', basenames[i]+'_sGroup', True, GroupName='From Hub'+basenames[i], Description='Allow Hub Ip cidr', VpcId=vpc_id)
         elif platform=='azure':
-            TODO
+            securitygroup_id = cloud_core.create_once('securitygroup', basenames[i]+'_sGroup', True, location=the_region)
         else:
             raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
@@ -258,24 +273,66 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     if platform=='aws':
         #The gateway is the VpcPeeringConnectionId
         peering_id = cloud_core.create_once('vpcpeer', 'BYOC_3lev_peer', True, VpcId=jbox_vpc_id, PeerVpcId=vpc_id) #cloud_core.assoc(jbox_vpc_id, vpc_id)
+        print("Creating route on hub rtable id:", jbox_rtable_id)
+        cloud_core.create_route(jbox_rtable_id, '10.201.0.0/16', peering_id)
+
+        print("Creating route on Spoke1 rtable id:", routetable_id)
+        cloud_core.create_route(routetable_id, '10.200.0.0/16', peering_id)
     elif platform=='azure':
-        TODO
+        # TODO: clumsy, duplicate code here!
+        from Azure import Azure_nugget
+        peering_name = 'simple_peering'
+        peering_params = {
+            "allow_virtual_network_access": True,
+            "allow_forwarded_traffic": False,
+            "allow_gateway_transit": False,
+            "use_remote_gateways": False}
+        resource_group_name = jbox_vpc_id.split('/')[4]
+        peering_to2 = Azure_nugget.network_client.virtual_network_peerings.begin_create_or_update(
+            resource_group_name,
+            jbox_vpc_id, # From this to the other vpc_id.
+            peering_name,
+            peering_params).result()
+        peering_to1 = Azure_nugget.network_client.virtual_network_peerings.begin_create_or_update(
+            resource_group_name,
+            vpc_id, # Back to the jbox_vpc_id.
+            peering_name,
+            peering_params).result()
+
+        route_params = {
+            "address_prefix": '10.201.0.0/16',
+            "next_hop_type": "VirtualNetworkPeering",
+            "next_hop_ip_address": peering_to2.remote_virtual_network.id
+        }
+        route = network_client.routes.begin_create_or_update(
+            resource_group_name,
+            route_table_name,
+            route_name,
+            route_params
+        ).result()
+        route_params = {
+            "address_prefix": '10.200.0.0/16',
+            "next_hop_type": "VirtualNetworkPeering",
+            "next_hop_ip_address": peering_to1.remote_virtual_network.id
+        }
+        route = network_client.routes.begin_create_or_update(
+            resource_group_name,
+            route_table_name,
+            route_name,
+            route_params
+        ).result()
     else:
         raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
     rtables = cloud_query.get_resources('rtables')
 
-    print("Creating route on hub rtable id:", jbox_rtable_id)
-    cloud_core.create_route(jbox_rtable_id, '10.201.0.0/16', peering_id)
-
-    print("Creating route on Spoke1 rtable id:", routetable_id)
-    cloud_core.create_route(routetable_id, '10.200.0.0/16', peering_id)
-
     # Testing time:
     if platform=='aws':
-        jbox_id = cloud_format.obj2id(fittings.flat_lookup(cloud_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+        #jbox_id = cloud_format.obj2id(fittings.flat_lookup(cloud_query.get_resources('machine'), 'VpcId', jbox_vpc_id, assert_range=[1, 65536])[0])
+        pass # Don't we already have jbox_id?
     elif platform=='azure':
-        TODO
+        #TODO
+        pass # Don't we already have jbox_id?
     else:
         raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
     print(f'Testing ssh ping from machine {jbox_id}')
@@ -287,7 +344,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     test_pairs = [['ping -c 2 localhost',ping_check]]
     for ip in private_ips:
         test_pairs.append([f'ping -c 2 {ip}', ping_check])
-    p = plumber.Plumber(tubo, [], {}, [], test_pairs, fn_override=None, dt=2.0)
+    p = plumber.Plumber(tubo, [{'tests':test_pairs}], {}, fn_override=None, dt=2.0)
     p.run()
     tubo.API('ping -c 2 localhost')
     for ip in private_ips:
@@ -295,13 +352,9 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         tubo.API(cmd, timeout=16)
 
     tubo.close()
-    #if 'packet loss' not in txt:
-    #    print('WARNING: Cant extract ping printout to test.')
-    #elif '50% packet loss' in txt or '100% packet loss' in txt:
-    #    print('WARNING: Packets lost in test')
 
     print('Check the above ssh ping test')
     print('Restarting the three new vms as a final step.')
     cloud_vm.restart_vm(inst_ids)
-    print("\033[38;5;208mThree tier appears to be setup and working (minus an instance restart which is happening now).\033[0m")
+    print("\033[38;5;208mThree tier appears to be setup and pinging across the peering (minus an instance restart which is happening now).\033[0m")
     return cmds
