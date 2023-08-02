@@ -153,12 +153,17 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', the_region='us-west-2c'):
 
+    if platform=='azure':
+        jbox_name = jbox_name.replace('_','0') # Why the !@#$ do they not allow underscores.
+        if len(jbox_name)>64:
+            raise Exception('Oops the vm_name was too long because the user_name or basename is too long.')
+
     if platform=='aws':
         vpc_id = cloud_core.create_once('VPC', new_vpc_name, True, CidrBlock='10.201.0.0/16')
         cloud_core.modify_attribute(vpc_id, 'EnableDnsSupport', {'Value': True})
         cloud_core.modify_attribute(vpc_id, 'EnableDnsHostnames', {'Value': True})
     elif platform=='azure':
-        _addr = {"address_prefixes": ['10.200.0.0/16']}
+        _addr = {"address_prefixes": ['10.201.0.0/16']}
         vpc_id = cloud_core.create_once('VPC', new_vpc_name, True, address_space=_addr, location=cloud_format.enumloc(the_region))
         cloud_core.modify_attribute(vpc_id, 'enable_dns_support', True)
         cloud_core.modify_attribute(vpc_id, 'enable_dns_hostnames', True)
@@ -198,6 +203,15 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         routetable_id = cloud_core.create_once('rtable', new_vpc_name+'_rtable', True, VpcId=vpc_id)
     elif platform=='azure':
         # TODO: rtable queries to test that things are working as in AWS.
+        # TODO (here and other places): Build up and use the assoc function instead.
+        from Azure import Azure_nugget
+        resource_group_name = jbox_id.split('/')[4]
+        #print('The jumpbox is:', cloud_format.id2obj(jbox_id))
+        nic_id = cloud_format.id2obj(jbox_id)['properties']['networkProfile']['networkInterfaces'][0]['id']
+        nic_name = nic_id.split('/')[-1]
+        nic = Azure_nugget.network_client.network_interfaces.get(resource_group_name, nic_name)
+        jbox_subnet_id = nic.ip_configurations[0].subnet.id
+        jbox_vpc_id = nic.ip_configurations[0].subnet.id.split('/subnets/')[0]
         routetable_id = cloud_core.create_once('rtable', new_vpc_name+'_rtable', True, location=the_region)
         cloud_core.connect_to_internet(routetable_id, vpc_id)
     else:
@@ -213,14 +227,14 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     addrs = []
 
     for i in range(3): # Break up the loops so that the instances are bieng started up concurrently.
+        addrs.append(None)
         if platform == 'aws':
             addrs[i] = cloud_core.create_once('address', basenames[i]+'_address', True, Domain='vpc')
         elif platform == 'azure':
             # What does this do? dns_settings=PublicIPAddressDnsSettings(domain_name_label="your-domain-label")
-            addr_id = cloud_core.create_once('address', basenames[i]+'_address', True, location=the_region, public_ip_allocation_method='Dynamic', idle_timeout_in_minutes=4)
+            addrs[i] = cloud_core.create_once('address', basenames[i]+'_address', True, location=the_region, public_ip_allocation_method='Dynamic', idle_timeout_in_minutes=4)
         #cloud_core.assoc(inst_ids[i], addrs[i]) # Will be done in the simple_vm function.
         #vm.update_apt(inst_ids[i], printouts=True, full_restart_here=True)
-        cmds.append(vm.ssh_bash(inst_ids[i], True))
 
     if platform=='aws':
         cloud_core.create_route(routetable_id, '0.0.0.0/0', webgate_id)
@@ -253,22 +267,36 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         if i==0:
             cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', 443, 443) # BYOC_web accepts https traffic from https (port 443).
 
-        inst_id = simple_vm(basenames[i], private_ips[i], subnet_id, securitygroup_id, key_name, public_ip_id=addrs[i]['id'], the_region=the_region)
+        if type(addrs[i]) is dict:
+            ip_id = addrs[i]['id']
+        elif type(addrs[i]) is str:
+            ip_id = addrs[i]
+        else:
+            raise Exception('Problem getting the addres IDs (IDs different from the IPs)')
+        inst_id = simple_vm(basenames[i], private_ips[i], subnet_id, securitygroup_id, key_name, public_ip_id=ip_id, the_region=the_region)
         #_ = vm.upgrade_os(inst_id, printouts=True)
         inst_ids.append(inst_id)
+        cmds.append(vm.ssh_bash(inst_id, True))
 
-    for i in range(3):
-        inst_id = inst_ids[i]
+    debug_skip_install = True
+    if debug_skip_install:
+        print("WARNING: DEBUG installation of packages skipped (ping will still be installaed and thus work across the peering).")
+        for i in range(3):
+            tubo = vm.install_packages(inst_ids[i], 'apt ping', printouts=True)
+    else:
+        for i in range(3):
+            inst_id = inst_ids[i]
 
-        tubo = vm.install_packages(inst_id, 'apt mysql-client', printouts=True)
-        for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
-            tubo = vm.install_packages(tubo, pk_name, printouts=True)
-    vm.install_custom_package(inst_ids[1], 'app-server')
-    vm.install_packages(inst_ids[0], 'apt apache')
-    web_s_tests = [['sudo service apache2 start',''], ['curl -k http://localhost', ['apache2', '<div>', '<html']],
-                   ['systemctl status apache2.service', ['The Apache HTTP Server', 'Main PID:']]]
-    vm.install_custom_package(inst_ids[0], 'web-server', tests=web_s_tests)
-    vm.install_packages(inst_ids[2], 'apt mysql-server', printouts=True)
+            tubo = vm.install_packages(inst_id, 'apt mysql-client', printouts=True)
+            for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump', 'apt ping']:
+                tubo = vm.install_packages(tubo, pk_name, printouts=True)
+
+        vm.install_custom_package(inst_ids[1], 'app-server')
+        vm.install_packages(inst_ids[0], 'apt apache')
+        web_s_tests = [['sudo service apache2 start',''], ['curl -k http://localhost', ['apache2', '<div>', '<html']],
+                       ['systemctl status apache2.service', ['The Apache HTTP Server', 'Main PID:']]]
+        vm.install_custom_package(inst_ids[0], 'web-server', tests=web_s_tests)
+        vm.install_packages(inst_ids[2], 'apt mysql-server', printouts=True)
 
     if platform=='aws':
         #The gateway is the VpcPeeringConnectionId

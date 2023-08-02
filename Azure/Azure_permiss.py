@@ -15,9 +15,17 @@ def create_dangerkey_once(user_name):
     TODO
 
 def authorize_ingress(sgroup_id, cidr, protocol, port0, port1):
-    if cidr != '0.0.0.0/0':
-        raise Exception('TODO: filtered addresses.')
-    proto = getattr(SecurityRuleProtocol, protocol)
+    #if cidr != '0.0.0.0/0': # Deprecated code? Since we use cidr in source_address_prefix
+    #    raise Exception('TODO: filtered addresses.')
+    if protocol == '-1' or protocol == -1 or protocol is None or protocol == 'any':
+        #proto = None # -1 means all protocols, and specifying None was recommended here.
+        proto = SecurityRuleProtocol.asterisk
+        name_detail = 'any'
+        priority=101 # Azure can't handle same priority with different cidrs.
+    else:
+        proto = getattr(SecurityRuleProtocol, protocol)
+        name_detail = str(protocol)
+        priority=100
     ssh_rule_params = SecurityRule(
         protocol=proto,
         source_port_range="*",
@@ -25,15 +33,15 @@ def authorize_ingress(sgroup_id, cidr, protocol, port0, port1):
         source_address_prefix=cidr,
         destination_address_prefix="*",  # Allow traffic to any destination
         access="Allow",
-        priority=100,
+        priority=priority,
         direction="Inbound",
-        name="Allow_"+protocol)
+        name="Allow_"+name_detail)
 
     sgroup_name = sgroup_id.split('/')[-1]
     Azure_nugget.network_client.security_rules.begin_create_or_update(
         Azure_nugget.skythonic_rgroup_name,
         sgroup_name,
-        "Allow_"+protocol,
+        "Allow_"+name_detail,
         ssh_rule_params)
 
 def empower_vm(instance_id, redo_login=False):
