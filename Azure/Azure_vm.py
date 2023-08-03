@@ -26,7 +26,6 @@ def get_ip(vmachine): # Address or machine.
     addr_id = nic.serialize()['properties']['ipConfigurations'][0]['properties']['publicIPAddress']['id']
 
     public_ip = Azure_nugget.network_client.public_ip_addresses.get(addr_id.split('/')[4], addr_id.split('/')[-1])
-    print('Public ip is:', public_ip.ip_address)
     return public_ip.ip_address
     '''
     vm_info = compute_client.virtual_machines.get(

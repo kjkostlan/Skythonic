@@ -6,7 +6,9 @@ from waterworks import eye_term, fittings, plumber
 proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_format', 'cloud_query', 'cloud_vm', 'cloud_permiss'])
 platform = proj.which_cloud().lower().strip()
 
-def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public_ip_id, the_region):
+debug_skip_install = True
+
+def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public_ip_id, the_region, az_nic_name):
     # Creates a new key if need be, but the subnet and securitygroup must be already made.
     # Returns inst_id, None, fname.
     if platform=='aws':
@@ -21,12 +23,14 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public
     elif platform=='azure':
         from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet, VirtualNetworkGateway, RouteTable, Route, NetworkSecurityGroup, PublicIPAddress, NetworkInterface # DEBUG.
         from Azure import Azure_nugget, Azure_format # DEBUG (will move making a nic to Azure_core).
-        nic = NetworkInterface(id="", location=Azure_format.enumloc(the_region), ip_configurations=[{"name": "my_ip_config", "subnet": {"id": subnet_id}, "public_ip_address": {"id": public_ip_id}}])
+        ip_config = [{"name": az_nic_name, "subnet": {"id": subnet_id}, "public_ip_address": {"id": public_ip_id}, "private_ip_address":private_ip, "private_ip_allocation_method":'Static'}]
+        nic = NetworkInterface(id="", location=Azure_format.enumloc(the_region), ip_configurations=ip_config)
 
-        nic = Azure_nugget.network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, "my_nic", nic).result()
+        print('Creating Azure vm:', vm_name, 'in:', Azure_format.enumloc(the_region))
+        nic = Azure_nugget.network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, az_nic_name, nic).result()
         print('Adding the network security group:', securitygroup_id)
         nic.network_security_group = {'id': securitygroup_id}
-        Azure_nugget.network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, "my_nic", nic).result()
+        Azure_nugget.network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, az_nic_name, nic).result()
 
         #vm = VirtualMachine(location=location, os_profile=OSProfile(computer_name=vm_name, admin_username=username, linux_configuration={"ssh": {"public_keys": [{"path": "/home/{}/.ssh/authorized_keys".format(username), "key_data": public_key}]}}))
         #vm.storage_profile = StorageProfile(os_disk={"os_type": "Linux", "name": os_disk_name, "create_option": "FromImage"}, image_reference=ImageReference(publisher="Canonical", offer="UbuntuServer", sku="20_04-lts-gen2", version="latest"))
@@ -119,7 +123,7 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
         addr_id = cloud_core.create_once('address', user_name+'_'+basename+'_address', True, location=the_region, public_ip_allocation_method='Dynamic', idle_timeout_in_minutes=4)
     else:
         raise Exception('TODO get net_setup working on this cloud platform: '+platform)
-    inst_id = simple_vm(vm_name, '10.200.250.100', subnet_id, securitygroup_id, key_name, addr_id, the_region)
+    inst_id = simple_vm(vm_name, '10.200.250.100', subnet_id, securitygroup_id, key_name, addr_id, the_region, 'jumpbox_nic')
 
     ssh_bash = vm.ssh_bash(inst_id, True)
 
@@ -128,24 +132,28 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
     if region_name[-1] in 'abcd':
         region_name = region_name[0:-1]
 
-    #tubo = vm.upgrade_os(inst_id, printouts=True)
-    tubo = vm.install_packages(inst_id, 'apt python3', tests=[['python3\nprint(id)\nquit()', '<built-in function id>']])
-    for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump']:
-        tubo = vm.install_packages(tubo, pk_name)
-    tubo = vm.install_packages(tubo, 'apt ping', tests=[['ping -c 1 localhost', '0% packet loss']])
-    for pk_name in ['skythonic', 'host-list']:
-        tubo = vm.install_custom_package(tubo, pk_name)
-    if platform == 'aws':
-        tubo = vm.install_packages(tubo, 'apt aws-cli', tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']], user_name=user_name)
-        tubo = vm.install_packages(tubo, 'pip boto3', tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
-    elif platform == 'azure':
-        for package_cmd in ['pip azure-core', 'pip azure-identity', 'pip paramiko', 'pip azure-mgmt-resource', 'pip azure-mgmt-compute', 'pip azure-mgmt-storage', 'pip azure-mgmt-network', 'pip install azure-mgmt-storage', 'azure-cli']:
-            tubo = vm.install_packages(tubo, package_cmd)
-            tubo.close()
-        from Azure import Azure_permiss # TODO: also put AWS permission fns into AWS_permiss.
-        Azure_permiss.empower_vm(inst_id)
+    if debug_skip_install:
+        print("WARNING: DEBUG installation of packages skipped (ping will still be installed and thus work across the peering).")
+        tubo = vm.install_packages(inst_id, 'apt ping', printouts=True)
     else:
-        raise Exception('TODO get net_setup working on this cloud platform: '+platform)
+        #tubo = vm.upgrade_os(inst_id, printouts=True)
+        tubo = vm.install_packages(inst_id, 'apt python3', tests=[['python3\nprint(id)\nquit()', '<built-in function id>']])
+        for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump']:
+            tubo = vm.install_packages(tubo, pk_name)
+        tubo = vm.install_packages(tubo, 'apt ping', tests=[['ping -c 1 localhost', '0% packet loss']])
+        for pk_name in ['skythonic', 'host-list']:
+            tubo = vm.install_custom_package(tubo, pk_name)
+        if platform == 'aws':
+            tubo = vm.install_packages(tubo, 'apt aws-cli', tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']], user_name=user_name)
+            tubo = vm.install_packages(tubo, 'pip boto3', tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
+        elif platform == 'azure':
+            for package_cmd in ['pip azure-core', 'pip azure-identity', 'pip paramiko', 'pip azure-mgmt-resource', 'pip azure-mgmt-compute', 'pip azure-mgmt-storage', 'pip azure-mgmt-network', 'pip install azure-mgmt-storage', 'azure-cli']:
+                tubo = vm.install_packages(tubo, package_cmd)
+                tubo.close()
+            from Azure import Azure_permiss # TODO: also put AWS permission fns into AWS_permiss.
+            Azure_permiss.empower_vm(inst_id)
+        else:
+            raise Exception('TODO get net_setup working on this cloud platform: '+platform)
     cloud_vm.restart_vm(inst_id)
 
     print("\033[38;5;208mJumpbox appears to be setup and working (minus a restart which is happening now).\033[0m")
@@ -222,6 +230,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
     basenames = ['BYOC_web', 'BYOC_app', 'BYOC_db']
     subnet_cidrs = ['10.201.101.0/24', '10.201.102.0/24', '10.201.103.0/24']
     private_ips =  ['10.201.101.100',  '10.201.102.100',  '10.201.103.100']
+    az_nics = [bn + '_nic' for bn in basenames]
     inst_ids = []
     cmds = []
     addrs = []
@@ -273,14 +282,13 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             ip_id = addrs[i]
         else:
             raise Exception('Problem getting the addres IDs (IDs different from the IPs)')
-        inst_id = simple_vm(basenames[i], private_ips[i], subnet_id, securitygroup_id, key_name, public_ip_id=ip_id, the_region=the_region)
+        inst_id = simple_vm(basenames[i].replace('_','0') if platform=='azure' else basenames[i], private_ips[i], subnet_id, securitygroup_id, key_name, ip_id, the_region, az_nics[i])
         #_ = vm.upgrade_os(inst_id, printouts=True)
         inst_ids.append(inst_id)
         cmds.append(vm.ssh_bash(inst_id, True))
 
-    debug_skip_install = True
     if debug_skip_install:
-        print("WARNING: DEBUG installation of packages skipped (ping will still be installaed and thus work across the peering).")
+        print("WARNING: DEBUG installation of packages skipped (ping will still be installed and thus work across the peering).")
         for i in range(3):
             tubo = vm.install_packages(inst_ids[i], 'apt ping', printouts=True)
     else:
