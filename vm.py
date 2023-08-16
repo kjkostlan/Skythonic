@@ -126,15 +126,14 @@ def update_vms_skythonic(diff): # Where is Skythonic installed?
 
 ########################Installation of packages################################
 
-def _to_pipe(inst_or_pipe, printouts=None): # Idempotent.
+def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
     if type(inst_or_pipe) is eye_term.MessyPipe:
         if inst_or_pipe.closed:
             out = inst_or_pipe.remake()
         out = inst_or_pipe
-        if printouts is True or printouts is False:
-            out.printouts = printouts
+        out.printouts = printouts
         return out
-    return patient_ssh_pipe(inst_or_pipe, printouts=not printouts is False)
+    return patient_ssh_pipe(inst_or_pipe, printouts=printouts)
 
 def update_apt(inst_or_pipe, printouts=None):
     # Updating apt with a restart seems to be the most robust option.

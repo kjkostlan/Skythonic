@@ -6,9 +6,12 @@ from waterworks import eye_term, fittings, plumber
 proj.platform_import_modules(sys.modules[__name__], ['cloud_core', 'cloud_format', 'cloud_query', 'cloud_vm', 'cloud_permiss'])
 platform = proj.which_cloud().lower().strip()
 
-debug_skip_install = True
+try:
+    debug_skip_install # Still installs ping tot test basic network configs.
+except:
+    debug_skip_install = False
 
-def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public_ip_id, the_region, az_nic_name):
+def simple_vm_createonce(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public_ip_id, the_region, az_nic_name):
     # Creates a new key if need be, but the subnet and securitygroup must be already made.
     # Returns inst_id, None, fname.
     if platform=='aws':
@@ -17,16 +20,19 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public
         vm_params = {'ImageId':cloud_vm.ubuntu_aim_image(), 'InstanceType':'t2.micro',
                      'MaxCount':1, 'MinCount':1,'NetworkInterfaces':inst_networkinter,
                      'KeyName':key_name}
-        inst_id = covert.vm_dangerkey(vm_name, vm_params, key_name)
+        inst_id = covert.create_once_vm_dangerkey(vm_name, vm_params, key_name)
         cloud_core.assoc(inst_id, addr_id)
         return inst_id
     elif platform=='azure':
+        from Azure import Azure_query, Azure_format
+        inst_id1 = Azure_query.get_by_name('machine', vm_name)
+        if inst_id1 is not None:
+            print(f'Azure VM already created ({vm_name}); skipping the setup.')
+            return Azure_format.obj2id(inst_id1)
         from azure.mgmt.network.models import VirtualNetwork, AddressSpace, Subnet, VirtualNetworkGateway, RouteTable, Route, NetworkSecurityGroup, PublicIPAddress, NetworkInterface # DEBUG.
         from Azure import Azure_nugget, Azure_format # DEBUG (will move making a nic to Azure_core).
         ip_config = [{"name": az_nic_name, "subnet": {"id": subnet_id}, "public_ip_address": {"id": public_ip_id}, "private_ip_address":private_ip, "private_ip_allocation_method":'Static'}]
         nic = NetworkInterface(id="", location=Azure_format.enumloc(the_region), ip_configurations=ip_config)
-
-        print('Creating Azure vm:', vm_name, 'in:', Azure_format.enumloc(the_region))
         nic = Azure_nugget.network_client.network_interfaces.begin_create_or_update(Azure_nugget.skythonic_rgroup_name, az_nic_name, nic).result()
         print('Adding the network security group:', securitygroup_id)
         nic.network_security_group = {'id': securitygroup_id}
@@ -45,7 +51,7 @@ def simple_vm(vm_name, private_ip, subnet_id, securitygroup_id, key_name, public
         vm_params['hardware_profile'] = {"vm_size": "Standard_DS1_v2"}  # Different options here.
         os_disk_name = vm_name+'-osdisk' # Aesthetic (I think).
         vm_params['storage_profile'] = StorageProfile(os_disk={"os_type": "Linux", "name": os_disk_name, "create_option": "FromImage"}, image_reference=cloud_vm.ubuntu_aim_image(the_region))
-        inst_id = covert.create_vm_dangerkey(vm_name, vm_params, key_name) # Already assoced with the address.
+        inst_id = covert.create_once_vm_dangerkey(vm_name, vm_params, key_name) # Already assoced with the address.
         return inst_id
     else:
         raise Exception('TODO get net_setup working on this cloud platform: '+platform)
@@ -123,7 +129,7 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
         addr_id = cloud_core.create_once('address', user_name+'_'+basename+'_address', True, location=the_region, public_ip_allocation_method='Dynamic', idle_timeout_in_minutes=4)
     else:
         raise Exception('TODO get net_setup working on this cloud platform: '+platform)
-    inst_id = simple_vm(vm_name, '10.200.250.100', subnet_id, securitygroup_id, key_name, addr_id, the_region, 'jumpbox_nic')
+    inst_id = simple_vm_createonce(vm_name, '10.200.250.100', subnet_id, securitygroup_id, key_name, addr_id, the_region, 'jumpbox_nic')
 
     ssh_bash = vm.ssh_bash(inst_id, True)
 
@@ -158,6 +164,14 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
 
     print("\033[38;5;208mJumpbox appears to be setup and working (minus a restart which is happening now).\033[0m")
     return ssh_bash, inst_id
+
+def DEBUG_tubo(instance_id):
+    # Why does it hang here but not over there?
+    print('creating tubo for:', instance_id)
+    vm.patient_ssh_pipe(instance_id, printouts=True, binary_mode=False)
+    import time
+    time.sleep(10)
+    raise Exception('DEBUG TUBO did it create the tubo?')
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', the_region='us-west-2c'):
 
@@ -242,7 +256,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         elif platform == 'azure':
             # What does this do? dns_settings=PublicIPAddressDnsSettings(domain_name_label="your-domain-label")
             addrs[i] = cloud_core.create_once('address', basenames[i]+'_address', True, location=the_region, public_ip_allocation_method='Dynamic', idle_timeout_in_minutes=4)
-        #cloud_core.assoc(inst_ids[i], addrs[i]) # Will be done in the simple_vm function.
+        #cloud_core.assoc(inst_ids[i], addrs[i]) # Will be done in the simple_vm_createonce function.
         #vm.update_apt(inst_ids[i], printouts=True, full_restart_here=True)
 
     if platform=='aws':
@@ -282,10 +296,12 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
             ip_id = addrs[i]
         else:
             raise Exception('Problem getting the addres IDs (IDs different from the IPs)')
-        inst_id = simple_vm(basenames[i].replace('_','0') if platform=='azure' else basenames[i], private_ips[i], subnet_id, securitygroup_id, key_name, ip_id, the_region, az_nics[i])
+        inst_id = simple_vm_createonce(basenames[i].replace('_','0') if platform=='azure' else basenames[i], private_ips[i], subnet_id, securitygroup_id, key_name, ip_id, the_region, az_nics[i])
         #_ = vm.upgrade_os(inst_id, printouts=True)
         inst_ids.append(inst_id)
         cmds.append(vm.ssh_bash(inst_id, True))
+
+    #DEBUG_tubo(inst_ids[0])
 
     if debug_skip_install:
         print("WARNING: DEBUG installation of packages skipped (ping will still be installed and thus work across the peering).")
@@ -373,7 +389,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
     print(f'Testing ssh ping from machine {jbox_id}')
 
-    #TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
+    #partial TODO: C. Test the peering connection and routing by pinging the VMs web, app, and db, from the jumpbox.
     is_ssh = cloud_vm.our_vm_id() != jbox_id # TODO: True in the cloud shell, False if we are in the jumpbox.
     tubo = vm.patient_ssh_pipe(jbox_id, printouts=True) if is_ssh else eye_term.MessyPipe('bash', None, printouts=True)
     ping_check = '0% packet loss'

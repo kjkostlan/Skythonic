@@ -44,7 +44,7 @@ def _save_ky1(fname, key_material):
     # Don't forget the chmod 600 on the keys!
     os.chmod(fname, 0o600) # Octal (not hex and not a string!)
 
-def create_vm_dangerkey(vm_name, vm_params, key_name):
+def create_once_vm_dangerkey(vm_name, vm_params, key_name):
     # Creates a new vm with key_name, making a new key and saving the secrets if key_name does not exist.
     # The login name to the vm is 'ubuntu'.
     x = _pickleload()
@@ -110,6 +110,8 @@ def create_vm_dangerkey(vm_name, vm_params, key_name):
         raise Exception('TODO: covery.py support of platform: '+platform)
 
     inst_id = cloud_core.create_once('machine', vm_name, True, **vm_params)
+    if 'SKYTHONIC' in inst_id:
+        raise Exception("TODO lowercase this DEBUG.")
     x['instance_id2key_name'][inst_id] = key_name
     _picklesave(x)
 
@@ -189,3 +191,8 @@ def danger_copy_keys_to_vm(id_or_desc, skythonic_root_folder, pickle_fname=pickl
         shutil.copyfile(pickle_fname, tmp_pkl_file)
     vm.send_files(the_id, {pickle_leaf:file_io.fload(tmp_pkl_file, bin_mode=True)}, dest_folder, printouts=printouts)
     file_io.power_delete(tmp_local_folder) #Security: delete the file in case of sensitive information on it.
+
+def vm_keychain():
+    # All ids with a key name return the id => name mapping.
+    x = _pickleload()
+    return x['instance_id2key_name'].copy()

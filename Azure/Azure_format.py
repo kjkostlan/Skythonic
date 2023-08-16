@@ -76,27 +76,31 @@ def enumloc(txt0):
         raise Exception('Multible region match to: '+txt0+': '+str(locs_filter))
 
 def obj2id(obj_desc): # Gets the ID from a description.
+    # Quirk where the upper case resource group is used:
+    def not_upper(_id):
+        _id1 =  _id.replace('resourceGroups/'+Azure_nugget.skythonic_rgroup_name.upper(),'resourceGroups/'+Azure_nugget.skythonic_rgroup_name)
+        return _id1
     if type(obj_desc) is str:
-        return obj_desc
+        return not_upper(obj_desc)
     elif type(obj_desc) is dict:
         if 'id' in obj_desc:
-            return obj_desc['id']
+            return not_upper(obj_desc['id'])
         if 'Skythonic_extracted_id' in obj_desc:
-            return obj_desc['Skythonic_extracted_id']
+            return not_upper(obj_desc['Skythonic_extracted_id'])
         if 'properties' in obj_desc:
             if 'vmSize' in str(obj_desc) and 'osProfile' in str(obj_desc): # Found a VM!
                 vm_name = obj_desc['properties']['osProfile']['computerName']
                 resource_group_name = obj_desc['properties']['storageProfile']['osDisk']['managedDisk']['id'].split('/')[4] # Somewhat brittle? Other ways to get the rgroup exist.
                 vm = Azure_nugget.compute_client.virtual_machines.get(resource_group_name, vm_name)
-                return vm.id
+                return not_upper(vm.id)
             if 'resourceGuid' in obj_desc['properties'] and 'virtualNetworkPeerings' in obj_desc['properties']:
                 raise Exception('resourceGuides are very mysterious (vnets; sometimes [properties][subnets][0][id][all but last two pieces] would work).')
         print('Uh ho obj desc is:', obj_desc)
         raise Exception('Cannot extract the id for object-as-dict with keys:'+str(obj_desc.keys()))
     elif hasattr(obj_desc, 'id'): # Does this ever lead us astray?
-        return obj_desc.id
+        return not_upper(obj_desc.id)
     elif hasattr(obj_desc, 'serialize'):
-        return obj2id(obj_desc.serialize()) # Azures uses these to make a dict representation.
+        return not_upper(obj2id(obj_desc.serialize())) # Azures uses these to make a dict representation.
     raise Exception('Azure obj2id fail on type: '+str(type(obj_desc)))
 
 def id2obj(the_id, assert_exist=True):

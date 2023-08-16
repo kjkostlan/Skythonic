@@ -5,7 +5,13 @@ def lingers(desc_or_id):
     #Do all cloud providors have this lingering resource problem?
     if desc_or_id is None:
         return False
-    x = Azure_format.tag_dict(desc_or_id).get('__deleted__', False)
+    try:
+        x = Azure_format.tag_dict(desc_or_id).get('__deleted__', False)
+    except Exception as e:
+        if 'was not found' in str(e): # Already deleted => no longer lingering.
+            return False
+        else:
+            raise e
     return x is True or str(x).lower() == 'true'
 
 def get_resources(which_types=None, ids=False, include_lingers=False, filters=None):

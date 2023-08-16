@@ -119,22 +119,19 @@ def create_once(rtype, name, printouts, **kwargs):
     # Creates a resource unless the name is already there.
     # Returns the created or already-there resource.
     r0 = AWS_query.get_by_name(rtype, name)
-    do_print = printouts is not None and printouts is not False
-    if printouts is True:
-        printouts = ''
-    elif type(printouts) is str:
+    if type(printouts) is str:
         printouts = printouts+' '
     if r0 is not None:
-        if do_print:
-            print(str(printouts)+'already exists:', rtype, name)
+        if printouts:
+            print(str(printouts if printouts is not True else '')+'already exists:', rtype, name)
         if AWS_format.enumr(rtype) == 'machine':
             ec2c.start_instances(InstanceIds=[AWS_format.obj2id(r0)])
         return AWS_format.obj2id(r0)
     else:
-        if do_print:
-            print(str(printouts)+'creating:', rtype, name)
+        if printouts:
+            print(str(printouts if printouts is not True else '')+'creating:', rtype, name)
         out = create(rtype, name, **kwargs)
-        if do_print:
+        if printouts:
             print('...done')
         return out
 

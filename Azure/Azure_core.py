@@ -111,20 +111,18 @@ def create_once(rtype, name, printouts, **kwargs):
     # Returns the created or already-there resource.
     # NOTE: most Azure functions are idempotent (big difference with AWS), so this function is (mostly) redundant.
     r0 = Azure_query.get_by_name(rtype, name)
-    do_print = printouts is not None and printouts is not False
-    if printouts is True:
-        printouts = ''
-    elif type(printouts) is str:
+    if type(printouts) is str:
         printouts = printouts+' '
     if r0 is not None:
-        if do_print:
-            print(str(printouts)+'already exists:', rtype, name)
-        return Azure_format.obj2id(r0)
+        if printouts:
+            print(str(printouts if printouts is not True else '')+'already exists:', rtype, name)
+        the_id = Azure_format.obj2id(r0)
+        return the_id
     else:
-        if do_print:
-            print(str(printouts)+'creating:', rtype, name)
+        if printouts:
+            print(str(printouts if printouts is not True else '')+'creating:', rtype, name)
         out = create(rtype, name, **kwargs)
-        if do_print:
+        if printouts:
             print('...done')
         return out
 
