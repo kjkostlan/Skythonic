@@ -224,8 +224,6 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=No
     details = _package_info(**kwargs)
     if type(package_names) is str:
         package_names = [package_names]
-    if extra_tests is not None:
-        TODO # Allocation per package, etc.
 
     if inst_or_pipe is None:
         raise Exception('None instance/pipe')
