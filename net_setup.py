@@ -120,7 +120,7 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
     else:
         raise Exception('TODO get net_setup working on this cloud platform: '+platform)
 
-    cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', port0=22, port1=22)
+    cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', port0=22, port1=22, priority=100)
 
     if platform == 'aws':
         addr_id = cloud_core.create_once('address', user_name+'_'+basename+'_address', True, Domain='vpc')
@@ -285,10 +285,10 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         else:
             raise Exception('TODO get net_setup three tier working on this cloud platform: '+platform)
 
-        cloud_permiss.authorize_ingress(securitygroup_id, '10.0.0.0/8', '-1', 22, 22)
-        cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', 22, 22)
         if i==0:
-            cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', 443, 443) # BYOC_web accepts https traffic from https (port 443).
+            cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', 443, 443, priority=110) # BYOC_web accepts https traffic from https (port 443).
+        cloud_permiss.authorize_ingress(securitygroup_id, '10.0.0.0/8', '-1', 22, 22, priority=101)
+        cloud_permiss.authorize_ingress(securitygroup_id, '0.0.0.0/0', 'tcp', 22, 22, priority=100) # SSH.
 
         if type(addrs[i]) is dict:
             ip_id = addrs[i]['id']

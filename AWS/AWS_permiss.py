@@ -25,7 +25,9 @@ def create_dangerkey_once(user_name):
         k1 = key_dict['AccessKey']['SecretAccessKey']
         return [k0, k1]
 
-def authorize_ingress(sgroup_id, cidr, protocol, port0, port1):
+def authorize_ingress(sgroup_id, cidr, protocol, port0, port1, priority=None):
+    if priority:
+        print('WARNING: Priority setting not supported (is this just a matter of changing this code or is it an internal AWS limitation?).')
     try:
         ec2c.authorize_security_group_ingress(GroupId=sgroup_id, CidrIp=cidr, IpProtocol=protocol, FromPort=port0, ToPort=port1)
     except Exception as e:
