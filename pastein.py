@@ -1,6 +1,4 @@
 import os, sys, time
-from waterworks import file_io
-import proj
 
 #######################Different code depending on which package################
 
@@ -10,6 +8,7 @@ cloud_list = ['aws', 'azure', 'google', 'commonscloud', 'alibaba', 'ibm', 'sales
 # commonscloud is much more obscure but it is supposed to be a pubnlicly-owned cloud.
 
 def cloudP(): # Makes common imports for interactive, command line use.
+    import proj
     smodules = proj.cloud_switch()
     which_cloud = proj.which_cloud()
     kys = ['cloud_core', 'cloud_clean', 'cloud_query', 'cloud_format']
@@ -58,6 +57,7 @@ def _src_diff(old_file2contents, new_file2contents):
 def install_us(branch='main'):
     # Fetches git in a temporary folder and copies the contents here.
     import proj
+    from waterworks import file_io
     import code_in_a_box
     clean_here = False # Extra cleanup. Not necessary?
 
@@ -117,7 +117,7 @@ def _importcode(mnames):
 
 if __name__ == '__main__': # For running on your local machine.
     import clipboard #pip install clipboard on your machine, no need on the Cloud Shell.
-
+    from waterworks import file_io
     while True:
         sourcecode_before_input = file_io.python_source_load()
         x = input('<None> = load diffs, gm = Github with main branch bootstrap, gd = Github with dev fetch bootstrap, q = quit; add "p" to include user paste-in:')
