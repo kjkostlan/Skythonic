@@ -41,6 +41,8 @@ def cloud_switch():
     wc = which_cloud().lower()
     x = None
     if wc == 'aws':
+        # Must install these modules in the cloud shell:
+        #    pip3 install paramiko
         x = {'cloud_core':'AWS.AWS_core', 'cloud_query':'AWS.AWS_query',\
              'cloud_format':'AWS.AWS_format', 'cloud_clean':'AWS.AWS_clean',\
              'cloud_vm':'AWS.AWS_vm', 'cloud_permiss':'AWS.AWS_permiss'}

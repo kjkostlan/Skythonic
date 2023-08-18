@@ -218,7 +218,7 @@ def _wait_and_attach_address(machine_id, address_id):
             return
         else:
             raise Exception('Address attached to the wrong machine.')
-    f_try = lambda: ec2c.associate_address(AllocationId=A,InstanceId=B)
+    f_try = lambda: ec2c.associate_address(AllocationId=address_id, InstanceId=machine_id)
     f_catch = lambda e:"The pending instance" in repr(e) and "is not in a valid state" in repr(e)
     msg = 'Waiting for machine: '+machine_id+' to be ready for attached address'
     plumber.loop_try(f_try, f_catch, msg, delay=4)
@@ -239,7 +239,7 @@ def assoc(A, B, _swapped=False):
     elif A.startswith('subnet-') and B.startswith('rtb-'):
         ec2c.associate_route_table(SubnetId=A, RouteTableId=B)
     elif A.startswith('eipalloc-') and B.startswith('i-'):
-        _wait_and_attach_address(machine_id, address_id):
+        _wait_and_attach_address(B, A)
     elif A.startswith('vpc-') and B.startswith('vpc-'): # Peering can be thought of as an association.
         peering = ec2c.create_vpc_peering_connection(VpcId=A, PeerVpcId=B)
         ec2c.accept_vpc_peering_connection(VpcPeeringConnectionId=peering['VpcPeeringConnection']['VpcPeeringConnectionId'])

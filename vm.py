@@ -192,7 +192,7 @@ def _package_info(**kwargs):
     if proj.which_cloud()=='aws':
         AWSregion_name = cloud_vm.get_region_name()
         AWSuser_id = covert.user_dangerkey(kwargs['user_name'])
-        publicAWS_key, privateAWS_key = covert.get_key(user_id)
+        publicAWS_key, privateAWS_key = covert.get_key(AWSuser_id)
     extra_prompts = {}
     extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
     extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
@@ -219,6 +219,8 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=No
     # package_name = "apt apache2" or "pip boto3".
     # Some pacakges will require kwards for configuration.
     # Include tests so that the Plumber can ensure that the packages installed properly.
+    if not kwargs.get('user_name', None) and proj.which_cloud()=='aws':
+        raise Exception('For AWS, must specify a user_name="myUserName" in the **kwargs.')
     details = _package_info(**kwargs)
     if type(package_names) is str:
         package_names = [package_names]
@@ -299,7 +301,7 @@ def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=N
         tubo.close()
     return tubo
 
-def install_custom_package(inst_or_pipe, package_name, printouts=None):
+def install_custom_package(inst_or_pipe, package_name, printouts=None, user_name=None):
     # Install packages which we created.
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     package_name = package_name.lower().replace('_','-')
@@ -360,7 +362,7 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None):
 
     response_map = {**cloud_entry, **response_map}
 
-    tubo = install_packages(tubo, non_custom_packages, extra_tests=None, printouts=None)
+    tubo = install_packages(tubo, non_custom_packages, extra_tests=None, printouts=None, user_name=user_name)
 
     p = plumber.Plumber(tubo, [{'commands':cmd_list, 'tests':test_pairs}], response_map, dt=2.0)
     p.run()
