@@ -1,8 +1,7 @@
 # Tools for keeping track of virtual machines, such as the login keys
 import sys, os, time, paramiko
 import covert, proj
-from waterworks import eye_term, file_io, colorful, plumber
-import waterworks.plumber_tools as ptools
+from waterworks import eye_term, file_io, colorful, plumber, plumb_packs
 
 proj.platform_import_modules(sys.modules[__name__], ['cloud_vm'])
 
@@ -41,7 +40,7 @@ def patient_ssh_pipe(instance_id, printouts=True, binary_mode=False):
     tubo.machine_id = instance_id
     tubo.restart_fn = lambda: cloud_vm.restart_vm(instance_id)
 
-    p = plumber.Plumber(tubo, [], {}, dt=0.5)
+    p = plumber.Plumber(tubo, [], plumb_packs.default_prompts(), dt=0.5)
     p.run()
     return p.tubo
 
@@ -67,7 +66,7 @@ def send_files(instance_id, file2contents, remote_root_folder, printouts=True):
 
     tubo = patient_ssh_pipe(instance_id, printouts=printouts)
 
-    p = plumber.Plumber(tubo, [{'commands':[f'mkdir -p {eye_term.quoteless(remote_root_folder)}']}], {}, dt=2.0)
+    p = plumber.Plumber(tubo, [{'commands':[f'mkdir -p {eye_term.quoteless(remote_root_folder)}']}], plumb_packs.default_prompts(), dt=2.0)
     p.run()
 
     #https://linuxize.com/post/how-to-use-scp-command-to-securely-transfer-files/
@@ -113,7 +112,7 @@ def download_remote_file(instance_id, remote_path, local_dest_folder=None, print
     #https://unix.stackexchange.com/questions/188285/how-to-copy-a-file-from-a-remote-server-to-a-local-machine
     scp_cmd = f'scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -r -i {eye_term.quoteless(pem_fname)} ubuntu@{public_ip}:{eye_term.quoteless(remote_path)} {eye_term.quoteless(save_here)}'
 
-    p = plumber.Plumber(tubo, [{'commands':[scp_cmd+'\necho download_cmd_ran']}], dt=2.0)
+    p = plumber.Plumber(tubo, [{'commands':[scp_cmd+'\necho download_cmd_ran']}], plumb_packs.default_prompts(), dt=2.0)
     p.run()
 
     if local_dest_folder is None:
@@ -126,16 +125,22 @@ def update_vms_skythonic(diff): # Where is Skythonic installed?
 
 ########################Installation of packages################################
 
-def _to_pipe(inst_or_pipe, printouts=True): # Idempotent.
+def _to_pipe(inst_or_pipe, printouts='soft_True'): # Idempotent.
+    if printouts is None:
+        raise Exception('Printouts must be False, True, "soft_False", or "soft_True"')
     if type(inst_or_pipe) is eye_term.MessyPipe:
         if inst_or_pipe.closed:
             out = inst_or_pipe.remake()
         out = inst_or_pipe
-        out.printouts = printouts
+        if printouts is False or printouts is True: # Hart True/False: overide the pipe.
+            out.printouts = printouts
         return out
-    return patient_ssh_pipe(inst_or_pipe, printouts=printouts)
+    printouts1 = True
+    if printouts is False or (type(printouts) is str and printouts.lower() is 'soft_False'.lower()):
+        printouts1 = False
+    return patient_ssh_pipe(inst_or_pipe, printouts=printouts1)
 
-def update_apt(inst_or_pipe, printouts=None):
+def update_apt(inst_or_pipe, printouts='soft_True'):
     # Updating apt with a restart seems to be the most robust option.
     #https://askubuntu.com/questions/521985/apt-get-update-says-e-sub-process-returned-an-error-code
     if inst_or_pipe is None:
@@ -143,26 +148,25 @@ def update_apt(inst_or_pipe, printouts=None):
     test_pairs = [['sudo apt-get update\nsudo apt-get upgrade', 'Reading state information... Done']]
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
 
-    p = plumber.Plumber(tubo, [{'commands':['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], 'tests':test_pairs}], {}, dt=0.5)
+    p = plumber.Plumber(tubo, [{'commands':['sudo rm -rf /tmp/*', 'sudo mkdir /tmp'], 'tests':test_pairs}], plumb_packs.default_prompts(), dt=0.5)
     p.run()
 
     if type(inst_or_pipe) is eye_term.MessyPipe:
         p.tubo.close()
     return p.tubo
 
-def upgrade_os(inst_or_pipe, printouts=None):
+def upgrade_os(inst_or_pipe, printouts='soft_True'):
     # Upgrades the Ubuntu version.
     raise Exception('TODO: Upgrading the OS over SSH seems to not work properly. Instead try to use a newer image in the initial vm.')
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    response_map = {**plumber.default_prompts(), **cloud_entry}
+    response_map = cloud_entry
 
-    p = plumber.Plumber(tubo, [{'commands':['sudo do-release-upgrade', 'echo hopefully_upgraded_now']}], response_map, dt=2.0)
+    p = plumber.Plumber(tubo, [{'commands':['sudo do-release-upgrade', 'echo hopefully_upgraded_now']}], {**plumb_packs.default_prompts(), **response_map}, dt=2.0)
     tubo = p.run()
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
         p.tubo.close()
     return tubo
-
 
 def _package_info(**kwargs):
     renames = {'apt ping':'apt iputils-ping','apt apache':'apt apache2',
@@ -214,7 +218,7 @@ def _package_info(**kwargs):
     return {'slowness':slowness, 'extra_prompts':extra_prompts, 'extra_cmds':xtra_cmds, 'renames':renames, 'test_overrides':toverrides, 'total_overrides':fulloverrides}
 
 #curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=None, **kwargs):
+def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts='soft_True', **kwargs):
     # Includes configuration for common packages;
     # package_name = "apt apache2" or "pip boto3".
     # Some pacakges will require kwards for configuration.
@@ -242,7 +246,7 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=No
     for package_name in package_names:
         timeout = max(timeout, 64*details['slowness'].get(package_name, 1))
 
-    response_map = {**plumber.default_prompts(), **cloud_entry}
+    response_map = cloud_entry
     for package_name in package_names:
         response_map = {**response_map, **details['extra_prompts'].get(package_name, {})}
 
@@ -260,7 +264,7 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=No
     response_map['Upgrade to the latest pip and try again'] = 'pip3 install --upgrade pip'
 
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
-    plumber.Plumber(tubo, tasks, response_map, fn_override=None, dt=2.0)
+    plumber.Plumber(tubo, tasks, {**plumb_packs.default_prompts(), **response_map}, dt=2.0)
 
     ## Tasks:
     tasks = []
@@ -273,9 +277,11 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=No
                 x['tests'] = details['test_overrides'].get(pkg)
         tasks.append(x)
     if len(extra_tests)>0: # Better practice is to use tests when there is only one package to install.
+        if tubo.printouts:
+            print('***Extra tests requested***:', extra_tests)
         tasks[-1]['tests'] = tasks[-1].get('tests', [])+extra_tests
 
-    p = plumber.Plumber(tubo, tasks, response_map, fn_override=None, dt=2.0)
+    p = plumber.Plumber(tubo, tasks, {**plumb_packs.default_prompts(), **response_map}, dt=2.0)
     tubo = p.run()
 
     if type(inst_or_pipe) is not eye_term.MessyPipe:
@@ -284,7 +290,7 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts=No
 
 ###############Installation of our packages and configs#########################
 
-def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=None):
+def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts='soft_True'):
     #Updates skythonic with what is stored locally (on the machine calling this fn).
     # Basically the same as install_custom_package(inst_or_pipe, skythonic) but with no testing.
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
@@ -299,7 +305,7 @@ def update_Skythonic(inst_or_pipe, remote_root_folder='~/Skythonic', printouts=N
         tubo.close()
     return tubo
 
-def install_custom_package(inst_or_pipe, package_name, printouts=None, user_name=None):
+def install_custom_package(inst_or_pipe, package_name, printouts='soft_True', user_name=None):
     # Install packages which we created.
     tubo = _to_pipe(inst_or_pipe, printouts=printouts)
     package_name = package_name.lower().replace('_','-')
@@ -360,9 +366,9 @@ def install_custom_package(inst_or_pipe, package_name, printouts=None, user_name
 
     response_map = {**cloud_entry, **response_map}
 
-    tubo = install_packages(tubo, non_custom_packages, extra_tests=None, printouts=None, user_name=user_name)
+    tubo = install_packages(tubo, non_custom_packages, extra_tests=None, printouts=printouts, user_name=user_name)
 
-    p = plumber.Plumber(tubo, [{'commands':cmd_list, 'tests':test_pairs}], response_map, dt=2.0)
+    p = plumber.Plumber(tubo, [{'commands':cmd_list, 'tests':test_pairs}], {**plumb_packs.default_prompts(), **response_map}, dt=2.0)
     p.run()
 
     return p.tubo
