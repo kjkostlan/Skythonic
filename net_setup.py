@@ -143,18 +143,18 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
         tubo = vm.install_packages(inst_id, 'apt ping', printouts=True, user_name=user_name, extra_tests=[['ping -c 1 localhost', '0% packet loss']])
     else:
         #tubo = vm.upgrade_os(inst_id, printouts=True)
-        tubo = vm.install_packages(inst_id, 'apt python3', user_name=user_name, extra_tests=[['python3\nprint(id)\nquit()', '<built-in function id>']])
+        tubo = vm.install_packages(inst_id, 'apt python3', printouts=True, user_name=user_name, extra_tests=[['python3\nprint(id)\nquit()', '<built-in function id>']])
         for pk_name in ['apt net-tools', 'apt netcat', 'apt vim', 'apt tcpdump']:
             tubo = vm.install_packages(tubo, pk_name, user_name=user_name)
-        tubo = vm.install_packages(tubo, 'apt ping', user_name=user_name, extra_tests=[['ping -c 1 localhost', '0% packet loss']])
+        tubo = vm.install_packages(tubo, 'apt ping', printouts=True, user_name=user_name, extra_tests=[['ping -c 1 localhost', '0% packet loss']])
         for pk_name in ['skythonic', 'host-list']:
             tubo = vm.install_custom_package(tubo, pk_name, user_name=user_name)
         if platform == 'aws':
-            tubo = vm.install_packages(tubo, 'apt aws-cli', user_name=user_name, extra_tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']])
-            tubo = vm.install_packages(tubo, 'pip boto3', user_name=user_name, extra_tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
+            tubo = vm.install_packages(tubo, 'apt aws-cli', printouts=True, user_name=user_name, extra_tests=[['aws ec2 describe-vpcs --output text', 'CIDRBLOCKASSOCIATIONSET']])
+            tubo = vm.install_packages(tubo, 'pip boto3', printouts=True, user_name=user_name, extra_tests=[["python3\nimport boto3\nboto3.client('ec2').describe_vpcs()\nquit()","'Vpcs': [{'CidrBlock'"]])
         elif platform == 'azure':
             for package_cmd in ['pip azure-core', 'pip azure-identity', 'pip paramiko', 'pip azure-mgmt-resource', 'pip azure-mgmt-compute', 'pip azure-mgmt-storage', 'pip azure-mgmt-network', 'pip install azure-mgmt-storage', 'azure-cli']:
-                tubo = vm.install_packages(tubo, package_cmd, user_name=user_name)
+                tubo = vm.install_packages(tubo, package_cmd, printouts=True, user_name=user_name)
                 tubo.close()
             from Azure import Azure_permiss # TODO: also put AWS permission fns into AWS_permiss.
             Azure_permiss.empower_vm(inst_id)
@@ -164,14 +164,6 @@ def setup_jumpbox(basename='jumpbox', the_region='us-west-2c', user_name='BYOC',
 
     print("\033[38;5;208mJumpbox appears to be setup and working (minus a restart which is happening now).\033[0m")
     return ssh_bash, inst_id
-
-def DEBUG_tubo(instance_id):
-    # Why does it hang here but not over there?
-    print('creating tubo for:', instance_id)
-    vm.patient_ssh_pipe(instance_id, printouts=True, binary_mode=False)
-    import time
-    time.sleep(10)
-    raise Exception('DEBUG TUBO did it create the tubo?')
 
 def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vpc_name='BYOC_Spoke1', the_region='us-west-2c', user_name='BYOC'):
 
@@ -319,7 +311,7 @@ def setup_threetier(key_name='BYOC_keypair', jbox_name='BYOC_jumpbox_VM', new_vp
         vm.install_packages(inst_ids[0], 'apt apache', printouts=True, user_name=user_name)
         web_s_tests = [['sudo service apache2 start',''], ['curl -k http://localhost', ['apache2', '<div>', '<html']],
                        ['systemctl status apache2.service', ['The Apache HTTP Server', 'Main PID:']]]
-        vm.install_custom_package(inst_ids[0], 'web-server', extra_tests=web_s_tests, user_name=user_name)
+        vm.install_custom_package(inst_ids[0], 'web-server', printouts=True, extra_tests=web_s_tests, user_name=user_name)
         vm.install_packages(inst_ids[2], 'apt mysql-server', printouts=True, user_name=user_name)
 
     if platform=='aws':
