@@ -171,8 +171,8 @@ def upgrade_os(inst_or_pipe, printouts='soft_True'):
 def _package_info(**kwargs):
     renames = {'apt ping':'apt iputils-ping','apt apache':'apt apache2',
                'apt python':'apt python3-pip', 'apt python3':'apt python3-pip',
-               'apt aws':'apt awscli', 'apt netcat':'apt netcat-openbsd'}
-    slowness = {'apt awscli':2, 'apt python3-pip':2} # Longer timeouts here.
+               'apt aws':'apt aws-cli', 'apt awscli':'apt aws-cli', 'apt netcat':'apt netcat-openbsd'}
+    slowness = {'apt aws-cli':2, 'apt python3-pip':2} # Longer timeouts here.
     xtra_cmds = {}
     xtra_cmds['apt apache2'] = ['sudo apt install libcgi-session-perl',
             'sudo systemctl enable apache2',
@@ -183,7 +183,7 @@ def _package_info(**kwargs):
             'sudo ln -s ../mods-available/socache_shmcb.load socache_shmcb.load',
             'cd /etc/apache2/sites-enabled',
             'sudo ln -s ../sites-available/default-ssl.conf default-ssl.conf']
-    xtra_cmds['apt awscli'] = ['aws configure']
+    xtra_cmds['apt aws-cli'] = ['aws configure']
     xtra_cmds['apt python3-pip'] = ['PYTHON3_PATH=$(which python3)', 'sudo ln -sf $PYTHON3_PATH /usr/local/bin/python', 'sudo apt upgrade python3']
 
     boto3_err = "AttributeError: module 'lib' has no attribute 'X509_V_FLAG_CB_ISSUER_CHECK'"
@@ -199,13 +199,13 @@ def _package_info(**kwargs):
         publicAWS_key, privateAWS_key = covert.get_key(AWSuser_id)
     extra_prompts = {}
     extra_prompts['pip3 boto3'] = {boto3_err:boto3_fix}
-    extra_prompts['apt awscli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
-                                   'region name':AWSregion_name, 'output format':'json',
-                                   'Geographic area':11, #11 = SystemV
-                                   boto3_err:boto3_fix,
-                                   'Get:42':'', 'Unpacking awscli':'', # The null prompts (empty string) may help to keep ssh alive
-                                   'Setting up fontconfig':'', 'Extracting templates from packages':'',
-                                   'Unpacking libaom3:amd64':''}
+    extra_prompts['apt aws-cli'] = {'Access Key ID':publicAWS_key, 'Secret Access Key':privateAWS_key,
+                                    'region name':AWSregion_name, 'output format':'json',
+                                    'Geographic area':11, #11 = SystemV
+                                    boto3_err:boto3_fix,
+                                    'Get:42':'', 'Unpacking awscli':'', 'Unpacking aws-cli':'', # The null prompts (empty string) may help to keep ssh alive
+                                    'Setting up fontconfig':'', 'Extracting templates from packages':'',
+                                    'Unpacking libaom3:amd64':''}
 
     toverrides = {}
     make_pip_test = lambda _lib:[f'python3\nimport sys\nimport {_lib}\nx=456*789 if "{_lib}" in sys.modules else 123*456\nprint(x)\nquit()', str(456*789)] # TODO: duplicate code with tmp_plumb.
@@ -238,8 +238,8 @@ def install_packages(inst_or_pipe, package_names, extra_tests=None, printouts='s
     package_names = [details['renames'].get(x, x) for x in package_names]
 
     for package_name in package_names:
-        if package_name=='apt awscli': # This one requires using boto3 so is buried in this conditional.
-            colorful.bprint('awscli is a HEAVY installation. Should take about 5 min.')
+        if package_name=='apt aws-cli': # This one requires using boto3 so is buried in this conditional.
+            colorful.bprint('aws-cli is a HEAVY installation. Should take about 5 min.')
 
     tasks = []
     timeout = 64 # TODO: Do we even use this?
